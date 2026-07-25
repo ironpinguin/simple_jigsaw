@@ -62,7 +62,11 @@ build:
 # required). Produces a GitLab SAST report and fails the job on any finding.
 sast:
   stage: quality
-  image: semgrep/semgrep
+  # entrypoint must be cleared so GitLab can run its shell-based job script in
+  # the semgrep tool image.
+  image:
+    name: semgrep/semgrep
+    entrypoint: [""]
   before_script: []
   cache: {}
   script:
