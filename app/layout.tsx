@@ -25,6 +25,7 @@ export default async function RootLayout({
               <>
                 <Link href="/create">Erstellen</Link>
                 <Link href="/my">Meine Puzzles</Link>
+                {session.user.role === "ADMIN" && <Link href="/admin">Admin</Link>}
                 <form
                   action={async () => {
                     "use server";

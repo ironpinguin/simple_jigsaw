@@ -15,12 +15,17 @@ services:
     command: sh -c "npx prisma generate && npx prisma db push --skip-generate && exec npx next dev"
     volumes:
       - .:/app
-      # Keep container-built dirs from being shadowed by the bind mount.
+      # Keep container-built dirs from being shadowed by the bind mount (and keep
+      # the container's root-generated Prisma client off the host tree).
       - /app/node_modules
       - /app/.next
+      - /app/lib/generated
     environment:
       NODE_ENV: development
     restart: "no"
+    depends_on:
+      mailpit:
+        condition: service_started
 
   postgres:
     ports:
@@ -30,3 +35,11 @@ services:
     ports:
       - "9000:9000" # S3 API
       - "9001:9001" # web console
+
+  # Dev mail catcher: SMTP on 1025, web UI on http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # web UI

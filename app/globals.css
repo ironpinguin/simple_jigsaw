@@ -259,6 +259,27 @@ select:focus {
   overflow: auto;
 }
 
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.admin-table th,
+.admin-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.admin-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.admin-table .button {
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
 .solve-fullbleed {
   width: 100vw;
   margin-left: calc(50% - 50vw);

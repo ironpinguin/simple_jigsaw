@@ -6,6 +6,8 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "./db";
+import { checkEmailBanned } from "./moderation";
+import { isAdminEmail } from "./admin-emails";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -25,23 +27,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
-        if (!user) return null;
+        // No user, or an invited account that has not set a password yet.
+        if (!user || !user.passwordHash) return null;
 
         const ok = await bcrypt.compare(password, user.passwordHash);
         if (!ok) return null;
 
-        return { id: user.id, email: user.email, name: user.name ?? null };
+        // Banned addresses/domains cannot log in, even with a valid password.
+        if (await checkEmailBanned(email)) return null;
+
+        // Email must be confirmed first.
+        if (!user.emailVerified) return null;
+
+        // Keep the ADMIN allow-list authoritative on every login.
+        let role = user.role;
+        if (isAdminEmail(email) && role !== "ADMIN") {
+          await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
+          role = "ADMIN";
+        }
+
+        return { id: user.id, email: user.email, name: user.name ?? null, role };
       },
     }),
   ],
   callbacks: {
     jwt({ token, user }) {
-      if (user) token.id = user.id as string;
+      if (user) {
+        token.id = user.id as string;
+        token.role = (user as { role?: string }).role ?? "USER";
+      }
       return token;
     },
     session({ session, token }) {
       if (token.id && session.user) {
         session.user.id = token.id as string;
+        session.user.role = (token.role as string) ?? "USER";
       }
       return session;
     },
@@ -58,5 +78,14 @@ export async function getSessionUser() {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) return null;
-  return prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
+  return prisma.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, role: true },
+  });
+}
+
+/** Like getSessionUser, but returns null unless the user is an ADMIN. */
+export async function requireAdmin() {
+  const user = await getSessionUser();
+  return user && user.role === "ADMIN" ? user : null;
 }

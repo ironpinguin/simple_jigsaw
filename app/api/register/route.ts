@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { normalizeEmail } from "@/lib/bans";
+import { checkEmailBanned } from "@/lib/moderation";
+import { isAdminEmail } from "@/lib/admin-emails";
+import { createToken } from "@/lib/tokens";
+import { sendVerificationEmail } from "@/lib/mail";
 
 const RegisterSchema = z.object({
   email: z.string().email(),
@@ -23,7 +28,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const email = parsed.data.email.toLowerCase().trim();
+  const email = normalizeEmail(parsed.data.email);
+
+  if (await checkEmailBanned(email)) {
+    return NextResponse.json(
+      { error: "Diese E-Mail-Adresse ist gesperrt." },
+      { status: 403 },
+    );
+  }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -34,9 +46,19 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.user.create({
-    data: { email, passwordHash, name: parsed.data.name || null },
+  const user = await prisma.user.create({
+    data: {
+      email,
+      passwordHash,
+      name: parsed.data.name || null,
+      role: isAdminEmail(email) ? "ADMIN" : "USER",
+      emailVerified: null,
+    },
+    select: { id: true },
   });
 
-  return NextResponse.json({ ok: true }, { status: 201 });
+  const token = await createToken(user.id, "EMAIL_VERIFY");
+  await sendVerificationEmail(email, token);
+
+  return NextResponse.json({ ok: true, requiresVerification: true }, { status: 201 });
 }

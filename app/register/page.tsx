@@ -1,17 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 export default function RegisterPage() {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,18 +22,30 @@ export default function RegisterPage() {
       body: JSON.stringify({ name, email, password }),
     });
 
+    setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error || "Registrierung fehlgeschlagen.");
-      setLoading(false);
       return;
     }
 
-    // Auto-login after successful registration.
-    await signIn("credentials", { email, password, redirect: false });
-    setLoading(false);
-    router.push("/create");
-    router.refresh();
+    // No auto-login: the account must confirm its email first.
+    setDone(true);
+  }
+
+  if (done) {
+    return (
+      <div className="form card">
+        <h1>Fast geschafft</h1>
+        <p>
+          Wir haben dir eine Bestätigungs-E-Mail an <strong>{email}</strong> geschickt.
+          Klicke den Link darin, um dein Konto zu aktivieren. Danach kannst du dich anmelden.
+        </p>
+        <p className="muted">
+          <Link href="/login">Zur Anmeldung</Link>
+        </p>
+      </div>
+    );
   }
 
   return (

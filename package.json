@@ -13,7 +13,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:push": "prisma db push",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "make-admin": "node scripts/make-admin.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
@@ -24,6 +25,7 @@
     "konva": "^9.3.16",
     "next": "^15.1.4",
     "next-auth": "^5.0.0-beta.25",
+    "nodemailer": "^8.0.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-konva": "^19.0.2",
@@ -33,6 +35,7 @@
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.5",
+    "@types/nodemailer": "^6.4.16",
     "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",
     "@eslint/eslintrc": "^3.2.0",

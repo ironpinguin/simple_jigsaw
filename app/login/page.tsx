@@ -26,7 +26,9 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res?.error) {
-      setError("E-Mail oder Passwort ist falsch.");
+      setError(
+        "Anmeldung fehlgeschlagen. Prüfe E-Mail und Passwort — und bestätige zuerst deine E-Mail-Adresse, falls du dich gerade registriert hast.",
+      );
       return;
     }
     router.push(callbackUrl);

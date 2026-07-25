@@ -52,11 +52,32 @@ docker compose -f docker-compose.yml up -d --build
 Für echten Betrieb außerdem die RustFS-Zugangsdaten (`S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`) und ggf. das Postgres-Passwort setzen.
 
+## Konten, Rollen & Admin
+
+- **Registrierung mit E-Mail-Bestätigung**: Nach der Registrierung wird eine
+  Bestätigungsmail verschickt; Login ist erst nach Klick auf den Link möglich.
+  Im Dev landen alle Mails in **Mailpit** → http://localhost:8025.
+- **Rollen**: `USER` / `ADMIN`. Admins sehen den Menüpunkt **Admin** und den
+  Bereich unter `/admin`.
+- **Admin wird man auf zwei Wegen**:
+  - Env `ADMIN_EMAILS` (kommagetrennt) — diese Adressen werden bei
+    Registrierung/Login automatisch zu Admin. Default in `.env`:
+    `admin@example.com`.
+  - CLI: `docker compose exec app npm run make-admin -- you@example.com`
+- **Admin-Bereich** (`/admin`):
+  - *Nutzer*: anlegen per **Einladung** (Mail-Link zum Passwort setzen) oder
+    **direkt** (E-Mail + Startpasswort), Rolle umschalten, löschen.
+  - *Banns*: E-Mail-Adressen oder ganze Domains sperren — gesperrte Adressen
+    können sich weder registrieren noch anmelden.
+
+Für Produktion echtes SMTP setzen (`SMTP_HOST/PORT/USER/PASS/FROM`), `APP_URL`
+auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
+
 ## Tests
 
 ```bash
 npm install
-npm test        # Vitest: Raster, Kanten-Passung, Outlines, Gruppenlogik
+npm test        # Vitest: Raster, Kanten-Passung, Outlines, Gruppen, Banns/Tokens
 ```
 
 ## Nicht in v1 (bewusst später)
