@@ -28,6 +28,7 @@ body {
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 a {
@@ -204,9 +205,14 @@ select:focus {
 }
 .card-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   margin-top: 10px;
   align-items: center;
+  flex-wrap: wrap;
+}
+.puzzle-card .card-actions .button {
+  padding: 6px 12px;
+  font-size: 14px;
 }
 
 .preset-row {
@@ -251,6 +257,13 @@ select:focus {
   border-radius: var(--radius);
   background: var(--surface);
   overflow: auto;
+}
+
+.solve-fullbleed {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
 .reference-thumb {

@@ -67,7 +67,7 @@ export default function PuzzleSolver({
         Gruppe weiterbewegen. Gelöst, wenn alle Teile verbunden sind.
       </p>
 
-      <div style={{ position: "relative" }}>
+      <div className="solve-fullbleed" style={{ position: "relative" }}>
         {showRef && (
           // eslint-disable-next-line @next/next/no-img-element
           <img

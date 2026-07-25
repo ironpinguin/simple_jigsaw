@@ -65,11 +65,16 @@ function buildLayout(
   const { cols, rows, seed } = puzzle;
   const aspect = puzzle.imageWidth / puzzle.imageHeight;
 
-  const stageW = Math.max(360, Math.min(containerW, 1200));
-  // The assembled picture takes ~42% of the width, leaving room to spread pieces.
-  let boardW = stageW * 0.42;
+  const stageW = Math.max(360, containerW);
+  // Fill most of the viewport height so the play area uses the whole window.
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 800;
+  const stageH = Math.max(520, Math.floor(viewportH - 210));
+
+  // The assembled picture takes ~40% of the width (capped in height), leaving
+  // the rest of the (now full-window) area to spread and assemble pieces.
+  let boardW = stageW * 0.4;
   let boardH = boardW / aspect;
-  const maxBoardH = 380;
+  const maxBoardH = Math.min(460, stageH * 0.6);
   if (boardH > maxBoardH) {
     boardH = maxBoardH;
     boardW = boardH * aspect;
@@ -78,7 +83,6 @@ function buildLayout(
   const pieceH = boardH / rows;
   const tabV = TAB_FRAC * pieceW;
   const tabH = TAB_FRAC * pieceH;
-  const stageH = Math.max(560, boardH + 340);
 
   const grid = generateEdges(cols, rows, seed);
   const rng = mulberry32(seed ^ 0x9e3779b9);
