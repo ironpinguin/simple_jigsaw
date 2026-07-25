@@ -70,7 +70,11 @@ sast:
   before_script: []
   cache: {}
   script:
+    # The image sets SEMGREP_IN_DOCKER, which makes `semgrep scan` insist on a
+    # `-v $PWD:/src` mount. GitLab checks out into /builds instead, so /src is
+    # empty and the scan aborts — dropping the variable disables that check.
     - >
+      env -u SEMGREP_IN_DOCKER
       semgrep scan
       --config p/typescript --config p/javascript --config p/react
       --config p/nodejs --config p/security-audit --config p/secrets
