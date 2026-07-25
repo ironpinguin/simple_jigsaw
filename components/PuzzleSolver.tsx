@@ -49,15 +49,14 @@ export default function PuzzleSolver({
           {connected} / {total - 1} verbunden
         </span>
         {solved && <span className="solved-banner">🎉 Gelöst!</span>}
-        <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
-          <input
-            type="checkbox"
-            checked={showRef}
-            style={{ width: "auto" }}
-            onChange={(e) => setShowRef(e.target.checked)}
-          />
-          Vorlage zeigen
-        </label>
+        <button
+          className={`button secondary ${showRef ? "active" : ""}`}
+          type="button"
+          aria-pressed={showRef}
+          onClick={() => setShowRef((v) => !v)}
+        >
+          {showRef ? "👁 Vorlage ausblenden" : "👁 Vorlage einblenden"}
+        </button>
         <button className="button secondary" type="button" onClick={share}>
           {copied ? "Link kopiert!" : "Link teilen"}
         </button>
