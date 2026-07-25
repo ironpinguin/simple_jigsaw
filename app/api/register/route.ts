@@ -7,6 +7,7 @@ import { checkEmailBanned } from "@/lib/moderation";
 import { isAdminEmail } from "@/lib/admin-emails";
 import { createToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/mail";
+import { isRegistrationEnabled } from "@/lib/registration";
 
 const RegisterSchema = z.object({
   email: z.string().email(),
@@ -15,6 +16,10 @@ const RegisterSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!isRegistrationEnabled()) {
+    return NextResponse.json({ error: "Registrierung ist deaktiviert." }, { status: 403 });
+  }
+
   let json: unknown;
   try {
     json = await request.json();

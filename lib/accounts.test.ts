@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { domainOf, isEmailBanned, normalizeBanValue, type BanEntry } from "./bans";
 import { parseAdminEmails, isAdminEmail } from "./admin-emails";
 import { tokenExpiry, isExpired, TOKEN_TTL_MS } from "./token-ttl";
+import { isRegistrationEnabled } from "./registration";
 
 describe("bans", () => {
   it("extracts the domain case-insensitively", () => {
@@ -53,5 +54,15 @@ describe("token ttl", () => {
     const now = 1_000_000;
     expect(isExpired(new Date(now - 1), now)).toBe(true);
     expect(isExpired(new Date(now + 1), now)).toBe(false);
+  });
+});
+
+describe("registration switch", () => {
+  it("is enabled by default and unless explicitly false", () => {
+    expect(isRegistrationEnabled(undefined)).toBe(true);
+    expect(isRegistrationEnabled("true")).toBe(true);
+    expect(isRegistrationEnabled("")).toBe(true);
+    expect(isRegistrationEnabled("False")).toBe(false);
+    expect(isRegistrationEnabled("false")).toBe(false);
   });
 });

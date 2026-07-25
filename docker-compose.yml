@@ -35,6 +35,8 @@ services:
       APP_URL: ${APP_URL:-http://localhost:3000}
       # Comma-separated allow-list of admin emails (auto-promoted on register/login).
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      # Set to "false" to disable public self-registration (invites still work).
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
       # SMTP (dev default points at the mailpit service; set a real server for prod).
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}

@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { isRegistrationEnabled } from "@/lib/registration";
 
 export default async function HomePage() {
   const session = await auth();
+  const canRegister = isRegistrationEnabled();
 
   return (
     <div>
@@ -17,9 +19,13 @@ export default async function HomePage() {
           <Link href="/create" className="button">
             Neues Puzzle erstellen
           </Link>
-        ) : (
+        ) : canRegister ? (
           <Link href="/register" className="button">
             Kostenlos loslegen
+          </Link>
+        ) : (
+          <Link href="/login" className="button">
+            Anmelden
           </Link>
         )}
       </section>

@@ -64,6 +64,13 @@ Für echten Betrieb außerdem die RustFS-Zugangsdaten (`S3_ACCESS_KEY_ID`,
     Registrierung/Login automatisch zu Admin. Default in `.env`:
     `admin@example.com`.
   - CLI: `docker compose exec app npm run make-admin -- you@example.com`
+- **Konten per CLI anlegen** (aktiv & bestätigt, umgeht die Bann-Liste):
+  - `docker compose exec app npm run create-user -- user@example.com 'passwort'`
+  - `docker compose exec app npm run create-user -- boss@example.com 'passwort' --admin`
+- **Registrierung abschalten**: `REGISTRATION_ENABLED=false` setzen — die
+  öffentliche Selbst-Registrierung ist dann deaktiviert (die Registrierungsseite
+  zeigt einen Hinweis, die Links verschwinden). Einladungen, Admin-Anlage und die
+  CLI bleiben davon unberührt.
 - **Admin-Bereich** (`/admin`):
   - *Nutzer*: anlegen per **Einladung** (Mail-Link zum Passwort setzen) oder
     **direkt** (E-Mail + Startpasswort), Rolle umschalten, löschen.

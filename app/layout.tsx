@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { auth, signOut } from "@/lib/auth";
+import { isRegistrationEnabled } from "@/lib/registration";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -40,9 +41,11 @@ export default async function RootLayout({
             ) : (
               <>
                 <Link href="/login">Anmelden</Link>
-                <Link href="/register" className="nav-cta">
-                  Registrieren
-                </Link>
+                {isRegistrationEnabled() && (
+                  <Link href="/register" className="nav-cta">
+                    Registrieren
+                  </Link>
+                )}
               </>
             )}
           </nav>
