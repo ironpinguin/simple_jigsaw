@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Stage, Layer, Image as KImage, Rect } from "react-konva";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges } from "@/lib/puzzle/edges";
 import { pieceOutlinePath } from "@/lib/puzzle/outline";
 import { mulberry32 } from "@/lib/puzzle/prng";
+import { resolveConnections, type PieceGroup } from "@/lib/puzzle/groups";
 
 export interface PuzzleData {
   id: string;
@@ -17,30 +18,27 @@ export interface PuzzleData {
   seed: number;
 }
 
-interface Piece {
+interface PieceInfo {
   id: string;
   row: number;
   col: number;
   canvas: HTMLCanvasElement;
-  offsetX: number; // cell-corner position inside the piece canvas
+  offsetX: number;
   offsetY: number;
-  solvedX: number; // stage coords of the cell corner when solved
+  /** Corner position in solved (puzzle) space — constant within any group. */
+  solvedX: number;
   solvedY: number;
-  startX: number; // initial scattered position of the cell corner
-  startY: number;
 }
 
 interface Layout {
-  boardW: number;
-  boardH: number;
   pieceW: number;
   pieceH: number;
-  bx: number;
-  by: number;
   stageW: number;
   stageH: number;
   snapDist: number;
-  pieces: Piece[];
+  pieces: Map<string, PieceInfo>;
+  order: string[]; // piece ids in row-major order
+  initialGroups: PieceGroup[];
 }
 
 const TAB_FRAC = 0.2;
@@ -67,41 +65,35 @@ function buildLayout(
   const { cols, rows, seed } = puzzle;
   const aspect = puzzle.imageWidth / puzzle.imageHeight;
 
-  const stageW = Math.max(320, Math.min(containerW, 1024));
-  const boardMaxW = stageW * (stageW < 640 ? 0.96 : 0.58);
-  const boardMaxH = 480;
-  const s = Math.min(boardMaxW / puzzle.imageWidth, boardMaxH / puzzle.imageHeight);
-  const boardW = puzzle.imageWidth * s;
-  const boardH = puzzle.imageHeight * s;
+  const stageW = Math.max(360, Math.min(containerW, 1200));
+  // The assembled picture takes ~42% of the width, leaving room to spread pieces.
+  let boardW = stageW * 0.42;
+  let boardH = boardW / aspect;
+  const maxBoardH = 380;
+  if (boardH > maxBoardH) {
+    boardH = maxBoardH;
+    boardW = boardH * aspect;
+  }
   const pieceW = boardW / cols;
   const pieceH = boardH / rows;
   const tabV = TAB_FRAC * pieceW;
   const tabH = TAB_FRAC * pieceH;
-
-  const bx = 16;
-  const by = 16;
-
-  // Tray geometry: a strip to the right of the board (if wide enough) plus a
-  // strip below it. Pieces are scattered here deterministically from the seed.
-  const rightTrayX = bx + boardW + 24;
-  const rightTrayW = stageW - rightTrayX - 8;
-  const hasRightTray = rightTrayW > pieceW * 1.6;
-  const bottomTrayY = by + boardH + 24;
-  const bottomTrayH = 220;
-  const stageH = bottomTrayY + bottomTrayH;
+  const stageH = Math.max(560, boardH + 340);
 
   const grid = generateEdges(cols, rows, seed);
   const rng = mulberry32(seed ^ 0x9e3779b9);
 
   const boxW = pieceW + 2 * tabV;
   const boxH = pieceH + 2 * tabH;
-  const round = aspect; // silence unused in some builds
-  void round;
 
-  const pieces: Piece[] = [];
-  let idx = 0;
+  const pieces = new Map<string, PieceInfo>();
+  const order: string[] = [];
+  const initialGroups: PieceGroup[] = [];
+  let gid = 1;
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
+      const id = `${r}-${c}`;
       const canvas = document.createElement("canvas");
       canvas.width = Math.ceil(boxW);
       canvas.height = Math.ceil(boxH);
@@ -111,7 +103,6 @@ function buildLayout(
       ctx.save();
       ctx.translate(tabV, tabH);
       ctx.clip(path);
-      // Draw the whole scaled board so tabs sample neighbouring image content.
       ctx.drawImage(image, -c * pieceW, -r * pieceH, boardW, boardH);
       ctx.restore();
 
@@ -122,54 +113,60 @@ function buildLayout(
       ctx.stroke(path);
       ctx.restore();
 
-      // Scatter the cell corner into a tray region.
-      let sx: number;
-      let sy: number;
-      const useRight = hasRightTray && idx % 2 === 0;
-      if (useRight) {
-        sx = rightTrayX + tabV + rng() * Math.max(1, rightTrayW - boxW);
-        sy = by + tabH + rng() * Math.max(1, boardH - boxH);
-      } else {
-        sx = bx + tabV + rng() * Math.max(1, stageW - bx - 8 - boxW);
-        sy = bottomTrayY + tabH + rng() * Math.max(1, bottomTrayH - boxH);
-      }
+      const solvedX = c * pieceW;
+      const solvedY = r * pieceH;
 
-      pieces.push({
-        id: `${r}-${c}`,
+      // Scatter each single-piece group so its cell corner lands somewhere in
+      // the stage; group origin = scattered corner minus the piece's solved
+      // corner, keeping the shared puzzle coordinate frame intact.
+      const cornerX = tabV + 6 + rng() * Math.max(1, stageW - boxW - 12);
+      const cornerY = tabH + 6 + rng() * Math.max(1, stageH - boxH - 12);
+
+      pieces.set(id, {
+        id,
         row: r,
         col: c,
         canvas,
         offsetX: tabV,
         offsetY: tabH,
-        solvedX: bx + c * pieceW,
-        solvedY: by + r * pieceH,
-        startX: sx,
-        startY: sy,
+        solvedX,
+        solvedY,
       });
-      idx++;
+      order.push(id);
+      initialGroups.push({
+        id: gid++,
+        x: cornerX - solvedX,
+        y: cornerY - solvedY,
+        members: [id],
+      });
     }
   }
 
-  const snapDist = Math.max(14, 0.3 * Math.min(pieceW, pieceH));
+  const snapDist = Math.max(18, 0.4 * Math.min(pieceW, pieceH));
 
-  return { boardW, boardH, pieceW, pieceH, bx, by, stageW, stageH, snapDist, pieces };
+  return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
 }
 
 interface Props {
   puzzle: PuzzleData;
-  showGuide: boolean;
-  onProgress: (placed: number, total: number) => void;
+  onProgress: (groups: number, total: number) => void;
   onSolved: () => void;
 }
 
-export default function PuzzleBoard({ puzzle, showGuide, onProgress, onSolved }: Props) {
+export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
-  const placedRef = useRef<Set<string>>(new Set());
 
-  // Measure the container width once it is known (locked after first measure to
-  // avoid rebuilding the board on every resize).
+  // Group model lives in refs (mutated imperatively on drag); a version counter
+  // triggers re-render only when membership/positions actually change.
+  const groupsRef = useRef<Map<number, PieceGroup>>(new Map());
+  const pieceToGroupRef = useRef<Map<string, number>>(new Map());
+  const [, setVersion] = useState(0);
+  const bump = useCallback(() => setVersion((v) => v + 1), []);
+
+  const total = puzzle.cols * puzzle.rows;
+
   useEffect(() => {
     if (!wrapRef.current || containerW > 0) return;
     const w = wrapRef.current.clientWidth;
@@ -192,68 +189,52 @@ export default function PuzzleBoard({ puzzle, showGuide, onProgress, onSolved }:
     return buildLayout(puzzle, image, containerW);
   }, [image, containerW, puzzle]);
 
-  const total = puzzle.cols * puzzle.rows;
-
+  // Seed the group model whenever the layout is (re)built.
   useEffect(() => {
-    placedRef.current = new Set();
-    onProgress(0, total);
-  }, [layout, total, onProgress]);
-
-  function handleDragEnd(piece: Piece, node: Konva.Node, snapDist: number) {
-    const dx = node.x() - piece.solvedX;
-    const dy = node.y() - piece.solvedY;
-    if (Math.hypot(dx, dy) <= snapDist) {
-      node.position({ x: piece.solvedX, y: piece.solvedY });
-      node.draggable(false);
-      node.moveToBottom();
-      if (!placedRef.current.has(piece.id)) {
-        placedRef.current.add(piece.id);
-        onProgress(placedRef.current.size, total);
-        if (placedRef.current.size === total) onSolved();
-      }
+    if (!layout) return;
+    const groups = new Map<number, PieceGroup>();
+    const p2g = new Map<string, number>();
+    for (const g of layout.initialGroups) {
+      groups.set(g.id, { ...g, members: [...g.members] });
+      for (const m of g.members) p2g.set(m, g.id);
     }
+    groupsRef.current = groups;
+    pieceToGroupRef.current = p2g;
+    bump();
+    onProgress(groups.size, total);
+  }, [layout, total, onProgress, bump]);
+
+  function handleGroupDragEnd(groupId: number, node: Konva.Node) {
+    const groups = groupsRef.current;
+    const p2g = pieceToGroupRef.current;
+
+    const start = groups.get(groupId);
+    if (!start) return;
+    start.x = node.x();
+    start.y = node.y();
+
+    resolveConnections(groups, p2g, groupId, puzzle.rows, puzzle.cols, layout!.snapDist);
+
+    bump();
+    onProgress(groups.size, total);
+    if (groups.size === 1) onSolved();
   }
+
+  const groupList = Array.from(groupsRef.current.values());
 
   return (
     <div ref={wrapRef} className="board-wrap" style={{ width: "100%" }}>
       {layout && (
         <Stage width={layout.stageW} height={layout.stageH}>
-          <Layer listening={false}>
-            <Rect
-              x={layout.bx}
-              y={layout.by}
-              width={layout.boardW}
-              height={layout.boardH}
-              stroke="#4d6bff"
-              strokeWidth={2}
-              cornerRadius={4}
-            />
-            {image && showGuide && (
-              <KImage
-                image={image}
-                x={layout.bx}
-                y={layout.by}
-                width={layout.boardW}
-                height={layout.boardH}
-                opacity={0.18}
-              />
-            )}
-          </Layer>
           <Layer>
-            {layout.pieces.map((piece) => (
-              <KImage
-                key={piece.id}
-                image={piece.canvas}
-                x={piece.startX}
-                y={piece.startY}
-                offsetX={piece.offsetX}
-                offsetY={piece.offsetY}
-                name={`piece-${piece.id}`}
-                solvedX={piece.solvedX}
-                solvedY={piece.solvedY}
+            {groupList.map((g) => (
+              <Group
+                key={g.id}
+                x={g.x}
+                y={g.y}
                 draggable
-                onDragStart={(e) => e.target.moveToTop()}
-                onDragEnd={(e) => handleDragEnd(piece, e.target, layout.snapDist)}
+                onDragStart={(e) => e.currentTarget.moveToTop()}
+                onDragEnd={(e) => handleGroupDragEnd(g.id, e.currentTarget)}
                 onMouseEnter={(e) => {
                   const stage = e.target.getStage();
                   if (stage) stage.container().style.cursor = "grab";
@@ -262,7 +243,21 @@ export default function PuzzleBoard({ puzzle, showGuide, onProgress, onSolved }:
                   const stage = e.target.getStage();
                   if (stage) stage.container().style.cursor = "default";
                 }}
-              />
+              >
+                {g.members.map((pid) => {
+                  const info = layout.pieces.get(pid)!;
+                  return (
+                    <KImage
+                      key={pid}
+                      image={info.canvas}
+                      x={info.solvedX}
+                      y={info.solvedY}
+                      offsetX={info.offsetX}
+                      offsetY={info.offsetY}
+                    />
+                  );
+                })}
+              </Group>
             ))}
           </Layer>
         </Stage>

@@ -5,7 +5,7 @@
 // two boundaries are identical curves traced in opposite directions — a perfect
 // fit.
 
-import type { Edge, EdgeGrid } from "./edges";
+import type { Edge, EdgeGrid, EdgeJitter } from "./edges";
 
 export interface Point {
   x: number;
@@ -15,30 +15,48 @@ export interface Point {
 /** Fraction of the perpendicular cell dimension that a knob protrudes. */
 const TAB = 0.2;
 
-// Template for one tabbed edge, expressed as (t, p) pairs where t runs 0→1 along
-// the edge and p is the perpendicular offset in knob-height units. The list
-// contains the 12 bezier points AFTER the start point (4 cubic segments).
-const TAB_TEMPLATE: ReadonlyArray<readonly [number, number]> = [
-  [0.12, 0.0],
-  [0.23, 0.0],
-  [0.35, 0.0],
-  [0.35, 0.55],
-  [0.32, 1.0],
-  [0.5, 1.0],
-  [0.68, 1.0],
-  [0.65, 0.55],
-  [0.65, 0.0],
-  [0.77, 0.0],
-  [0.88, 0.0],
-  [1.0, 0.0],
-];
-
 // Template for a flat edge: a single straight cubic (3 points after the start).
 const FLAT_TEMPLATE: ReadonlyArray<readonly [number, number]> = [
   [0.3333, 0],
   [0.6667, 0],
   [1.0, 0],
 ];
+
+/**
+ * Build a tabbed-edge template procedurally from the edge's jitter, as (t, p)
+ * pairs where t runs 0→1 along the edge and p is the perpendicular offset in
+ * knob-height units. Returns the 12 bezier points AFTER the start point (4 cubic
+ * segments): left shoulder, up the (undercut) left flank to the apex, down the
+ * right flank, right shoulder. Every edge produces a distinct, asymmetric knob;
+ * because a shared edge stores one jitter, both neighbours build the identical
+ * curve, so the pieces still fit perfectly.
+ */
+function tabTemplate(j: EdgeJitter): ReadonlyArray<readonly [number, number]> {
+  const pos = 0.5 + j.pos; // knob centre along the edge
+  const w = j.width; // knob half-width
+  const sL = pos - w - j.neckL; // left neck base
+  const sR = pos + w + j.neckR; // right neck base
+  const apex = pos + j.skew * w; // apex leans to one side
+
+  return [
+    // left shoulder (slightly wavy) up to the left neck base
+    [sL * 0.4, j.waveL1],
+    [sL * 0.78, j.waveL2],
+    [sL, 0],
+    // up the left flank to the apex, control pulled inward for an undercut neck
+    [sL + j.neckL * 0.6, j.legL],
+    [apex - w * 0.7, 1],
+    [apex, 1],
+    // down the right flank to the right neck base
+    [apex + w * 0.7, 1],
+    [sR - j.neckR * 0.6, j.legR],
+    [sR, 0],
+    // right shoulder (slightly wavy) to the far corner
+    [sR + (1 - sR) * 0.22, j.waveR1],
+    [sR + (1 - sR) * 0.6, j.waveR2],
+    [1, 0],
+  ];
+}
 
 /**
  * Produce the full point list (including the start corner) for one edge, going
@@ -48,20 +66,12 @@ const FLAT_TEMPLATE: ReadonlyArray<readonly [number, number]> = [
 function edgePoints(edge: Edge, a: Point, b: Point, perp: Point): Point[] {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const template = edge.kind === "flat" ? FLAT_TEMPLATE : TAB_TEMPLATE;
-
-  let center = 0;
-  let height = 1;
-  if (edge.kind === "tab") {
-    center = edge.jitter.center;
-    height = edge.jitter.height;
-  }
+  const template = edge.kind === "flat" ? FLAT_TEMPLATE : tabTemplate(edge.jitter);
+  const hScale = edge.kind === "tab" ? edge.jitter.height : 1;
 
   const pts: Point[] = [{ x: a.x, y: a.y }];
-  for (const [t0, p0] of template) {
-    // Apply jitter only to points that belong to the knob region.
-    const t = p0 !== 0 || (t0 > 0.3 && t0 < 0.7) ? t0 + center : t0;
-    const p = p0 * height;
+  for (const [t, p0] of template) {
+    const p = p0 * hScale;
     pts.push({
       x: a.x + t * dx + p * perp.x,
       y: a.y + t * dy + p * perp.y,

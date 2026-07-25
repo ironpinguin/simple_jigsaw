@@ -16,16 +16,15 @@ export default function PuzzleSolver({
   puzzle: PuzzleData;
   title: string;
 }) {
-  const [placed, setPlaced] = useState(0);
-  const [total, setTotal] = useState(puzzle.cols * puzzle.rows);
+  const total = puzzle.cols * puzzle.rows;
+  const [groups, setGroups] = useState(total);
   const [solved, setSolved] = useState(false);
-  const [showGuide, setShowGuide] = useState(true);
+  const [showRef, setShowRef] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const onProgress = useCallback((p: number, t: number) => {
-    setPlaced(p);
-    setTotal(t);
-    if (p < t) setSolved(false);
+  const onProgress = useCallback((g: number) => {
+    setGroups(g);
+    setSolved(g === 1);
   }, []);
 
   const onSolved = useCallback(() => setSolved(true), []);
@@ -40,20 +39,22 @@ export default function PuzzleSolver({
     }
   }
 
+  const connected = total - groups; // connections made; total-1 when solved
+
   return (
     <div>
       <div className="solve-toolbar">
         <h1 style={{ margin: 0, fontSize: 22 }}>{title}</h1>
         <span className="progress">
-          {placed} / {total} Teilen
+          {connected} / {total - 1} verbunden
         </span>
         {solved && <span className="solved-banner">🎉 Gelöst!</span>}
         <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
           <input
             type="checkbox"
-            checked={showGuide}
+            checked={showRef}
             style={{ width: "auto" }}
-            onChange={(e) => setShowGuide(e.target.checked)}
+            onChange={(e) => setShowRef(e.target.checked)}
           />
           Vorlage zeigen
         </label>
@@ -62,12 +63,22 @@ export default function PuzzleSolver({
         </button>
       </div>
 
-      <PuzzleBoard
-        puzzle={puzzle}
-        showGuide={showGuide}
-        onProgress={onProgress}
-        onSolved={onSolved}
-      />
+      <p className="muted" style={{ marginTop: -4 }}>
+        Ziehe zusammengehörige Teile aneinander — sie rasten ein und lassen sich als
+        Gruppe weiterbewegen. Gelöst, wenn alle Teile verbunden sind.
+      </p>
+
+      <div style={{ position: "relative" }}>
+        {showRef && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={`/api/image/${puzzle.imageKey}`}
+            alt="Vorlage"
+            className="reference-thumb"
+          />
+        )}
+        <PuzzleBoard puzzle={puzzle} onProgress={onProgress} onSolved={onSolved} />
+      </div>
     </div>
   );
 }

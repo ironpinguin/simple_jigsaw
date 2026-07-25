@@ -245,5 +245,18 @@ select:focus {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  overflow: hidden;
+  overflow: auto;
+}
+
+.reference-thumb {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 160px;
+  max-width: 40%;
+  border-radius: 8px;
+  border: 2px solid var(--accent);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  z-index: 5;
+  pointer-events: none;
 }

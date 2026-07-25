@@ -5,12 +5,32 @@
 
 import { mulberry32, uniform, type Rng } from "./prng";
 
-/** Small per-edge randomisation so the knobs look organic, not stamped. */
+/**
+ * Per-edge randomisation. Every field varies independently so no two knobs look
+ * alike: the knob slides along the edge, changes width/height, leans to one side
+ * (skew), has unequal neck undercuts and unequal bulbous sides, and the two
+ * shoulders wave slightly instead of being dead straight.
+ */
 export interface EdgeJitter {
-  /** Horizontal shift of the knob centre along the edge, roughly [-0.04, 0.04]. */
-  center: number;
-  /** Knob height scale factor, roughly [0.9, 1.1]. */
+  /** Shift of the knob centre along the edge. */
+  pos: number;
+  /** Half-width of the knob base along the edge. */
+  width: number;
+  /** Knob height scale factor. */
   height: number;
+  /** Sideways lean of the knob apex (fraction of width). */
+  skew: number;
+  /** Left/right neck undercut widths. */
+  neckL: number;
+  neckR: number;
+  /** Left/right side "bulbousness" (control-point pull). */
+  legL: number;
+  legR: number;
+  /** Small perpendicular waviness on the two shoulders. */
+  waveL1: number;
+  waveL2: number;
+  waveR1: number;
+  waveR2: number;
 }
 
 export type Edge =
@@ -39,8 +59,18 @@ function makeInteriorEdge(rng: Rng): Edge {
     kind: "tab",
     sign: rng() < 0.5 ? -1 : 1,
     jitter: {
-      center: uniform(rng, -0.04, 0.04),
-      height: uniform(rng, 0.9, 1.1),
+      pos: uniform(rng, -0.06, 0.06),
+      width: uniform(rng, 0.11, 0.17),
+      height: uniform(rng, 0.8, 1.2),
+      skew: uniform(rng, -0.35, 0.35),
+      neckL: uniform(rng, 0.02, 0.06),
+      neckR: uniform(rng, 0.02, 0.06),
+      legL: uniform(rng, 0.42, 0.78),
+      legR: uniform(rng, 0.42, 0.78),
+      waveL1: uniform(rng, -0.04, 0.04),
+      waveL2: uniform(rng, -0.04, 0.04),
+      waveR1: uniform(rng, -0.04, 0.04),
+      waveR2: uniform(rng, -0.04, 0.04),
     },
   };
 }
