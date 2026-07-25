@@ -1,8 +1,8 @@
 // Prisma schema for the jigsaw puzzle app.
 //
-// Dev uses SQLite (no external services required). For production, switch the
-// datasource provider to "postgresql" and point DATABASE_URL at your Postgres
-// instance, then run `prisma migrate deploy`.
+// PostgreSQL everywhere (dev and prod run via docker-compose). The container
+// entrypoint runs `prisma db push` on start to sync this schema; DATABASE_URL
+// is provided by compose (service `postgres`).
 
 generator client {
   provider = "prisma-client-js"
@@ -10,7 +10,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

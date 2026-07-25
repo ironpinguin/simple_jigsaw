@@ -9,10 +9,12 @@ Konto.
 
 - **Next.js (App Router) + TypeScript** — UI und API in einem Codebase
 - **React + Konva.js** — Rendering der Puzzleteile, Drag & Drop, Einrasten
-- **Prisma** — Datenzugriff (SQLite in Dev, PostgreSQL in Prod)
+- **Prisma + PostgreSQL** — Datenzugriff
 - **Auth.js (NextAuth v5)** — E-Mail/Passwort-Login (JWT-Sessions)
 - **sharp** — serverseitige Bildverarbeitung
-- **Speicher** — lokales Dateisystem (Dev) oder S3/MinIO (Prod)
+- **MinIO / S3** — Bildspeicher
+
+Alles läuft containerisiert über docker-compose (Dev und Prod).
 
 Das Puzzle-Kernmodul liegt in `lib/puzzle/` und ist rein & getestet:
 
@@ -20,35 +22,42 @@ Das Puzzle-Kernmodul liegt in `lib/puzzle/` und ist rein & getestet:
 - `edges.ts` — geteilte Kanten (garantierte Passung Nase ↔ Bucht), seed-basiert
 - `outline.ts` — SVG-Pfade der Teile
 
-## Schnellstart (ohne Docker)
+## Entwicklung (Docker, Hot-Reload)
 
-Läuft komplett ohne externe Dienste (SQLite + Dateisystem):
+`docker compose up` startet App + PostgreSQL + MinIO. Die
+`docker-compose.override.yml` wird automatisch dazugemischt: die App läuft im
+Dev-Modus (`next dev`) mit gemountetem Quellcode, Änderungen sind sofort live.
+Beim Start wird das Prisma-Schema per `prisma db push` synchronisiert.
 
 ```bash
-npm install
-cp .env.example .env          # Standardwerte funktionieren für Dev
-npx prisma db push            # legt prisma/dev.db an
-npm run dev                   # http://localhost:3000
+docker compose up --build     # http://localhost:3000
 ```
 
-`AUTH_SECRET` in `.env` für echten Betrieb neu erzeugen:
-`npx auth secret` oder `openssl rand -base64 32`.
+Ports: App `3000`, PostgreSQL `5432`, MinIO API `9000`, MinIO-Konsole `9001`
+(minioadmin / minioadmin).
+
+Host-Tooling (z. B. `npx prisma studio`) gegen die Container:
+`cp .env.example .env` — die Werte zeigen auf `localhost`.
+
+## Deployment (Docker, Produktions-Build)
+
+Nur die Basis-Compose ohne die Dev-Overrides verwenden — die App läuft dann als
+optimiertes Produktions-Image (`next start`):
+
+```bash
+export AUTH_SECRET=$(openssl rand -base64 32)   # echtes Secret setzen!
+docker compose -f docker-compose.yml up -d --build
+```
+
+Für echten Betrieb außerdem die MinIO-Zugangsdaten (`S3_ACCESS_KEY_ID`,
+`S3_SECRET_ACCESS_KEY`) und ggf. das Postgres-Passwort setzen.
 
 ## Tests
 
 ```bash
-npm test        # Vitest: Raster, Kanten-Passung, Outlines
+npm install
+npm test        # Vitest: Raster, Kanten-Passung, Outlines, Gruppenlogik
 ```
-
-## Produktionsstack (PostgreSQL + MinIO)
-
-1. `docker compose up -d` (Postgres + MinIO)
-2. In `.env`:
-   - `DATABASE_URL="postgresql://jigsaw:jigsaw@localhost:5432/jigsaw?schema=public"`
-   - `STORAGE_DRIVER="s3"`
-3. In `prisma/schema.prisma` den `provider` auf `postgresql` setzen.
-4. `npx prisma migrate deploy` (bzw. `migrate dev` beim ersten Mal)
-5. `npm run build && npm start`
 
 ## Nicht in v1 (bewusst später)
 
