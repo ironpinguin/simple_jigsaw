@@ -1,0 +1,73 @@
+import { NextResponse } from "next/server";
+import { randomInt } from "crypto";
+import { z } from "zod";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
+
+const CreateSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  imageKey: z.string().min(1),
+  imageWidth: z.number().int().positive(),
+  imageHeight: z.number().int().positive(),
+  pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n), {
+    message: "Ungültige Teile-Anzahl.",
+  }),
+});
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  }
+
+  const puzzles = await prisma.puzzle.findMany({
+    where: { ownerId: session.user.id },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      title: true,
+      imageKey: true,
+      pieceCount: true,
+      isPublic: true,
+      createdAt: true,
+    },
+  });
+
+  return NextResponse.json({ puzzles });
+}
+
+export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  }
+
+  const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message ?? "Ungültige Eingabe.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  const { title, imageKey, imageWidth, imageHeight, pieceCount } = parsed.data;
+  const { cols, rows } = computeGrid(pieceCount, imageWidth / imageHeight);
+  const seed = randomInt(0, 2 ** 31 - 1);
+
+  const puzzle = await prisma.puzzle.create({
+    data: {
+      title,
+      imageKey,
+      imageWidth,
+      imageHeight,
+      pieceCount,
+      cols,
+      rows,
+      seed,
+      isPublic: true,
+      ownerId: session.user.id,
+    },
+    select: { id: true },
+  });
+
+  return NextResponse.json({ id: puzzle.id }, { status: 201 });
+}

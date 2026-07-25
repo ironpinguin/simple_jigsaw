@@ -1,0 +1,44 @@
+// Prisma schema for the jigsaw puzzle app.
+//
+// Dev uses SQLite (no external services required). For production, switch the
+// datasource provider to "postgresql" and point DATABASE_URL at your Postgres
+// instance, then run `prisma migrate deploy`.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  puzzles Puzzle[]
+}
+
+model Puzzle {
+  id          String   @id @default(cuid())
+  title       String
+  imageKey    String
+  imageWidth  Int
+  imageHeight Int
+  pieceCount  Int
+  cols        Int
+  rows        Int
+  seed        Int
+  isPublic    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}

@@ -1,0 +1,54 @@
+import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
+import sharp from "sharp";
+import { auth } from "@/lib/auth";
+import { putObject } from "@/lib/storage";
+
+const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_BYTES = 15 * 1024 * 1024; // 15 MB upload cap
+const MAX_EDGE = 2000; // downscale longest edge to keep solving smooth
+
+export async function POST(request: Request) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+  }
+
+  const form = await request.formData();
+  const file = form.get("file");
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "Keine Datei übermittelt." }, { status: 400 });
+  }
+  if (!ALLOWED.has(file.type)) {
+    return NextResponse.json(
+      { error: "Nur JPG, PNG oder WebP werden unterstützt." },
+      { status: 400 },
+    );
+  }
+  if (file.size > MAX_BYTES) {
+    return NextResponse.json({ error: "Bild ist zu groß (max. 15 MB)." }, { status: 400 });
+  }
+
+  const input = Buffer.from(await file.arrayBuffer());
+
+  let output: Buffer;
+  let width: number;
+  let height: number;
+  try {
+    const result = await sharp(input)
+      .rotate() // honour EXIF orientation
+      .resize(MAX_EDGE, MAX_EDGE, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer({ resolveWithObject: true });
+    output = result.data;
+    width = result.info.width;
+    height = result.info.height;
+  } catch {
+    return NextResponse.json({ error: "Bild konnte nicht verarbeitet werden." }, { status: 400 });
+  }
+
+  const imageKey = `puzzles/${randomUUID()}.webp`;
+  await putObject(imageKey, output, "image/webp");
+
+  return NextResponse.json({ imageKey, width, height }, { status: 201 });
+}

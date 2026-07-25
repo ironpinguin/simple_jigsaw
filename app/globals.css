@@ -1,0 +1,249 @@
+:root {
+  --bg: #0f1220;
+  --surface: #1a1e33;
+  --surface-2: #232843;
+  --border: #313864;
+  --text: #e8eaf6;
+  --muted: #a2a8cc;
+  --accent: #6c8cff;
+  --accent-strong: #4d6bff;
+  --danger: #ff6b6b;
+  --success: #43d19e;
+  --radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: radial-gradient(1200px 600px at 20% -10%, #1c2350 0, transparent),
+    var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(15, 18, 32, 0.7);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.brand:hover {
+  text-decoration: none;
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.nav-cta,
+.button {
+  background: var(--accent-strong);
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-block;
+}
+.nav-cta:hover,
+.button:hover {
+  background: var(--accent);
+  text-decoration: none;
+}
+.button.secondary {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.button.danger {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.site-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.hero {
+  text-align: center;
+  padding: 48px 0 32px;
+}
+.hero h1 {
+  font-size: 42px;
+  margin: 0 0 12px;
+  line-height: 1.1;
+}
+.hero p {
+  color: var(--muted);
+  font-size: 18px;
+  max-width: 620px;
+  margin: 0 auto 24px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.form {
+  max-width: 400px;
+  margin: 32px auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.form h1 {
+  margin: 0 0 8px;
+}
+label {
+  display: block;
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="file"],
+select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+}
+input:focus,
+select:focus {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.error {
+  color: var(--danger);
+  font-size: 14px;
+}
+.muted {
+  color: var(--muted);
+}
+
+.grid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+.puzzle-card img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.puzzle-card h3 {
+  margin: 10px 0 4px;
+  font-size: 16px;
+}
+.card-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  align-items: center;
+}
+
+.preset-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.preset {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 600;
+}
+.preset.active {
+  border-color: var(--accent);
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+.solve-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.progress {
+  font-weight: 600;
+}
+.solved-banner {
+  background: var(--success);
+  color: #06231a;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 8px;
+}
+.board-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
