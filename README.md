@@ -12,7 +12,7 @@ Konto.
 - **Prisma + PostgreSQL** — Datenzugriff
 - **Auth.js (NextAuth v5)** — E-Mail/Passwort-Login (JWT-Sessions)
 - **sharp** — serverseitige Bildverarbeitung
-- **MinIO / S3** — Bildspeicher
+- **RustFS / S3** — S3-kompatibler Bildspeicher
 
 Alles läuft containerisiert über docker-compose (Dev und Prod).
 
@@ -24,7 +24,7 @@ Das Puzzle-Kernmodul liegt in `lib/puzzle/` und ist rein & getestet:
 
 ## Entwicklung (Docker, Hot-Reload)
 
-`docker compose up` startet App + PostgreSQL + MinIO. Die
+`docker compose up` startet App + PostgreSQL + RustFS. Die
 `docker-compose.override.yml` wird automatisch dazugemischt: die App läuft im
 Dev-Modus (`next dev`) mit gemountetem Quellcode, Änderungen sind sofort live.
 Beim Start wird das Prisma-Schema per `prisma db push` synchronisiert.
@@ -33,8 +33,8 @@ Beim Start wird das Prisma-Schema per `prisma db push` synchronisiert.
 docker compose up --build     # http://localhost:3000
 ```
 
-Ports: App `3000`, PostgreSQL `5432`, MinIO API `9000`, MinIO-Konsole `9001`
-(minioadmin / minioadmin).
+Ports: App `3000`, PostgreSQL `5432`, RustFS S3-API `9000`, RustFS-Konsole `9001`
+(rustfsadmin / rustfsadmin).
 
 Host-Tooling (z. B. `npx prisma studio`) gegen die Container:
 `cp .env.example .env` — die Werte zeigen auf `localhost`.
@@ -49,7 +49,7 @@ export AUTH_SECRET=$(openssl rand -base64 32)   # echtes Secret setzen!
 docker compose -f docker-compose.yml up -d --build
 ```
 
-Für echten Betrieb außerdem die MinIO-Zugangsdaten (`S3_ACCESS_KEY_ID`,
+Für echten Betrieb außerdem die RustFS-Zugangsdaten (`S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`) und ggf. das Postgres-Passwort setzen.
 
 ## Tests

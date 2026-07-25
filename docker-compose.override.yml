@@ -1,8 +1,8 @@
 # Development overrides — merged automatically by `docker compose up`.
 #
 # Runs the app with the `dev` image target (hot-reloading `next dev`), bind-mounts
-# the source for live edits, and publishes the Postgres/MinIO ports so host tools
-# (psql, the MinIO console) can reach them.
+# the source for live edits, and publishes the Postgres/RustFS ports so host tools
+# (psql, the RustFS console) can reach them.
 #
 #   docker compose up            # dev (this file is applied on top of the base)
 #   docker compose up --build    # rebuild images first
@@ -26,7 +26,7 @@ services:
     ports:
       - "5432:5432"
 
-  minio:
+  rustfs:
     ports:
       - "9000:9000" # S3 API
       - "9001:9001" # web console

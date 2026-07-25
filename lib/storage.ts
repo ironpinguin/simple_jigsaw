@@ -1,6 +1,6 @@
 // Image storage abstraction with two interchangeable drivers:
 //   - "fs" : local filesystem (dev default, no external services needed)
-//   - "s3" : any S3-compatible object store (MinIO in dev, S3 in prod)
+//   - "s3" : any S3-compatible object store (RustFS in dev, S3 in prod)
 //
 // The rest of the app only ever calls putObject / getObject and never cares
 // which driver is active. Switch drivers with the STORAGE_DRIVER env var.
