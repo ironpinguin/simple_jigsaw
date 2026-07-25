@@ -47,3 +47,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+/**
+ * Resolve the current user from the JWT session AND confirm it still exists in
+ * the database. Sessions are stateless (JWT), so a cookie can outlive its user
+ * (e.g. after the DB was reset). Returns null in that case so protected routes
+ * can respond with 401 instead of failing later on a foreign-key violation.
+ */
+export async function getSessionUser() {
+  const session = await auth();
+  const id = session?.user?.id;
+  if (!id) return null;
+  return prisma.user.findUnique({ where: { id }, select: { id: true, email: true } });
+}

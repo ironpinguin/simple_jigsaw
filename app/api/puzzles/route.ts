@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomInt } from "crypto";
 import { z } from "zod";
-import { auth } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 
@@ -16,13 +16,13 @@ const CreateSchema = z.object({
 });
 
 export async function GET() {
-  const session = await auth();
-  if (!session?.user) {
+  const user = await getSessionUser();
+  if (!user) {
     return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   }
 
   const puzzles = await prisma.puzzle.findMany({
-    where: { ownerId: session.user.id },
+    where: { ownerId: user.id },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -38,8 +38,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
+  const user = await getSessionUser();
+  if (!user) {
     return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   }
 
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       rows,
       seed,
       isPublic: true,
-      ownerId: session.user.id,
+      ownerId: user.id,
     },
     select: { id: true },
   });

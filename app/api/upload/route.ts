@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
-import { auth } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { putObject } from "@/lib/storage";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -9,8 +9,8 @@ const MAX_BYTES = 15 * 1024 * 1024; // 15 MB upload cap
 const MAX_EDGE = 2000; // downscale longest edge to keep solving smooth
 
 export async function POST(request: Request) {
-  const session = await auth();
-  if (!session?.user) {
+  const user = await getSessionUser();
+  if (!user) {
     return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
   }
 

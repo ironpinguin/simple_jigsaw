@@ -44,6 +44,7 @@ export default function CreateForm() {
       const fd = new FormData();
       fd.append("file", file);
       const up = await fetch("/api/upload", { method: "POST", body: fd });
+      if (up.status === 401) return router.push("/login?callbackUrl=/create");
       const upData = await up.json();
       if (!up.ok) throw new Error(upData.error || "Upload fehlgeschlagen.");
 
@@ -59,6 +60,7 @@ export default function CreateForm() {
           pieceCount,
         }),
       });
+      if (res.status === 401) return router.push("/login?callbackUrl=/create");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Puzzle konnte nicht erstellt werden.");
 
