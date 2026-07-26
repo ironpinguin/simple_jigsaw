@@ -1,0 +1,52 @@
+# Minimal, Postgres-free stack — SQLite + local filesystem image storage.
+# A small install that only needs the app and a mail catcher:
+#
+#   docker compose -f docker-compose.sqlite.yml up -d --build
+#
+# The database is a single SQLite file and uploaded images are stored on disk,
+# both persisted in the `sqlitedata` volume. For a real deployment set a strong
+# AUTH_SECRET and point SMTP_* at a real mail server (then mailpit can be dropped).
+
+services:
+  app:
+    build:
+      context: .
+      target: runner
+      args:
+        # Bake the SQLite Prisma client into the image.
+        DATABASE_PROVIDER: sqlite
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_PROVIDER: sqlite
+      DATABASE_URL: file:/data/app.db
+      AUTH_SECRET: ${AUTH_SECRET:-dev-insecure-secret-change-me-in-production-000000}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+      # Local filesystem image storage (no object store needed).
+      STORAGE_DRIVER: fs
+      STORAGE_FS_DIR: /data/storage
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Jigsaw <no-reply@jigsaw.local>}
+    volumes:
+      - sqlitedata:/data
+    depends_on:
+      mailpit:
+        condition: service_started
+
+  # Dev mail catcher (UI on http://localhost:8025). Drop this and use a real
+  # SMTP server in production.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "8025:8025" # web UI
+
+volumes:
+  sqlitedata:

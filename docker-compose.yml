@@ -22,6 +22,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      DATABASE_PROVIDER: postgresql
       DATABASE_URL: postgresql://jigsaw:jigsaw@postgres:5432/jigsaw?schema=public
       AUTH_SECRET: ${AUTH_SECRET:-dev-insecure-secret-change-me-in-production-000000}
       STORAGE_DRIVER: s3

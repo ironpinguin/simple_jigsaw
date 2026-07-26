@@ -52,6 +52,25 @@ docker compose -f docker-compose.yml up -d --build
 Für echten Betrieb außerdem die RustFS-Zugangsdaten (`S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`) und ggf. das Postgres-Passwort setzen.
 
+## Minimal ohne Postgres (SQLite)
+
+Die Datenbank ist zwischen **PostgreSQL** (Standard) und **SQLite** umschaltbar
+über `DATABASE_PROVIDER`. Für eine kleine Installation ohne Postgres gibt es ein
+eigenes, self-contained Compose:
+
+```bash
+docker compose -f docker-compose.sqlite.yml up -d --build   # http://localhost:3000
+```
+
+Das startet nur **app + mailpit**: die Daten liegen in einer **SQLite-Datei** und
+die Bilder im **lokalen Dateisystem** (beides im Volume `sqlitedata`) — kein
+Postgres, kein RustFS.
+
+Hintergrund: `prisma/schema.prisma` ist die einzige Quelle; `scripts/prisma.mjs`
+leitet für einen anderen Provider nur die `datasource`-Zeile ab. Da Prisma-Enums
+auf SQLite nicht unterstützt werden, sind Rollen-/Typ-Spalten Strings (validiert
+im Code, siehe `lib/roles.ts`).
+
 ## Konten, Rollen & Admin
 
 - **Registrierung mit E-Mail-Bestätigung**: Nach der Registrierung wird eine

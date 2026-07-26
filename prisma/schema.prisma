@@ -1,8 +1,10 @@
 // Prisma schema for the jigsaw puzzle app.
 //
-// PostgreSQL everywhere (dev and prod run via docker-compose). The container
-// entrypoint runs `prisma db push` on start to sync this schema; DATABASE_URL
-// is provided by compose (service `postgres`).
+// The datasource provider is switchable between "postgresql" (default) and
+// "sqlite" via the DATABASE_PROVIDER env var — the container derives the active
+// schema through scripts/prisma.mjs so the same models run on both. Because
+// Prisma enums are not supported on SQLite, role/type columns are plain strings
+// validated in application code (see lib/roles.ts).
 
 generator client {
   provider = "prisma-client-js"
@@ -14,42 +16,29 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
-  ADMIN
-}
-
-enum TokenType {
-  EMAIL_VERIFY
-  INVITE
-}
-
-enum BanType {
-  EMAIL
-  DOMAIN
-}
-
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   name         String?
   // Null while an invited user has not set a password yet.
   passwordHash String?
-  role         Role      @default(USER)
+  // "USER" | "ADMIN" (see lib/roles.ts)
+  role         String  @default("USER")
   // Null until the user confirms their email (or an admin creates them verified).
   emailVerified DateTime?
-  createdAt    DateTime  @default(now())
+  createdAt    DateTime @default(now())
 
   puzzles Puzzle[]
   tokens  VerificationToken[]
 }
 
 model VerificationToken {
-  id        String    @id @default(cuid())
-  token     String    @unique
-  type      TokenType
+  id        String   @id @default(cuid())
+  token     String   @unique
+  // "EMAIL_VERIFY" | "INVITE"
+  type      String
   expiresAt DateTime
-  createdAt DateTime  @default(now())
+  createdAt DateTime @default(now())
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -58,11 +47,12 @@ model VerificationToken {
 }
 
 model BannedEmail {
+  id        String   @id @default(cuid())
   // `value` is stored lowercased: the full address for EMAIL, the domain for DOMAIN.
   value     String   @unique
-  type      BanType
+  // "EMAIL" | "DOMAIN"
+  type      String
   createdAt DateTime @default(now())
-  id        String   @id @default(cuid())
 }
 
 model Puzzle {
