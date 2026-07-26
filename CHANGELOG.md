@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Solve view: **zoom & pan** (mouse wheel, on-screen +/−/reset buttons, and
+  pinch-to-zoom on touch; drag empty space to pan) and a **per-solver piece-count
+  selector** (12/48/108/300, defaulting to the creator's value and remembered per
+  puzzle) — making puzzles comfortable to solve on tablets. Removes the previous
+  horizontal scrollbar (pan replaces scrolling).
+
 ## [0.2.0] - 2026-07-26
 
 ### Changed

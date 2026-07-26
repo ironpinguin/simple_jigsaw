@@ -25,8 +25,7 @@ export default async function PuzzlePage({
     imageKey: puzzle.imageKey,
     imageWidth: puzzle.imageWidth,
     imageHeight: puzzle.imageHeight,
-    cols: puzzle.cols,
-    rows: puzzle.rows,
+    pieceCount: puzzle.pieceCount,
     seed: puzzle.seed,
   };
 

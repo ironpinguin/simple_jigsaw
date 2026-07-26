@@ -13,8 +13,8 @@ export interface PuzzleData {
   imageKey: string;
   imageWidth: number;
   imageHeight: number;
-  cols: number;
-  rows: number;
+  /** The creator's default piece count (the solver may pick another). */
+  pieceCount: number;
   seed: number;
 }
 
@@ -61,8 +61,10 @@ function buildLayout(
   puzzle: PuzzleData,
   image: HTMLImageElement,
   containerW: number,
+  cols: number,
+  rows: number,
 ): Layout {
-  const { cols, rows, seed } = puzzle;
+  const { seed } = puzzle;
   const aspect = puzzle.imageWidth / puzzle.imageHeight;
 
   const stageW = Math.max(360, containerW);
@@ -194,12 +196,15 @@ function buildLayout(
 
 interface Props {
   puzzle: PuzzleData;
+  cols: number;
+  rows: number;
   onProgress: (groups: number, total: number) => void;
   onSolved: () => void;
 }
 
-export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
+export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<Konva.Stage>(null);
   const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
@@ -210,7 +215,7 @@ export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
   const [, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
-  const total = puzzle.cols * puzzle.rows;
+  const total = cols * rows;
 
   useEffect(() => {
     if (!wrapRef.current || containerW > 0) return;
@@ -231,8 +236,8 @@ export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
 
   const layout = useMemo(() => {
     if (!image || containerW === 0) return null;
-    return buildLayout(puzzle, image, containerW);
-  }, [image, containerW, puzzle]);
+    return buildLayout(puzzle, image, containerW, cols, rows);
+  }, [image, containerW, puzzle, cols, rows]);
 
   // Seed the group model whenever the layout is (re)built.
   useEffect(() => {
@@ -258,20 +263,118 @@ export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
     start.x = node.x();
     start.y = node.y();
 
-    resolveConnections(groups, p2g, groupId, puzzle.rows, puzzle.cols, layout!.snapDist);
+    resolveConnections(groups, p2g, groupId, rows, cols, layout!.snapDist);
 
     bump();
     onProgress(groups.size, total);
     if (groups.size === 1) onSolved();
   }
 
+  // --- Zoom & pan -----------------------------------------------------------
+  const MIN_SCALE = 0.35;
+  const MAX_SCALE = 3;
+
+  const zoomAround = useCallback((nextScale: number, center: { x: number; y: number }) => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const old = stage.scaleX();
+    const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+    // Keep the point under `center` fixed while scaling.
+    const anchor = { x: (center.x - stage.x()) / old, y: (center.y - stage.y()) / old };
+    stage.scale({ x: s, y: s });
+    stage.position({ x: center.x - anchor.x * s, y: center.y - anchor.y * s });
+    stage.batchDraw();
+  }, []);
+
+  const handleWheel = useCallback(
+    (e: Konva.KonvaEventObject<WheelEvent>) => {
+      e.evt.preventDefault();
+      const stage = stageRef.current;
+      const pointer = stage?.getPointerPosition();
+      if (!stage || !pointer) return;
+      const factor = e.evt.deltaY > 0 ? 1 / 1.12 : 1.12;
+      zoomAround(stage.scaleX() * factor, pointer);
+    },
+    [zoomAround],
+  );
+
+  const zoomButton = useCallback(
+    (factor: number) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      zoomAround(stage.scaleX() * factor, { x: stage.width() / 2, y: stage.height() / 2 });
+    },
+    [zoomAround],
+  );
+
+  const resetView = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    stage.scale({ x: 1, y: 1 });
+    stage.position({ x: 0, y: 0 });
+    stage.batchDraw();
+  }, []);
+
+  // Pinch-to-zoom (two fingers). Pauses stage panning while pinching.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !layout) return;
+    const container = stage.container();
+    let lastDist = 0;
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onMove = (e: TouchEvent) => {
+      if (e.touches.length < 2) return;
+      e.preventDefault();
+      stage.draggable(false);
+      const rect = container.getBoundingClientRect();
+      const center = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top,
+      };
+      const d = dist(e.touches);
+      if (lastDist) zoomAround(stage.scaleX() * (d / lastDist), center);
+      lastDist = d;
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        lastDist = 0;
+        stage.draggable(true);
+      }
+    };
+    container.addEventListener("touchmove", onMove, { passive: false });
+    container.addEventListener("touchend", onEnd);
+    return () => {
+      container.removeEventListener("touchmove", onMove);
+      container.removeEventListener("touchend", onEnd);
+    };
+  }, [zoomAround, layout]);
+
   const groupList = Array.from(groupsRef.current.values());
 
   return (
-    <div ref={wrapRef} className="board-wrap" style={{ width: "100%" }}>
+    <div ref={wrapRef} className="board-wrap" style={{ width: "100%", position: "relative" }}>
       {layout && (
-        <Stage width={layout.stageW} height={layout.stageH}>
-          <Layer>
+        <>
+          <div className="zoom-controls">
+            <button type="button" aria-label="Vergrößern" onClick={() => zoomButton(1.25)}>
+              +
+            </button>
+            <button type="button" aria-label="Verkleinern" onClick={() => zoomButton(1 / 1.25)}>
+              −
+            </button>
+            <button type="button" aria-label="Ansicht zurücksetzen" onClick={resetView}>
+              ⟲
+            </button>
+          </div>
+          <Stage
+            ref={stageRef}
+            width={layout.stageW}
+            height={layout.stageH}
+            draggable
+            onWheel={handleWheel}
+          >
+            <Layer>
             {groupList.map((g) => (
               <Group
                 key={g.id}
@@ -290,7 +393,11 @@ export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
                 }}
               >
                 {g.members.map((pid) => {
-                  const info = layout.pieces.get(pid)!;
+                  // The group model is reseeded in an effect after `layout`
+                  // rebuilds (e.g. on a piece-count change); skip stale ids for
+                  // the one render in between.
+                  const info = layout.pieces.get(pid);
+                  if (!info) return null;
                   return (
                     <KImage
                       key={pid}
@@ -309,8 +416,9 @@ export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
                 })}
               </Group>
             ))}
-          </Layer>
-        </Stage>
+            </Layer>
+          </Stage>
+        </>
       )}
     </div>
   );
