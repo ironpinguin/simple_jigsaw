@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges } from "@/lib/puzzle/edges";
-import { pieceOutlinePath } from "@/lib/puzzle/outline";
+import { pieceOutlinePath, pieceOutlinePoints } from "@/lib/puzzle/outline";
 import { mulberry32 } from "@/lib/puzzle/prng";
 import { resolveConnections, type PieceGroup } from "@/lib/puzzle/groups";
 
@@ -95,25 +95,66 @@ function buildLayout(
   const initialGroups: PieceGroup[] = [];
   let gid = 1;
 
+  const PAD = 7; // room for the bevel/inner-shadow around the outline
+
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const id = `${r}-${c}`;
+
+      // Outline in local coords (origin = regular cell corner). With vertex
+      // jitter and tabs on any side the extent varies per piece, so size the
+      // canvas to the actual bounding box.
+      const pts = pieceOutlinePoints(grid, r, c, pieceW, pieceH);
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of pts) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+      const ox = -minX + PAD; // local (0,0) position inside the canvas
+      const oy = -minY + PAD;
+
       const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(boxW);
-      canvas.height = Math.ceil(boxH);
+      canvas.width = Math.ceil(maxX - minX + 2 * PAD);
+      canvas.height = Math.ceil(maxY - minY + 2 * PAD);
       const ctx = canvas.getContext("2d")!;
       const path = new Path2D(pieceOutlinePath(grid, r, c, pieceW, pieceH));
 
+      ctx.translate(ox, oy);
+
+      // Clip to the piece and paint the corresponding region of the board.
       ctx.save();
-      ctx.translate(tabV, tabH);
       ctx.clip(path);
       ctx.drawImage(image, -c * pieceW, -r * pieceH, boardW, boardH);
-      ctx.restore();
 
-      ctx.save();
-      ctx.translate(tabV, tabH);
+      // Beveled cardboard edge: two directional INNER shadows (still clipped to
+      // the piece) — a soft dark rim toward the bottom-right and a lighter rim
+      // toward the top-left. The thin stroke casts a blurred shadow that only
+      // survives on the inside of the clip, giving a rounded, raised edge.
       ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.55)";
+      ctx.shadowBlur = 7;
+      ctx.shadowOffsetX = 3;
+      ctx.shadowOffsetY = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.stroke(path);
+      ctx.restore();
+      ctx.save();
+      ctx.shadowColor = "rgba(255,255,255,0.8)";
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetX = -3;
+      ctx.shadowOffsetY = -3;
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.stroke(path);
+      ctx.restore();
+      ctx.restore(); // unclip
+
+      // Crisp thin outline on top for a clean cut definition.
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
       ctx.stroke(path);
       ctx.restore();
 
@@ -131,8 +172,8 @@ function buildLayout(
         row: r,
         col: c,
         canvas,
-        offsetX: tabV,
-        offsetY: tabH,
+        offsetX: ox,
+        offsetY: oy,
         solvedX,
         solvedY,
       });
@@ -258,6 +299,11 @@ export default function PuzzleBoard({ puzzle, onProgress, onSolved }: Props) {
                       y={info.solvedY}
                       offsetX={info.offsetX}
                       offsetY={info.offsetY}
+                      shadowColor="#000"
+                      shadowBlur={5}
+                      shadowOpacity={0.35}
+                      shadowOffsetX={2}
+                      shadowOffsetY={3}
                     />
                   );
                 })}

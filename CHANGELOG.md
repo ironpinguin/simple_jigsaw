@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- More natural puzzle pieces: classic interlocking knobs (pinched neck with an
+  undercut), a lightly jittered grid for organic size/shape variation, and a
+  beveled, drop-shadowed 3D edge so pieces look like raised cardboard.
+
 ## [0.1.0] - 2026-07-26
 
 ### Added

@@ -1,83 +1,71 @@
-// Edge generation. Every interior edge in the grid is shared by exactly two
-// neighbouring pieces. By storing ONE edge object per boundary and letting both
-// pieces reference it, complementary fit (one piece's tab is the other's blank)
-// is guaranteed by construction — there is no way for neighbours to disagree.
+// Edge & vertex generation. Every interior edge in the grid is shared by exactly
+// two neighbouring pieces, and every interior grid vertex is shared by up to four
+// pieces. By storing ONE edge object per boundary and ONE offset per vertex and
+// letting neighbours reference them, complementary fit (one piece's tab is the
+// other's blank, and shared corners coincide) is guaranteed by construction.
 
 import { mulberry32, uniform, type Rng } from "./prng";
 
 /**
- * Per-edge randomisation. Every field varies independently so no two knobs look
- * alike: the knob slides along the edge, changes width/height, leans to one side
- * (skew), has unequal neck undercuts and unequal bulbous sides, and the two
- * shoulders wave slightly instead of being dead straight.
+ * Per-edge randomisation for the classic knob: the knob slides along the edge
+ * (`pos`), scales in width (`wN`), leans to one side (`sk`), varies its neck
+ * undercut (`uc`), and its two flanks differ slightly in height (`hL`/`hR`).
  */
 export interface EdgeJitter {
-  /** Shift of the knob centre along the edge. */
   pos: number;
-  /** Half-width of the knob base along the edge. */
-  width: number;
-  /** Knob height scale factor. */
-  height: number;
-  /** Sideways lean of the knob apex (fraction of width). */
-  skew: number;
-  /** Left/right neck undercut widths. */
-  neckL: number;
-  neckR: number;
-  /** Left/right side "bulbousness" (control-point pull). */
-  legL: number;
-  legR: number;
-  /** Small perpendicular waviness on the two shoulders. */
-  waveL1: number;
-  waveL2: number;
-  waveR1: number;
-  waveR2: number;
+  wN: number;
+  sk: number;
+  uc: number;
+  hL: number;
+  hR: number;
 }
 
 export type Edge =
   | { kind: "flat" }
   | { kind: "tab"; sign: 1 | -1; jitter: EdgeJitter };
 
+/** Offset of a grid vertex from its regular position, in fractions of a cell. */
+export interface VertexOffset {
+  dx: number;
+  dy: number;
+}
+
 export interface EdgeGrid {
   cols: number;
   rows: number;
-  /**
-   * Horizontal edges (run left→right). `horiz[r][c]` is the edge between grid
-   * row r-1 and row r for column c. r ranges 0..rows (rows+1 lines); r==0 and
-   * r==rows are the flat outer border.
-   */
+  /** Horizontal edges (run left→right). `horiz[r][c]`, r in 0..rows. */
   horiz: Edge[][];
-  /**
-   * Vertical edges (run top→bottom). `vert[r][c]` is the edge between column
-   * c-1 and column c for row r. c ranges 0..cols (cols+1 lines); c==0 and
-   * c==cols are the flat outer border.
-   */
+  /** Vertical edges (run top→bottom). `vert[r][c]`, c in 0..cols. */
   vert: Edge[][];
+  /**
+   * Grid vertices `vertices[r][c]` for r in 0..rows, c in 0..cols. Interior
+   * vertices are jittered; outer-border vertices stay at {0,0} so the puzzle's
+   * overall outline remains a clean rectangle.
+   */
+  vertices: VertexOffset[][];
 }
+
+/** Light jitter amplitude for interior vertices (fraction of a cell). */
+const VERTEX_JITTER = 0.07;
 
 function makeInteriorEdge(rng: Rng): Edge {
   return {
     kind: "tab",
     sign: rng() < 0.5 ? -1 : 1,
     jitter: {
-      pos: uniform(rng, -0.06, 0.06),
-      width: uniform(rng, 0.11, 0.17),
-      height: uniform(rng, 0.8, 1.2),
-      skew: uniform(rng, -0.35, 0.35),
-      neckL: uniform(rng, 0.02, 0.06),
-      neckR: uniform(rng, 0.02, 0.06),
-      legL: uniform(rng, 0.42, 0.78),
-      legR: uniform(rng, 0.42, 0.78),
-      waveL1: uniform(rng, -0.04, 0.04),
-      waveL2: uniform(rng, -0.04, 0.04),
-      waveR1: uniform(rng, -0.04, 0.04),
-      waveR2: uniform(rng, -0.04, 0.04),
+      pos: uniform(rng, -0.05, 0.05),
+      wN: uniform(rng, 0.9, 1.12),
+      sk: uniform(rng, -1, 1),
+      uc: uniform(rng, 0.8, 1.2),
+      hL: uniform(rng, 0.94, 1.06),
+      hR: uniform(rng, 0.94, 1.06),
     },
   };
 }
 
 /**
- * Build the full edge grid for a cols×rows puzzle. Deterministic in `seed`:
- * the same (cols, rows, seed) always produces identical edges.
+ * Build the full edge + vertex grid for a cols×rows puzzle. Deterministic in
+ * `seed`: the same (cols, rows, seed) always produces identical output.
  */
 export function generateEdges(cols: number, rows: number, seed: number): EdgeGrid {
   if (cols < 1 || rows < 1) {
@@ -105,5 +93,23 @@ export function generateEdges(cols: number, rows: number, seed: number): EdgeGri
     vert.push(line);
   }
 
-  return { cols, rows, horiz, vert };
+  // Vertices: (rows+1) x (cols+1); interior ones jittered, border ones fixed.
+  const vertices: VertexOffset[][] = [];
+  for (let r = 0; r <= rows; r++) {
+    const line: VertexOffset[] = [];
+    for (let c = 0; c <= cols; c++) {
+      const border = r === 0 || r === rows || c === 0 || c === cols;
+      line.push(
+        border
+          ? { dx: 0, dy: 0 }
+          : {
+              dx: uniform(rng, -VERTEX_JITTER, VERTEX_JITTER),
+              dy: uniform(rng, -VERTEX_JITTER, VERTEX_JITTER),
+            },
+      );
+    }
+    vertices.push(line);
+  }
+
+  return { cols, rows, horiz, vert, vertices };
 }
