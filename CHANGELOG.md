@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-26
+
 ### Added
 - Solve view: **zoom & pan** (mouse wheel, on-screen +/−/reset buttons, and
   pinch-to-zoom on touch; drag empty space to pan) and a **per-solver piece-count
@@ -44,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.2.0...main
+[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.3.0...main
+[0.3.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.3.0
 [0.2.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.2.0
 [0.1.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.1.0
