@@ -3,6 +3,9 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import PuzzleSolver from "@/components/PuzzleSolver";
 
+// Loads the puzzle from the DB per request; do not prerender at build time.
+export const dynamic = "force-dynamic";
+
 export default async function PuzzlePage({
   params,
 }: {

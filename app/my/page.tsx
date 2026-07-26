@@ -4,6 +4,9 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import MyPuzzles from "@/components/MyPuzzles";
 
+// Per-request page (auth + DB); never prerender/query the DB at build time.
+export const dynamic = "force-dynamic";
+
 export default async function MyPage() {
   const session = await auth();
   if (!session?.user) {

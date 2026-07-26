@@ -1,6 +1,9 @@
 import { prisma } from "@/lib/db";
 import BansAdmin from "@/components/admin/BansAdmin";
 
+// Per-request page (auth + DB); never prerender/query the DB at build time.
+export const dynamic = "force-dynamic";
+
 export default async function AdminBansPage() {
   const bans = await prisma.bannedEmail.findMany({ orderBy: { createdAt: "desc" } });
   const initial = bans.map((b) => ({
