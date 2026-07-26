@@ -106,6 +106,26 @@ npm install
 npm test        # Vitest: Raster, Kanten-Passung, Outlines, Gruppen, Banns/Tokens
 ```
 
+## Releases
+
+Releases werden per **SemVer-Tag** ausgelöst. Ein Tag `vX.Y.Z` startet die
+Release-Stage in der CI, die zwei Docker-Images mit Kaniko baut und in die
+**GitLab Container Registry** pusht:
+
+- `…:X.Y.Z` und `…:latest` — PostgreSQL-Build
+- `…:X.Y.Z-sqlite` und `…:latest-sqlite` — SQLite-Build
+
+und einen GitLab-Release-Eintrag anlegt. Details in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+```bash
+git tag -a v0.1.0 -m "v0.1.0" && git push origin v0.1.0
+```
+
+## Lizenz
+
+[Apache License 2.0](LICENSE) — © 2026 Michele Catalano.
+
 ## Nicht in v1 (bewusst später)
 
 Spielstand speichern, Bestenliste/Zeiten, Mehrspieler.
