@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges } from "@/lib/puzzle/edges";
@@ -203,6 +204,7 @@ interface Props {
 }
 
 export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }: Props) {
+  const t = useTranslations("solve");
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [containerW, setContainerW] = useState(0);
@@ -357,13 +359,13 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
       {layout && (
         <>
           <div className="zoom-controls">
-            <button type="button" aria-label="Vergrößern" onClick={() => zoomButton(1.25)}>
+            <button type="button" aria-label={t("zoomIn")} onClick={() => zoomButton(1.25)}>
               +
             </button>
-            <button type="button" aria-label="Verkleinern" onClick={() => zoomButton(1 / 1.25)}>
+            <button type="button" aria-label={t("zoomOut")} onClick={() => zoomButton(1 / 1.25)}>
               −
             </button>
-            <button type="button" aria-label="Ansicht zurücksetzen" onClick={resetView}>
+            <button type="button" aria-label={t("resetView")} onClick={resetView}>
               ⟲
             </button>
           </div>

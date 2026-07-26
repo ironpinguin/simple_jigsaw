@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 
 export default function InvitePage() {
+  const t = useTranslations("auth");
   const params = useSearchParams();
   const token = params.get("token");
   const [password, setPassword] = useState("");
@@ -16,7 +18,7 @@ export default function InvitePage() {
     e.preventDefault();
     setError(null);
     if (!token) {
-      setError("Kein Token angegeben.");
+      setError(t("verifyNoToken"));
       return;
     }
     setLoading(true);
@@ -30,17 +32,17 @@ export default function InvitePage() {
       setDone(true);
     } else {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Aktivierung fehlgeschlagen.");
+      setError(data.error || t("inviteFailed"));
     }
   }
 
   if (done) {
     return (
       <div className="form card">
-        <h1>Konto aktiviert</h1>
-        <p>Dein Passwort ist gesetzt. Du kannst dich jetzt anmelden.</p>
+        <h1>{t("inviteDoneTitle")}</h1>
+        <p>{t("inviteDoneText")}</p>
         <Link href="/login" className="button">
-          Zur Anmeldung
+          {t("toLogin")}
         </Link>
       </div>
     );
@@ -48,11 +50,11 @@ export default function InvitePage() {
 
   return (
     <form className="form card" onSubmit={onSubmit}>
-      <h1>Einladung annehmen</h1>
-      <p className="muted">Setze ein Passwort, um dein Konto zu aktivieren.</p>
+      <h1>{t("inviteTitle")}</h1>
+      <p className="muted">{t("inviteSub")}</p>
       {error && <p className="error">{error}</p>}
       <div>
-        <label htmlFor="password">Passwort (min. 8 Zeichen)</label>
+        <label htmlFor="password">{t("passwordMin")}</label>
         <input
           id="password"
           type="password"
@@ -64,7 +66,7 @@ export default function InvitePage() {
         />
       </div>
       <button className="button" type="submit" disabled={loading}>
-        {loading ? "Wird aktiviert…" : "Konto aktivieren"}
+        {loading ? t("inviteLoading") : t("inviteSubmit")}
       </button>
     </form>
   );

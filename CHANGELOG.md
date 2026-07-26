@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Multi-language UI (i18n)**: German (default), English and Italian, selected
+  via URL-prefix routing (`/de`, `/en`, `/it`) with a language switcher in the
+  header. Powered by [next-intl](https://next-intl.dev/); all pages, forms,
+  admin screens and the solve view are translated. Transactional emails
+  (verification, invite) and API error messages are localized too — the email
+  language follows the user's chosen locale (via the `NEXT_LOCALE` cookie) and
+  its links are locale-prefixed.
+
 ## [0.3.0] - 2026-07-26
 
 ### Added

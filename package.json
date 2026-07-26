@@ -28,6 +28,7 @@
     "konva": "^9.3.16",
     "next": "^15.1.4",
     "next-auth": "^5.0.0-beta.25",
+    "next-intl": "^4.3.4",
     "nodemailer": "^8.0.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

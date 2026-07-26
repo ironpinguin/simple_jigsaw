@@ -1,7 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 
 interface PuzzleSummary {
   id: string;
@@ -11,6 +12,7 @@ interface PuzzleSummary {
 }
 
 export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
+  const t = useTranslations("my");
   const [puzzles, setPuzzles] = useState(initial);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -27,14 +29,14 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
   }
 
   async function remove(id: string) {
-    if (!confirm("Dieses Puzzle wirklich löschen?")) return;
+    if (!confirm(t("confirmDelete"))) return;
     setBusyId(id);
     const res = await fetch(`/api/puzzles/${id}`, { method: "DELETE" });
     setBusyId(null);
     if (res.ok) {
       setPuzzles((list) => list.filter((p) => p.id !== id));
     } else {
-      alert("Löschen fehlgeschlagen.");
+      alert(t("deleteFailed"));
     }
   }
 
@@ -48,14 +50,14 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
           </Link>
           <h3>{p.title}</h3>
           <p className="muted" style={{ margin: 0 }}>
-            {p.pieceCount} Teile
+            {t("pieces", { count: p.pieceCount })}
           </p>
           <div className="card-actions">
             <Link href={`/puzzle/${p.id}`} className="button">
-              Lösen
+              {t("solve")}
             </Link>
             <button className="button secondary" type="button" onClick={() => share(p.id)}>
-              {copiedId === p.id ? "Kopiert!" : "Teilen"}
+              {copiedId === p.id ? t("copied") : t("share")}
             </button>
             <button
               className="button danger"
@@ -63,7 +65,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
               disabled={busyId === p.id}
               onClick={() => remove(p.id)}
             >
-              Löschen
+              {t("delete")}
             </button>
           </div>
         </div>

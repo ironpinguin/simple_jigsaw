@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 
 interface UserRow {
   id: string;
@@ -19,6 +20,8 @@ export default function UsersAdmin({
   initial: UserRow[];
   currentUserId: string;
 }) {
+  const t = useTranslations("admin");
+  const locale = useLocale();
   const [users, setUsers] = useState<UserRow[]>(initial);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -40,6 +43,10 @@ export default function UsersAdmin({
     setErr(error);
   }
 
+  function roleLabel(role: string) {
+    return role === "ADMIN" ? t("roleAdmin") : t("roleUser");
+  }
+
   async function invite(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -51,11 +58,11 @@ export default function UsersAdmin({
     setBusy(false);
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      flash(`Einladung an ${inviteEmail} verschickt.`, null);
+      flash(t("inviteSent", { email: inviteEmail }), null);
       setInviteEmail("");
       refresh();
     } else {
-      flash(null, data.error || "Einladung fehlgeschlagen.");
+      flash(null, data.error || t("inviteFailed"));
     }
   }
 
@@ -70,13 +77,13 @@ export default function UsersAdmin({
     setBusy(false);
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      flash(`Konto ${newEmail} angelegt.`, null);
+      flash(t("accountCreated", { email: newEmail }), null);
       setNewEmail("");
       setNewPassword("");
       setNewRole("USER");
       refresh();
     } else {
-      flash(null, data.error || "Anlegen fehlgeschlagen.");
+      flash(null, data.error || t("createFailed"));
     }
   }
 
@@ -89,22 +96,22 @@ export default function UsersAdmin({
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      flash(`Rolle von ${u.email} → ${role}.`, null);
+      flash(t("roleChanged", { email: u.email, role: roleLabel(role) }), null);
       refresh();
     } else {
-      flash(null, data.error || "Änderung fehlgeschlagen.");
+      flash(null, data.error || t("changeFailed"));
     }
   }
 
   async function remove(u: UserRow) {
-    if (!confirm(`Konto ${u.email} wirklich löschen?`)) return;
+    if (!confirm(t("confirmDeleteUser", { email: u.email }))) return;
     const res = await fetch(`/api/admin/users/${u.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
-      flash(`Konto ${u.email} gelöscht.`, null);
+      flash(t("accountDeleted", { email: u.email }), null);
       setUsers((list) => list.filter((x) => x.id !== u.id));
     } else {
-      flash(null, data.error || "Löschen fehlgeschlagen.");
+      flash(null, data.error || t("deleteUserFailed"));
     }
   }
 
@@ -115,8 +122,8 @@ export default function UsersAdmin({
 
       <div className="grid-cards" style={{ marginBottom: 24 }}>
         <form className="card" onSubmit={invite}>
-          <h3 style={{ marginTop: 0 }}>Einladen (per E-Mail)</h3>
-          <label htmlFor="inviteEmail">E-Mail</label>
+          <h3 style={{ marginTop: 0 }}>{t("inviteTitle")}</h3>
+          <label htmlFor="inviteEmail">{t("email")}</label>
           <input
             id="inviteEmail"
             type="email"
@@ -125,13 +132,13 @@ export default function UsersAdmin({
             onChange={(e) => setInviteEmail(e.target.value)}
           />
           <button className="button" type="submit" disabled={busy} style={{ marginTop: 12 }}>
-            Einladung senden
+            {t("sendInvite")}
           </button>
         </form>
 
         <form className="card" onSubmit={createDirect}>
-          <h3 style={{ marginTop: 0 }}>Direkt anlegen</h3>
-          <label htmlFor="newEmail">E-Mail</label>
+          <h3 style={{ marginTop: 0 }}>{t("directTitle")}</h3>
+          <label htmlFor="newEmail">{t("email")}</label>
           <input
             id="newEmail"
             type="email"
@@ -140,7 +147,7 @@ export default function UsersAdmin({
             onChange={(e) => setNewEmail(e.target.value)}
           />
           <label htmlFor="newPassword" style={{ marginTop: 8 }}>
-            Startpasswort (min. 8)
+            {t("startPassword")}
           </label>
           <input
             id="newPassword"
@@ -151,14 +158,14 @@ export default function UsersAdmin({
             onChange={(e) => setNewPassword(e.target.value)}
           />
           <label htmlFor="newRole" style={{ marginTop: 8 }}>
-            Rolle
+            {t("role")}
           </label>
           <select id="newRole" value={newRole} onChange={(e) => setNewRole(e.target.value as "USER" | "ADMIN")}>
-            <option value="USER">User</option>
-            <option value="ADMIN">Admin</option>
+            <option value="USER">{t("roleUser")}</option>
+            <option value="ADMIN">{t("roleAdmin")}</option>
           </select>
           <button className="button" type="submit" disabled={busy} style={{ marginTop: 12 }}>
-            Konto anlegen
+            {t("createAccount")}
           </button>
         </form>
       </div>
@@ -167,11 +174,11 @@ export default function UsersAdmin({
         <table className="admin-table">
           <thead>
             <tr>
-              <th>E-Mail</th>
-              <th>Rolle</th>
-              <th>Status</th>
-              <th>Erstellt</th>
-              <th>Aktionen</th>
+              <th>{t("colEmail")}</th>
+              <th>{t("colRole")}</th>
+              <th>{t("colStatus")}</th>
+              <th>{t("colCreated")}</th>
+              <th>{t("colActions")}</th>
             </tr>
           </thead>
           <tbody>
@@ -179,17 +186,21 @@ export default function UsersAdmin({
               <tr key={u.id}>
                 <td>
                   {u.email}
-                  {u.id === currentUserId && <span className="muted"> (du)</span>}
+                  {u.id === currentUserId && <span className="muted"> {t("you")}</span>}
                 </td>
-                <td>{u.role}</td>
+                <td>{roleLabel(u.role)}</td>
                 <td className="muted">
-                  {u.verified ? "bestätigt" : u.hasPassword ? "unbestätigt" : "eingeladen"}
+                  {u.verified
+                    ? t("statusVerified")
+                    : u.hasPassword
+                      ? t("statusUnverified")
+                      : t("statusInvited")}
                 </td>
-                <td className="muted">{new Date(u.createdAt).toLocaleDateString("de-DE")}</td>
+                <td className="muted">{new Date(u.createdAt).toLocaleDateString(locale)}</td>
                 <td>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button className="button secondary" type="button" onClick={() => toggleRole(u)}>
-                      {u.role === "ADMIN" ? "Admin entfernen" : "Zu Admin"}
+                      {u.role === "ADMIN" ? t("removeAdmin") : t("makeAdmin")}
                     </button>
                     <button
                       className="button danger"
@@ -197,7 +208,7 @@ export default function UsersAdmin({
                       disabled={u.id === currentUserId}
                       onClick={() => remove(u)}
                     >
-                      Löschen
+                      {t("delete")}
                     </button>
                   </div>
                 </td>

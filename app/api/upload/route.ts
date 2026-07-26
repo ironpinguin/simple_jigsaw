@@ -3,30 +3,29 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { getSessionUser } from "@/lib/auth";
 import { putObject } from "@/lib/storage";
+import { getErrorT } from "@/lib/i18n-server";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB upload cap
 const MAX_EDGE = 2000; // downscale longest edge to keep solving smooth
 
 export async function POST(request: Request) {
+  const t = await getErrorT();
   const user = await getSessionUser();
   if (!user) {
-    return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+    return NextResponse.json({ error: t("notLoggedIn") }, { status: 401 });
   }
 
   const form = await request.formData();
   const file = form.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Keine Datei übermittelt." }, { status: 400 });
+    return NextResponse.json({ error: t("noFile") }, { status: 400 });
   }
   if (!ALLOWED.has(file.type)) {
-    return NextResponse.json(
-      { error: "Nur JPG, PNG oder WebP werden unterstützt." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: t("unsupportedType") }, { status: 400 });
   }
   if (file.size > MAX_BYTES) {
-    return NextResponse.json({ error: "Bild ist zu groß (max. 15 MB)." }, { status: 400 });
+    return NextResponse.json({ error: t("tooLarge") }, { status: 400 });
   }
 
   const input = Buffer.from(await file.arrayBuffer());
@@ -44,7 +43,7 @@ export async function POST(request: Request) {
     width = result.info.width;
     height = result.info.height;
   } catch {
-    return NextResponse.json({ error: "Bild konnte nicht verarbeitet werden." }, { status: 400 });
+    return NextResponse.json({ error: t("processFailed") }, { status: 400 });
   }
 
   const imageKey = `puzzles/${randomUUID()}.webp`;

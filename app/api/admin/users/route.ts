@@ -5,10 +5,11 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
+import { getErrorT } from "@/lib/i18n-server";
 
 export async function GET() {
   if (!(await requireAdmin())) {
-    return NextResponse.json({ error: "Kein Zugriff." }, { status: 403 });
+    return NextResponse.json({ error: (await getErrorT())("noAccess") }, { status: 403 });
   }
 
   const users = await prisma.user.findMany({
@@ -35,30 +36,32 @@ export async function GET() {
 
 const CreateSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, "Passwort muss mindestens 8 Zeichen haben."),
+  password: z.string().min(8),
   role: z.enum(["USER", "ADMIN"]).optional(),
 });
 
 // Direct create: admin sets an initial password; the account is active & verified.
 export async function POST(request: Request) {
+  const t = await getErrorT();
   if (!(await requireAdmin())) {
-    return NextResponse.json({ error: "Kein Zugriff." }, { status: 403 });
+    return NextResponse.json({ error: t("noAccess") }, { status: 403 });
   }
 
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
+    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Ungültige Eingabe." },
+      { error: onPassword ? t("passwordMin") : t("invalidInput") },
       { status: 400 },
     );
   }
 
   const email = normalizeEmail(parsed.data.email);
   if (await checkEmailBanned(email)) {
-    return NextResponse.json({ error: "Diese E-Mail-Adresse ist gesperrt." }, { status: 403 });
+    return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
   }
   if (await prisma.user.findUnique({ where: { email } })) {
-    return NextResponse.json({ error: "Diese E-Mail ist bereits vergeben." }, { status: 409 });
+    return NextResponse.json({ error: t("emailTaken") }, { status: 409 });
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);

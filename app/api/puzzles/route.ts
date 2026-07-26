@@ -4,21 +4,20 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
+import { getErrorT } from "@/lib/i18n-server";
 
 const CreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
   imageKey: z.string().min(1),
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
-  pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n), {
-    message: "Ungültige Teile-Anzahl.",
-  }),
+  pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n)),
 });
 
 export async function GET() {
   const user = await getSessionUser();
   if (!user) {
-    return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+    return NextResponse.json({ error: (await getErrorT())("notLoggedIn") }, { status: 401 });
   }
 
   const puzzles = await prisma.puzzle.findMany({
@@ -38,15 +37,15 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const t = await getErrorT();
   const user = await getSessionUser();
   if (!user) {
-    return NextResponse.json({ error: "Nicht angemeldet." }, { status: 401 });
+    return NextResponse.json({ error: t("notLoggedIn") }, { status: 401 });
   }
 
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? "Ungültige Eingabe.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
   }
 
   const { title, imageKey, imageWidth, imageHeight, pieceCount } = parsed.data;

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { setRequestLocale } from "next-intl/server";
 import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import PuzzleSolver from "@/components/PuzzleSolver";
@@ -9,9 +10,10 @@ export const dynamic = "force-dynamic";
 export default async function PuzzlePage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ locale: string; id: string }>;
 }) {
-  const { id } = await params;
+  const { locale, id } = await params;
+  setRequestLocale(locale);
   const puzzle = await prisma.puzzle.findUnique({ where: { id } });
   if (!puzzle) notFound();
 

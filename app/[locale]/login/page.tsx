@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
+import { Link, useRouter } from "@/i18n/navigation";
 
 export default function LoginPage() {
+  const t = useTranslations("auth");
   const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") || "/my";
@@ -26,9 +28,7 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res?.error) {
-      setError(
-        "Anmeldung fehlgeschlagen. Prüfe E-Mail und Passwort — und bestätige zuerst deine E-Mail-Adresse, falls du dich gerade registriert hast.",
-      );
+      setError(t("loginError"));
       return;
     }
     router.push(callbackUrl);
@@ -37,10 +37,10 @@ export default function LoginPage() {
 
   return (
     <form className="form card" onSubmit={onSubmit}>
-      <h1>Anmelden</h1>
+      <h1>{t("loginTitle")}</h1>
       {error && <p className="error">{error}</p>}
       <div>
-        <label htmlFor="email">E-Mail</label>
+        <label htmlFor="email">{t("email")}</label>
         <input
           id="email"
           type="email"
@@ -51,7 +51,7 @@ export default function LoginPage() {
         />
       </div>
       <div>
-        <label htmlFor="password">Passwort</label>
+        <label htmlFor="password">{t("password")}</label>
         <input
           id="password"
           type="password"
@@ -62,10 +62,10 @@ export default function LoginPage() {
         />
       </div>
       <button className="button" type="submit" disabled={loading}>
-        {loading ? "Anmelden…" : "Anmelden"}
+        {loading ? t("loginLoading") : t("loginSubmit")}
       </button>
       <p className="muted">
-        Noch kein Konto? <Link href="/register">Registrieren</Link>
+        {t("noAccount")} <Link href="/register">{t("registerLink")}</Link>
       </p>
     </form>
   );

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 
 export default function RegisterForm() {
+  const t = useTranslations("auth");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -25,7 +27,7 @@ export default function RegisterForm() {
     setLoading(false);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Registrierung fehlgeschlagen.");
+      setError(data.error || t("registerFailed"));
       return;
     }
 
@@ -36,13 +38,10 @@ export default function RegisterForm() {
   if (done) {
     return (
       <div className="form card">
-        <h1>Fast geschafft</h1>
-        <p>
-          Wir haben dir eine Bestätigungs-E-Mail an <strong>{email}</strong> geschickt.
-          Klicke den Link darin, um dein Konto zu aktivieren. Danach kannst du dich anmelden.
-        </p>
+        <h1>{t("registerDoneTitle")}</h1>
+        <p>{t("registerDoneText", { email })}</p>
         <p className="muted">
-          <Link href="/login">Zur Anmeldung</Link>
+          <Link href="/login">{t("toLogin")}</Link>
         </p>
       </div>
     );
@@ -50,14 +49,14 @@ export default function RegisterForm() {
 
   return (
     <form className="form card" onSubmit={onSubmit}>
-      <h1>Registrieren</h1>
+      <h1>{t("registerTitle")}</h1>
       {error && <p className="error">{error}</p>}
       <div>
-        <label htmlFor="name">Name (optional)</label>
+        <label htmlFor="name">{t("nameOptional")}</label>
         <input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
       </div>
       <div>
-        <label htmlFor="email">E-Mail</label>
+        <label htmlFor="email">{t("email")}</label>
         <input
           id="email"
           type="email"
@@ -68,7 +67,7 @@ export default function RegisterForm() {
         />
       </div>
       <div>
-        <label htmlFor="password">Passwort (min. 8 Zeichen)</label>
+        <label htmlFor="password">{t("passwordMin")}</label>
         <input
           id="password"
           type="password"
@@ -80,10 +79,10 @@ export default function RegisterForm() {
         />
       </div>
       <button className="button" type="submit" disabled={loading}>
-        {loading ? "Konto wird erstellt…" : "Konto erstellen"}
+        {loading ? t("registerLoading") : t("registerSubmit")}
       </button>
       <p className="muted">
-        Schon registriert? <Link href="/login">Anmelden</Link>
+        {t("haveAccount")} <Link href="/login">{t("loginLink")}</Link>
       </p>
     </form>
   );

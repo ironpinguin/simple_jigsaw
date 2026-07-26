@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
 
 interface BanRow {
   id: string;
@@ -10,6 +11,8 @@ interface BanRow {
 }
 
 export default function BansAdmin({ initial }: { initial: BanRow[] }) {
+  const t = useTranslations("admin");
+  const locale = useLocale();
   const [bans, setBans] = useState<BanRow[]>(initial);
   const [value, setValue] = useState("");
   const [type, setType] = useState<"EMAIL" | "DOMAIN">("DOMAIN");
@@ -31,7 +34,7 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
       setBans((list) => [data.ban, ...list]);
       setValue("");
     } else {
-      setErr(data.error || "Hinzufügen fehlgeschlagen.");
+      setErr(data.error || t("banAddFailed"));
     }
   }
 
@@ -42,16 +45,16 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
 
   return (
     <div>
-      <p className="muted">
-        Gesperrte Adressen/Domains können sich weder registrieren noch anmelden.
-      </p>
+      <p className="muted">{t("bansDesc")}</p>
       {err && <p className="error">{err}</p>}
 
       <form className="card" onSubmit={add} style={{ maxWidth: 520, marginBottom: 24 }}>
-        <h3 style={{ marginTop: 0 }}>Bann hinzufügen</h3>
+        <h3 style={{ marginTop: 0 }}>{t("banAddTitle")}</h3>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: "1 1 220px" }}>
-            <label htmlFor="banValue">{type === "EMAIL" ? "E-Mail" : "Domain (z. B. spam.com)"}</label>
+            <label htmlFor="banValue">
+              {type === "EMAIL" ? t("banEmailLabel") : t("banDomainLabel")}
+            </label>
             <input
               id="banValue"
               type="text"
@@ -61,14 +64,14 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
             />
           </div>
           <div>
-            <label htmlFor="banType">Typ</label>
+            <label htmlFor="banType">{t("banType")}</label>
             <select id="banType" value={type} onChange={(e) => setType(e.target.value as "EMAIL" | "DOMAIN")}>
-              <option value="DOMAIN">Domain</option>
-              <option value="EMAIL">E-Mail</option>
+              <option value="DOMAIN">{t("banTypeDomain")}</option>
+              <option value="EMAIL">{t("banTypeEmail")}</option>
             </select>
           </div>
           <button className="button" type="submit" disabled={busy}>
-            Bannen
+            {t("banAdd")}
           </button>
         </div>
       </form>
@@ -77,28 +80,28 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Wert</th>
-              <th>Typ</th>
-              <th>Seit</th>
-              <th>Aktion</th>
+              <th>{t("banColValue")}</th>
+              <th>{t("banColType")}</th>
+              <th>{t("banColSince")}</th>
+              <th>{t("banColAction")}</th>
             </tr>
           </thead>
           <tbody>
             {bans.length === 0 && (
               <tr>
                 <td colSpan={4} className="muted">
-                  Keine Banns.
+                  {t("banNone")}
                 </td>
               </tr>
             )}
             {bans.map((b) => (
               <tr key={b.id}>
                 <td>{b.value}</td>
-                <td>{b.type}</td>
-                <td className="muted">{new Date(b.createdAt).toLocaleDateString("de-DE")}</td>
+                <td>{b.type === "EMAIL" ? t("banTypeEmail") : t("banTypeDomain")}</td>
+                <td className="muted">{new Date(b.createdAt).toLocaleDateString(locale)}</td>
                 <td>
                   <button className="button secondary" type="button" onClick={() => remove(b.id)}>
-                    Entfernen
+                    {t("banRemove")}
                   </button>
                 </td>
               </tr>

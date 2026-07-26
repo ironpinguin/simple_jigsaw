@@ -8,46 +8,46 @@ import { isAdminEmail } from "@/lib/admin-emails";
 import { createToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/mail";
 import { isRegistrationEnabled } from "@/lib/registration";
+import { getErrorT, localeFromCookie } from "@/lib/i18n-server";
 
 const RegisterSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, "Passwort muss mindestens 8 Zeichen haben."),
+  password: z.string().min(8),
   name: z.string().trim().max(80).optional(),
 });
 
 export async function POST(request: Request) {
+  const t = await getErrorT();
+
   if (!isRegistrationEnabled()) {
-    return NextResponse.json({ error: "Registrierung ist deaktiviert." }, { status: 403 });
+    return NextResponse.json({ error: t("registrationDisabled") }, { status: 403 });
   }
 
   let json: unknown;
   try {
     json = await request.json();
   } catch {
-    return NextResponse.json({ error: "Ungültige Anfrage." }, { status: 400 });
+    return NextResponse.json({ error: t("invalidRequest") }, { status: 400 });
   }
 
   const parsed = RegisterSchema.safeParse(json);
   if (!parsed.success) {
-    const message = parsed.error.issues[0]?.message ?? "Ungültige Eingabe.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
+    return NextResponse.json(
+      { error: onPassword ? t("passwordMin") : t("invalidInput") },
+      { status: 400 },
+    );
   }
 
   const email = normalizeEmail(parsed.data.email);
 
   if (await checkEmailBanned(email)) {
-    return NextResponse.json(
-      { error: "Diese E-Mail-Adresse ist gesperrt." },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
-    return NextResponse.json(
-      { error: "Diese E-Mail ist bereits registriert." },
-      { status: 409 },
-    );
+    return NextResponse.json({ error: t("emailRegistered") }, { status: 409 });
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   });
 
   const token = await createToken(user.id, "EMAIL_VERIFY");
-  await sendVerificationEmail(email, token);
+  await sendVerificationEmail(email, token, await localeFromCookie());
 
   return NextResponse.json({ ok: true, requiresVerification: true }, { status: 201 });
 }

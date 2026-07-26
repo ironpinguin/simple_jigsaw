@@ -1,5 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getTranslations, setRequestLocale } from "next-intl/server";
+import { Link } from "@/i18n/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import MyPuzzles from "@/components/MyPuzzles";
@@ -7,12 +8,19 @@ import MyPuzzles from "@/components/MyPuzzles";
 // Per-request page (auth + DB); never prerender/query the DB at build time.
 export const dynamic = "force-dynamic";
 
-export default async function MyPage() {
+export default async function MyPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
   const session = await auth();
   if (!session?.user) {
-    redirect("/login?callbackUrl=/my");
+    redirect(`/${locale}/login?callbackUrl=/my`);
   }
 
+  const t = await getTranslations("my");
   const puzzles = await prisma.puzzle.findMany({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
@@ -22,15 +30,15 @@ export default async function MyPage() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Meine Puzzles</h1>
+        <h1>{t("title")}</h1>
         <Link href="/create" className="button">
-          Neues Puzzle
+          {t("newPuzzle")}
         </Link>
       </div>
 
       {puzzles.length === 0 ? (
         <p className="muted" style={{ marginTop: 24 }}>
-          Du hast noch keine Puzzles. <Link href="/create">Erstelle dein erstes!</Link>
+          {t("empty")} <Link href="/create">{t("createFirst")}</Link>
         </p>
       ) : (
         <MyPuzzles initial={puzzles} />

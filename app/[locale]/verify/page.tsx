@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Link } from "@/i18n/navigation";
 
 type State = "pending" | "ok" | "error";
 
 export default function VerifyPage() {
+  const t = useTranslations("auth");
   const params = useSearchParams();
   const token = params.get("token");
   const [state, setState] = useState<State>("pending");
@@ -15,7 +17,7 @@ export default function VerifyPage() {
   useEffect(() => {
     if (!token) {
       setState("error");
-      setError("Kein Token angegeben.");
+      setError(t("verifyNoToken"));
       return;
     }
     let cancelled = false;
@@ -31,30 +33,31 @@ export default function VerifyPage() {
       } else {
         const data = await res.json().catch(() => ({}));
         setState("error");
-        setError(data.error || "Bestätigung fehlgeschlagen.");
+        setError(data.error || t("inviteFailed"));
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   return (
     <div className="form card">
-      <h1>E-Mail-Bestätigung</h1>
-      {state === "pending" && <p className="muted">Wird bestätigt…</p>}
+      <h1>{t("verifyTitle")}</h1>
+      {state === "pending" && <p className="muted">{t("verifyPending")}</p>}
       {state === "ok" && (
         <>
-          <p>Deine E-Mail-Adresse wurde bestätigt. Du kannst dich jetzt anmelden.</p>
+          <p>{t("verifyOk")}</p>
           <Link href="/login" className="button">
-            Zur Anmeldung
+            {t("toLogin")}
           </Link>
         </>
       )}
       {state === "error" && (
         <>
           <p className="error">{error}</p>
-          <Link href="/register">Erneut registrieren</Link>
+          <Link href="/register">{t("verifyRetry")}</Link>
         </>
       )}
     </div>

@@ -2,12 +2,18 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { PuzzleData } from "./PuzzleBoard";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 
+function BoardLoading() {
+  const t = useTranslations("solve");
+  return <p className="muted">{t("loading")}</p>;
+}
+
 const PuzzleBoard = dynamic(() => import("./PuzzleBoard"), {
   ssr: false,
-  loading: () => <p className="muted">Puzzle wird geladen…</p>,
+  loading: () => <BoardLoading />,
 });
 
 export default function PuzzleSolver({
@@ -17,6 +23,7 @@ export default function PuzzleSolver({
   puzzle: PuzzleData;
   title: string;
 }) {
+  const t = useTranslations("solve");
   const storageKey = `pc:${puzzle.id}`;
 
   // Piece count is per solver: default to the creator's value, but remember the
@@ -50,7 +57,7 @@ export default function PuzzleSolver({
   function changeCount(n: number) {
     if (n === pieceCount) return;
     // Warn if the solver has already connected pieces (rebuild resets progress).
-    if (groups < total && !window.confirm("Teile-Anzahl ändern? Der aktuelle Fortschritt geht verloren.")) {
+    if (groups < total && !window.confirm(t("confirmChange"))) {
       return;
     }
     setPieceCount(n);
@@ -74,12 +81,12 @@ export default function PuzzleSolver({
       <div className="solve-toolbar">
         <h1 style={{ margin: 0, fontSize: 22 }}>{title}</h1>
         <span className="progress">
-          {connected} / {total - 1} verbunden
+          {t("progress", { connected, total: total - 1 })}
         </span>
-        {solved && <span className="solved-banner">🎉 Gelöst!</span>}
+        {solved && <span className="solved-banner">{t("solved")}</span>}
 
         <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
-          Teile
+          {t("pieces")}
           <select
             value={pieceCount}
             onChange={(e) => changeCount(Number(e.target.value))}
@@ -99,17 +106,15 @@ export default function PuzzleSolver({
           aria-pressed={showRef}
           onClick={() => setShowRef((v) => !v)}
         >
-          {showRef ? "👁 Vorlage ausblenden" : "👁 Vorlage einblenden"}
+          {showRef ? t("hideRef") : t("showRef")}
         </button>
         <button className="button secondary" type="button" onClick={share}>
-          {copied ? "Link kopiert!" : "Link teilen"}
+          {copied ? t("copied") : t("share")}
         </button>
       </div>
 
       <p className="muted" style={{ marginTop: -4 }}>
-        Ziehe zusammengehörige Teile aneinander — sie rasten ein und lassen sich als
-        Gruppe weiterbewegen. Zoomen mit Mausrad/Pinch oder den Buttons; leere Fläche
-        ziehen verschiebt die Ansicht.
+        {t("instructions")}
       </p>
 
       <div className="solve-fullbleed" style={{ position: "relative" }}>
@@ -117,7 +122,7 @@ export default function PuzzleSolver({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`/api/image/${puzzle.imageKey}`}
-            alt="Vorlage"
+            alt={t("hideRef")}
             className="reference-thumb"
           />
         )}

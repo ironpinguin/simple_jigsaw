@@ -1,3 +1,4 @@
+import { setRequestLocale } from "next-intl/server";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import UsersAdmin from "@/components/admin/UsersAdmin";
@@ -5,7 +6,13 @@ import UsersAdmin from "@/components/admin/UsersAdmin";
 // Per-request page (auth + DB); never prerender/query the DB at build time.
 export const dynamic = "force-dynamic";
 
-export default async function AdminUsersPage() {
+export default async function AdminUsersPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale } = await params;
+  setRequestLocale(locale);
   const me = await getSessionUser();
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },

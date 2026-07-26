@@ -13,8 +13,19 @@ Konto.
 - **Auth.js (NextAuth v5)** — E-Mail/Passwort-Login (JWT-Sessions)
 - **sharp** — serverseitige Bildverarbeitung
 - **RustFS / S3** — S3-kompatibler Bildspeicher
+- **next-intl** — Mehrsprachigkeit (DE/EN/IT) mit URL-Präfix-Routing
 
 Alles läuft containerisiert über docker-compose (Dev und Prod).
+
+## Sprachen
+
+Die Oberfläche ist in **Deutsch** (Standard), **Englisch** und **Italienisch**
+verfügbar. Die Sprache steckt im URL-Präfix (`/de`, `/en`, `/it`) und lässt sich
+über den Umschalter in der Kopfzeile wechseln. Auch die transaktionalen E-Mails
+(Bestätigung, Einladung) und die API-Fehlermeldungen sind übersetzt; die
+E-Mail-Sprache folgt der zuletzt gewählten Sprache. Übersetzungen liegen als
+JSON-Kataloge unter `messages/` — eine weitere Sprache besteht aus einer neuen
+Locale in `i18n/routing.ts` plus `messages/<locale>.json`.
 
 Das Puzzle-Kernmodul liegt in `lib/puzzle/` und ist rein & getestet:
 
