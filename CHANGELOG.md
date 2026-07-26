@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-26
+
 ### Changed
 - More natural puzzle pieces: classic interlocking knobs (pinched neck with an
   undercut), a lightly jittered grid for organic size/shape variation, and a
@@ -35,5 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.1.0...main
+[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.2.0...main
+[0.2.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.2.0
 [0.1.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.1.0
