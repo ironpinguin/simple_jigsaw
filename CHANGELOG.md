@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-26
+
 ### Added
 - **Multi-language UI (i18n)**: German (default), English and Italian, selected
   via URL-prefix routing (`/de`, `/en`, `/it`) with a language switcher in the
@@ -55,7 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.3.0...main
+[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.4.0...main
+[0.4.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.4.0
 [0.3.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.3.0
 [0.2.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.2.0
 [0.1.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.1.0
