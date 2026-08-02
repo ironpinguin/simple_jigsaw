@@ -1,0 +1,177 @@
+# CI pipeline — quality gates for the jigsaw app.
+#
+# Gates: lint (ESLint) · test (Vitest) · build (Next.js typecheck+compile) ·
+# sast (Semgrep static analysis). Everything runs without a database — the tests
+# are pure and the build is dynamic. On a SemVer tag (vX.Y.Z) the release jobs
+# also build and push versioned Docker images to the GitHub Container Registry
+# and create a GitHub Release.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+
+# Superseded runs for the same branch/PR are pointless — cancel them. Tag runs
+# publish artifacts, so those are never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  NPM_CONFIG_FUND: "false"
+  NPM_CONFIG_AUDIT: "false"
+
+jobs:
+  # Node jobs share the same shape: setup-node caches the npm download folder
+  # keyed on package-lock.json, and `npm ci` also runs `prisma generate` via the
+  # postinstall hook.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --reporter=default --reporter=junit --outputFile=junit.xml
+      - name: Upload JUnit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit
+          path: junit.xml
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  # Static application security testing with Semgrep (community rulesets, no
+  # token required). Fails the job on any finding and uploads SARIF to the
+  # repository's code scanning view.
+  sast:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install semgrep
+      - name: Semgrep scan
+        run: >
+          semgrep scan
+          --config p/typescript --config p/javascript --config p/react
+          --config p/nodejs --config p/security-audit --config p/secrets
+          --exclude node_modules --exclude .next --exclude lib/generated
+          --error --metrics=off
+          --sarif --output semgrep.sarif
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+      # Code scanning upload needs GitHub Advanced Security on private repos —
+      # don't fail the pipeline over it, the scan result above is authoritative.
+      - name: Upload SARIF to code scanning
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+
+  # -------------------------------------------------------------------------
+  # Release (tags only): build versioned Docker images and push them to the
+  # GitHub Container Registry, then create a GitHub Release.
+  # -------------------------------------------------------------------------
+  release-images:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, test, build, sast]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # PostgreSQL image: :<version> and :latest
+          - db_provider: postgresql
+            tag_suffix: ""
+          # SQLite image: :<version>-sqlite and :latest-sqlite
+          - db_provider: sqlite
+            tag_suffix: "-sqlite"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runner
+          push: true
+          build-args: |
+            DATABASE_PROVIDER=${{ matrix.db_provider }}
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}${{ matrix.tag_suffix }}
+            ghcr.io/${{ github.repository }}:latest${{ matrix.tag_suffix }}
+          cache-from: type=gha,scope=${{ matrix.db_provider }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.db_provider }}
+
+  # Create a GitHub Release for the tag once both images are pushed.
+  release-github:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release-images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          cat > notes.md <<EOF
+          Automated release for $TAG. See CHANGELOG.md for details.
+
+          Images:
+          - \`$IMAGE:$TAG\` (PostgreSQL)
+          - \`$IMAGE:$TAG-sqlite\` (SQLite)
+          EOF
+          gh release create "$TAG" --title "Release $TAG" --notes-file notes.md

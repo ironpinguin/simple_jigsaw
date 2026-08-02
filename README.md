@@ -120,13 +120,13 @@ npm test        # Vitest: Raster, Kanten-Passung, Outlines, Gruppen, Banns/Token
 ## Releases
 
 Releases werden per **SemVer-Tag** ausgelöst. Ein Tag `vX.Y.Z` startet die
-Release-Stage in der CI, die zwei Docker-Images mit Kaniko baut und in die
-**GitLab Container Registry** pusht:
+Release-Jobs in GitHub Actions, die zwei Docker-Images mit Buildx bauen und in
+die **GitHub Container Registry** (`ghcr.io/ironpinguin/simple_jigsaw`) pushen:
 
-- `…:X.Y.Z` und `…:latest` — PostgreSQL-Build
-- `…:X.Y.Z-sqlite` und `…:latest-sqlite` — SQLite-Build
+- `…:vX.Y.Z` und `…:latest` — PostgreSQL-Build
+- `…:vX.Y.Z-sqlite` und `…:latest-sqlite` — SQLite-Build
 
-und einen GitLab-Release-Eintrag anlegt. Details in
+und einen GitHub-Release-Eintrag anlegt. Details in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash

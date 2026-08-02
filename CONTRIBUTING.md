@@ -45,8 +45,8 @@ grouping) is unit-tested and easy to extend.
 
 ## Making changes
 
-- Work on a feature branch and open a merge request against `main`.
-- The CI pipeline (lint · sast · test · build) must be green before merging.
+- Work on a feature branch and open a pull request against `main`.
+- The CI workflow (lint · sast · test · build) must be green before merging.
 - Keep commits focused with a clear, descriptive message (imperative mood).
   Conventional Commit prefixes (`feat:`, `fix:`, `ci:`, `docs:` …) are welcome
   but not required.
@@ -63,20 +63,23 @@ git tag -a v1.2.0 -m "v1.2.0"
 git push origin v1.2.0
 ```
 
-The tag pipeline then:
+The tag run of `.github/workflows/ci.yml` then:
 
 1. Runs the quality gates against the tagged commit.
-2. Builds two Docker images with Kaniko and pushes them to the GitLab Container
-   Registry:
-   - `$CI_REGISTRY_IMAGE:<version>` and `:latest` — PostgreSQL build
-   - `$CI_REGISTRY_IMAGE:<version>-sqlite` and `:latest-sqlite` — SQLite build
-3. Creates a GitLab Release for the tag.
+2. Builds two Docker images with Buildx and pushes them to the GitHub Container
+   Registry (`ghcr.io/ironpinguin/simple_jigsaw`):
+   - `<image>:<tag>` and `:latest` — PostgreSQL build
+   - `<image>:<tag>-sqlite` and `:latest-sqlite` — SQLite build
+3. Creates a GitHub Release for the tag.
 
 Before tagging, move the `## [Unreleased]` entries in `CHANGELOG.md` under a new
 `## [<version>] - <date>` heading.
 
-> The GitLab **Container Registry** must be enabled for the project for the
-> image push to succeed.
+> Both release steps authenticate with the automatic `GITHUB_TOKEN`; no extra
+> secrets are needed. The workflow grants it `packages: write` for the image
+> push and `contents: write` for the release, so **Settings → Actions → General
+> → Workflow permissions** must allow read/write (or at least not block the
+> per-job grants).
 
 ## License
 

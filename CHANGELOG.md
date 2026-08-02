@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Moved the project to GitHub (`ironpinguin/simple_jigsaw`). The GitLab CI
+  pipeline is replaced by a GitHub Actions workflow
+  (`.github/workflows/ci.yml`) with the same gates (ESLint · Vitest · Next.js
+  build · Semgrep SAST). Tag releases now build the Docker images with Buildx,
+  push them to the **GitHub Container Registry**
+  (`ghcr.io/ironpinguin/simple_jigsaw`) instead of the GitLab registry, and
+  create a **GitHub Release**.
+
 ## [0.4.0] - 2026-07-26
 
 ### Added
@@ -57,8 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://git.catalano.de/ironpinguin/puzzle/-/compare/v0.4.0...main
-[0.4.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.4.0
-[0.3.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.3.0
-[0.2.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.2.0
-[0.1.0]: https://git.catalano.de/ironpinguin/puzzle/-/tags/v0.1.0
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.4.0...main
+[0.4.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.4.0
+[0.3.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.3.0
+[0.2.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.2.0
+[0.1.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.1.0
