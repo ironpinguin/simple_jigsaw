@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { generateEdges } from "./edges";
 import { computeGrid, PIECE_PRESETS } from "./grid";
 import { pieceOutlinePoints } from "./outline";
-import { resolveConnections, pieceId, type PieceGroup } from "./groups";
+import { parsePieceId, resolveConnections, pieceId, type PieceGroup } from "./groups";
 import {
   boardGeometry,
   clampGroupPosition,
@@ -51,7 +51,7 @@ describe("boardGeometry", () => {
   });
 
   it("derives snapDist from the smaller piece dimension", () => {
-    const g = boardGeometry({ containerW: 1400, viewportH: 1080, aspect: 4 / 3, cols: 4, rows: 3 });
+    const g = boardGeometry({ ...STAGE, cols: 4, rows: 3 });
     expect(g.snapDist).toBeCloseTo(Math.max(18, 0.4 * Math.min(g.pieceW, g.pieceH)), 6);
   });
 });
@@ -142,7 +142,7 @@ describe("scatterGroups", () => {
     // note on scatterGroups and issue #3.
     const args = geo(20, 15);
     for (const g of scatterGroups({ ...args, seed: 999 })) {
-      const { row, col } = { row: Number(g.members[0].split("-")[0]), col: Number(g.members[0].split("-")[1]) };
+      const { row, col } = parsePieceId(g.members[0]);
       const cornerX = g.x + col * args.pieceW;
       const cornerY = g.y + row * args.pieceH;
       expect(cornerX).toBeGreaterThanOrEqual(0);
@@ -251,8 +251,14 @@ describe("settleGroup", () => {
   }
   const rectOf = (id: string) => rects.get(id);
 
-  /** Every member's bitmap lies inside the stage once the group sits at (x,y). */
-  function allMembersOnStage(group: PieceGroup, x: number, y: number) {
+  /**
+   * Settle `group` and assert the answer puts every member's bitmap inside the
+   * stage — the property both tests below are really about.
+   */
+  function expectSettledOnStage(group: PieceGroup): void {
+    const at = settleGroup(group, rectOf, g.stageW, g.stageH);
+    expect(at).not.toBeNull();
+    const { x, y } = at!;
     for (const m of group.members) {
       const r = rectOf(m)!;
       expect(x + r.x).toBeGreaterThanOrEqual(-1e-9);
@@ -275,9 +281,7 @@ describe("settleGroup", () => {
         y: dy,
         members: [pieceId(1, 1), pieceId(1, 2), pieceId(2, 1), pieceId(2, 2)],
       };
-      const at = settleGroup(group, rectOf, g.stageW, g.stageH)!;
-      expect(at).not.toBeNull();
-      allMembersOnStage(group, at.x, at.y);
+      expectSettledOnStage(group);
     }
   });
 
@@ -316,10 +320,8 @@ describe("settleGroup", () => {
       expect(groups.size).toBe(1);
 
       const survivor = groups.get(survivorId)!;
-      const at = settleGroup(survivor, rectOf, g.stageW, g.stageH)!;
-      expect(at).not.toBeNull();
       expect(survivor.members.sort()).toEqual([aId, bId].sort());
-      allMembersOnStage(survivor, at.x, at.y);
+      expectSettledOnStage(survivor);
     }
   });
 });

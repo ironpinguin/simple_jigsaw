@@ -7,7 +7,9 @@ import {
   type PieceGroup,
 } from "./groups";
 
-function setup(defs: Array<{ id: number; x: number; y: number; members: string[] }>) {
+type GroupDef = { id: number; x: number; y: number; members: string[] };
+
+function setup(defs: GroupDef[]) {
   const groups = new Map<number, PieceGroup>();
   const p2g = new Map<string, number>();
   for (const d of defs) {
@@ -82,7 +84,7 @@ describe("resolveConnections", () => {
     // group model would render as a permanently invisible piece.
     const rows = 4;
     const cols = 4;
-    const defs: Array<{ id: number; x: number; y: number; members: string[] }> = [];
+    const defs: GroupDef[] = [];
     let gid = 1;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
@@ -92,14 +94,14 @@ describe("resolveConnections", () => {
     const { groups, p2g } = setup(defs);
 
     // Walk every group onto the same origin in turn, so merges cascade repeatedly.
-    for (const id of defs.map((d) => d.id)) {
-      const g = groups.get(id);
-      if (!g) continue; // already absorbed by an earlier merge
-      g.x = 0;
-      g.y = 0;
+    for (const { id } of defs) {
+      const dragged = groups.get(id);
+      if (!dragged) continue; // already absorbed by an earlier merge
+      dragged.x = 0;
+      dragged.y = 0;
       resolveConnections(groups, p2g, id, rows, cols, 20);
 
-      const members = [...groups.values()].flatMap((x) => x.members);
+      const members = [...groups.values()].flatMap((g) => g.members);
       expect(members.length).toBe(rows * cols);
       expect(new Set(members).size).toBe(rows * cols);
       // pieceToGroup must name the group that actually holds the piece — a live

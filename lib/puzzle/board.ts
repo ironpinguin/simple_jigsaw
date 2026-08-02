@@ -257,12 +257,13 @@ export function clampGroupPosition(
   stageW: number,
   stageH: number,
 ): { x: number; y: number } {
-  const axis = (p: number, min: number, size: number, stage: number) => {
+  /** One axis: keep `[p + min, p + min + size]` within `[0, stage]`. */
+  function axis(p: number, min: number, size: number, stage: number): number {
     const lo = -min; // near edge flush with the stage
     const hi = stage - min - size; // far edge flush with the stage
     if (hi < lo) return lo; // larger than the stage: pin the near edge
     return Math.min(hi, Math.max(lo, p));
-  };
+  }
   return {
     x: axis(pos.x, extent.x, extent.width, stageW),
     y: axis(pos.y, extent.y, extent.height, stageH),

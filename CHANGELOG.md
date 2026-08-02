@@ -11,9 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Solve view: pieces no longer appear to go missing. Loose single pieces are now
   always drawn above assembled blocks, so they stay clickable — previously the
   block you dragged last stayed on top for good and swallowed every click over
-  its whole bounding box. Dragging is also constrained to the play area, so a
-  piece or block can no longer be pushed off the edge where only blind panning
-  would find it again.
+  its whole bounding box. A piece or block dropped past the edge of the play
+  area also slides back onto it, instead of being left where only blind panning
+  would find it again. Dragging itself stays unrestricted, so pieces can still
+  be joined right at the edges.
 
 ### Changed
 - Moved the project to GitHub (`ironpinguin/simple_jigsaw`). The GitLab CI
