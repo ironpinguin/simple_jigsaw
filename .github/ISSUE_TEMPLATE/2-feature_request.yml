@@ -1,0 +1,83 @@
+name: ✨ Feature-Wunsch / Feature request
+description: Eine neue Funktion oder Verbesserung vorschlagen. / Suggest a new feature or improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gute Vorschläge beschreiben zuerst das Problem und dann die Lösung.
+
+        Good proposals describe the problem first and the solution second.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Vorab / Before you start
+      options:
+        - label: Ich habe die bestehenden Issues durchsucht und keinen passenden Vorschlag gefunden. / I searched the existing issues and found no matching proposal.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem oder Motivation / Problem or motivation
+      description: |
+        Welches Problem löst der Vorschlag? Was ist heute umständlich oder unmöglich?
+        Which problem does this solve? What is awkward or impossible today?
+      placeholder: |
+        Bei 500 Teilen verliere ich den Überblick, weil …
+        With 500 pieces I lose track, because …
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Vorgeschlagene Lösung / Proposed solution
+      description: |
+        Wie soll sich die Anwendung nach der Änderung verhalten?
+        How should the application behave after the change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativen / Alternatives considered
+      description: |
+        Andere Ansätze, die du erwogen und verworfen hast — und warum.
+        Other approaches you considered and rejected — and why.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich / Area
+      description: |
+        Welchen Teil der Anwendung betrifft der Vorschlag?
+        Which part of the application does this affect?
+      options:
+        - Puzzle-Board / Puzzle board
+        - Bild-Upload / Image upload
+        - Login & Konto / Login & account
+        - Teilen & Links / Sharing & links
+        - Admin
+        - Mehrsprachigkeit / i18n
+        - Docker & Deployment
+        - Sonstiges / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Weiterer Kontext / Additional context
+      description: |
+        Skizzen, Screenshots, Links zu vergleichbaren Umsetzungen.
+        Sketches, screenshots, links to comparable implementations.
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Mitarbeit / Contribution
+      options:
+        - label: Ich würde das selbst umsetzen und einen Pull Request eröffnen. / I'd be willing to implement this and open a pull request.
