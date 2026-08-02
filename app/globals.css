@@ -307,10 +307,12 @@ select:focus {
   color: var(--text);
   cursor: pointer;
 }
-.zoom-controls button:hover:not(:disabled) {
+.zoom-controls button:hover:not([aria-disabled="true"]) {
   border-color: var(--accent);
 }
-.zoom-controls button:disabled {
+/* aria-disabled, not :disabled — the buttons stay focusable so reaching a zoom
+   limit does not drop keyboard focus to the body. */
+.zoom-controls button[aria-disabled="true"] {
   opacity: 0.45;
   cursor: default;
 }
