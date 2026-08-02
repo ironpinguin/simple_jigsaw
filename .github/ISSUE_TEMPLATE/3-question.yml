@@ -1,0 +1,64 @@
+name: ❓ Frage / Question
+description: Frage zu Einrichtung, Nutzung oder Entwicklung. / A question about setup, usage or development.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Einrichtung und Konfiguration sind in
+        [README.md](https://github.com/ironpinguin/simple_jigsaw/blob/main/README.md) und
+        [CONTRIBUTING.md](https://github.com/ironpinguin/simple_jigsaw/blob/main/CONTRIBUTING.md)
+        beschrieben.
+
+        Setup and configuration are documented in
+        [README.md](https://github.com/ironpinguin/simple_jigsaw/blob/main/README.md) and
+        [CONTRIBUTING.md](https://github.com/ironpinguin/simple_jigsaw/blob/main/CONTRIBUTING.md).
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Vorab / Before you start
+      options:
+        - label: Ich habe README und CONTRIBUTING gelesen und die bestehenden Issues durchsucht. / I read the README and CONTRIBUTING and searched the existing issues.
+          required: true
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Thema / Topic
+      options:
+        - Einrichtung & Docker / Setup & Docker
+        - Konfiguration (env) / Configuration (env)
+        - Nutzung / Usage
+        - Entwicklung & Architektur / Development & architecture
+        - Recht & Datenschutz / Legal & privacy
+        - Sonstiges / Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Deine Frage / Your question
+      description: |
+        So konkret wie möglich — was möchtest du erreichen?
+        As specific as possible — what are you trying to achieve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: Was hast du schon versucht? / What have you already tried?
+      description: |
+        Befehle, Konfiguration, Fehlermeldungen — alles, was den Kontext klärt.
+        Commands, configuration, error messages — anything that clarifies the context.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version oder Commit / Version or commit
+      description: |
+        Falls die Frage eine bestimmte Version betrifft.
+        If the question relates to a specific version.
+      placeholder: v0.4.0 · latest-sqlite · b1bfd5e

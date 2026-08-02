@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Einrichtung & Beitragen / Setup & contributing
+    url: https://github.com/ironpinguin/simple_jigsaw/blob/main/CONTRIBUTING.md
+    about: Entwicklungsumgebung, Qualitätsanforderungen und Release-Prozess. / Development setup, quality bar and release process.
+  - name: 📘 Dokumentation / Documentation
+    url: https://github.com/ironpinguin/simple_jigsaw/blob/main/README.md
+    about: Konfigurationsreferenz und Deployment-Anleitung. / Configuration reference and deployment guide.

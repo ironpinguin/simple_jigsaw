@@ -1,0 +1,133 @@
+name: 🐛 Fehlerbericht / Bug report
+description: Etwas funktioniert nicht wie erwartet. / Something isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke, dass du dir die Zeit nimmst! Je genauer der Bericht, desto schneller die Behebung.
+
+        Thanks for taking the time! The more precise the report, the faster the fix.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Vorab / Before you start
+      options:
+        - label: Ich habe die bestehenden Issues durchsucht und keinen passenden Bericht gefunden. / I searched the existing issues and found no matching report.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Was ist passiert? / What happened?
+      description: |
+        Beschreibe das fehlerhafte Verhalten.
+        Describe the incorrect behaviour.
+      placeholder: |
+        Beim Ziehen eines Teils …
+        When dragging a piece …
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Schritte zur Reproduktion / Steps to reproduce
+      description: |
+        Nummerierte Schritte, mit denen sich der Fehler zuverlässig auslösen lässt.
+        Numbered steps that reliably trigger the bug.
+      placeholder: |
+        1. Puzzle mit 100 Teilen erstellen / Create a puzzle with 100 pieces
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten / Expected behaviour
+      description: |
+        Was hättest du stattdessen erwartet?
+        What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Bereich / Area
+      description: |
+        Welcher Teil der Anwendung ist betroffen?
+        Which part of the application is affected?
+      options:
+        - Puzzle-Board / Puzzle board
+        - Bild-Upload / Image upload
+        - Login & Konto / Login & account
+        - Teilen & Links / Sharing & links
+        - Admin
+        - Mehrsprachigkeit / i18n
+        - Docker & Deployment
+        - Sonstiges / Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version oder Commit / Version or commit
+      description: |
+        Release-Tag, Image-Tag oder Commit-Hash.
+        Release tag, image tag or commit hash.
+      placeholder: v0.4.0 · latest-sqlite · b1bfd5e
+    validations:
+      required: true
+
+  - type: dropdown
+    id: setup
+    attributes:
+      label: Setup
+      description: |
+        Wie läuft die Anwendung?
+        How is the application running?
+      options:
+        - Docker (PostgreSQL)
+        - Docker (SQLite)
+        - "next dev"
+        - Andere / Other
+
+  - type: input
+    id: environment
+    attributes:
+      label: Browser & Betriebssystem / Browser & OS
+      placeholder: Firefox 141 · Windows 11 · Safari 18 · iOS 18
+
+  - type: dropdown
+    id: locale
+    attributes:
+      label: Sprache der Oberfläche / UI language
+      description: |
+        Hilft bei der Reproduktion sprachabhängiger Fehler.
+        Helps reproduce language-specific bugs.
+      options:
+        - Deutsch (/de)
+        - English (/en)
+        - Italiano (/it)
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Konsolenausgabe / Console output
+      description: |
+        Browser-Konsole oder `docker compose logs app`. Wird automatisch als Code formatiert.
+        Browser console or `docker compose logs app`. This is rendered as code automatically.
+      render: shell
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Screenshots & weiterer Kontext / Screenshots & additional context
+      description: |
+        Screenshots, Bildschirmaufnahmen oder alles andere, was hilft.
+        Screenshots, screen recordings or anything else that helps.
