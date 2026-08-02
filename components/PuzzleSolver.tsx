@@ -29,7 +29,8 @@ export default function PuzzleSolver({
   // Piece count is per solver: default to the creator's value, but remember the
   // solver's own choice for this puzzle. The stored value is only applied after
   // mount — reading it during render would make the first client render differ
-  // from the server's and break hydration.
+  // from the server's and break hydration. The cost is that a remembered count
+  // builds the board twice, so keep the read in the effect below.
   const [pieceCount, setPieceCount] = useState(puzzle.pieceCount);
 
   useEffect(() => {
@@ -43,26 +44,35 @@ export default function PuzzleSolver({
   );
   const total = cols * rows;
 
-  const [groups, setGroups] = useState(total);
+  // The board reports which grid its group count belongs to. Keeping that with
+  // the count lets a report from the previous grid be ignored: after a
+  // piece-count change the board rebuilds asynchronously (its chunk and the
+  // image have to load first), and counting against the new `total` in the
+  // meantime would show a negative number of connections.
+  const [progress, setProgress] = useState<{ groups: number; total: number } | null>(null);
   const [solved, setSolved] = useState(false);
   const [showRef, setShowRef] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const onProgress = useCallback((g: number) => {
-    setGroups(g);
-    setSolved(g === 1);
+  const onProgress = useCallback((groups: number, boardTotal: number) => {
+    setProgress({ groups, total: boardTotal });
+    setSolved(groups === 1);
   }, []);
 
   const onSolved = useCallback(() => setSolved(true), []);
 
+  // Connections made; total-1 when solved. An unbuilt or just-resized board has
+  // not reported for this grid yet, and then nothing is connected.
+  const connected = progress?.total === total ? total - progress.groups : 0;
+
   function changeCount(n: number) {
     if (n === pieceCount) return;
     // Warn if the solver has already connected pieces (rebuild resets progress).
-    if (groups < total && !window.confirm(t("confirmChange"))) {
+    if (connected > 0 && !window.confirm(t("confirmChange"))) {
       return;
     }
     setPieceCount(n);
-    if (typeof window !== "undefined") window.localStorage.setItem(storageKey, String(n));
+    window.localStorage.setItem(storageKey, String(n));
   }
 
   async function share() {
@@ -74,8 +84,6 @@ export default function PuzzleSolver({
       setCopied(false);
     }
   }
-
-  const connected = total - groups; // connections made; total-1 when solved
 
   return (
     <div>

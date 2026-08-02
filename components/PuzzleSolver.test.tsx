@@ -1,17 +1,44 @@
 /** @vitest-environment jsdom */
+import { useEffect } from "react";
 import { act } from "react";
-import { hydrateRoot } from "react-dom/client";
+import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
+import { computeGrid } from "@/lib/puzzle/grid";
 import PuzzleSolver from "./PuzzleSolver";
 
-// The real board pulls in Konva, which needs a canvas jsdom does not provide.
-// Nothing here depends on what it draws.
-vi.mock("./PuzzleBoard", () => ({
-  default: () => null,
+// The real board needs a canvas jsdom does not provide. The stub keeps the one
+// thing the solver reads from it — the progress report, which carries the grid
+// it belongs to — and `board` decides which grids it reports for, so a board
+// that has not rebuilt yet can be simulated.
+const board = vi.hoisted<{
+  reportsFor: (total: number) => boolean;
+  groupsFor: (total: number) => number;
+}>(() => ({
+  reportsFor: () => true,
+  groupsFor: (total) => total,
 }));
+
+vi.mock("./PuzzleBoard", () => {
+  function BoardStub({
+    cols,
+    rows,
+    onProgress,
+  }: {
+    cols: number;
+    rows: number;
+    onProgress: (groups: number, total: number) => void;
+  }) {
+    const total = cols * rows;
+    useEffect(() => {
+      if (board.reportsFor(total)) onProgress(board.groupsFor(total), total);
+    }, [total, onProgress]);
+    return null;
+  }
+  return { default: BoardStub };
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,9 +47,18 @@ const puzzle = {
   imageKey: "key.webp",
   imageWidth: 1200,
   imageHeight: 800,
-  pieceCount: 108, // the creator's default
+  pieceCount: 108, // what the creator picked; the fallback when nothing is stored
   seed: 1,
 };
+
+const storageKey = `pc:${puzzle.id}`;
+
+// The progress line shows `cols * rows - 1` connections, not the piece count:
+// computeGrid only approximates a preset. It hits both of these exactly for
+// this aspect ratio (12 × 9 and 4 × 3) — pinned by the first test below, so a
+// retuned computeGrid fails loudly instead of leaving these numbers stale.
+const CONNECTIONS_108 = 107;
+const CONNECTIONS_12 = 11;
 
 function tree() {
   return (
@@ -32,71 +68,178 @@ function tree() {
   );
 }
 
-/** Render as the server does: no `window`, so no access to localStorage. */
+/**
+ * Render as the server does. Hides `window` *and* the globals jsdom leaves
+ * reachable without it, so a component that reads storage as bare
+ * `localStorage` fails here too instead of silently defeating the guard.
+ */
 function serverHtml() {
-  const realWindow = globalThis.window;
-  // @ts-expect-error — deliberately emulating the server environment
-  delete globalThis.window;
+  const hidden = ["window", "localStorage", "sessionStorage", "document", "navigator"] as const;
+  const saved = hidden.map((key) => [key, Reflect.get(globalThis, key)] as const);
+  for (const key of hidden) Reflect.deleteProperty(globalThis, key);
   try {
     return renderToString(tree());
   } finally {
-    globalThis.window = realWindow;
+    for (const [key, value] of saved) Reflect.set(globalThis, key, value);
   }
 }
 
 describe("PuzzleSolver", () => {
   let container: HTMLDivElement;
+  let root: Root | undefined;
+
+  function hydrate() {
+    return act(async () => {
+      root = hydrateRoot(container, tree());
+    });
+  }
+
+  function progressText() {
+    return container.querySelector(".progress")?.textContent;
+  }
+
+  function select() {
+    return container.querySelector<HTMLSelectElement>("#piece-count");
+  }
+
+  /** Pick a value in the piece-count select the way a user would. */
+  function choose(value: string) {
+    const el = select()!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    setter.call(el, value);
+    return act(async () => {
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
 
   beforeEach(() => {
+    board.reportsFor = () => true;
+    board.groupsFor = (total) => total;
     window.localStorage.clear();
     container = document.createElement("div");
     document.body.appendChild(container);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Unmount, or the effects of one test keep running during the next.
+    if (root) await act(async () => root!.unmount());
+    root = undefined;
     container.remove();
     vi.restoreAllMocks();
   });
 
+  it("uses the grids the expected connection counts assume", () => {
+    const aspect = puzzle.imageWidth / puzzle.imageHeight;
+    expect(computeGrid(108, aspect)).toMatchObject({ cols: 12, rows: 9 });
+    expect(computeGrid(12, aspect)).toMatchObject({ cols: 4, rows: 3 });
+  });
+
   it("hydrates without a mismatch when a piece count was remembered", async () => {
-    window.localStorage.setItem(`pc:${puzzle.id}`, "12");
+    window.localStorage.setItem(storageKey, "12");
     container.innerHTML = serverHtml();
 
-    // React reports a mismatch twice: as a recoverable error and on the console.
+    // `onRecoverableError` replaces React's default handler, which is the one
+    // that logs to the console — a mismatch arrives on exactly one of the two.
+    // The console spy is a separate net for other React warnings.
     const onRecoverableError = vi.fn();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
-      hydrateRoot(container, tree(), { onRecoverableError });
+      root = hydrateRoot(container, tree(), { onRecoverableError });
     });
 
     expect(onRecoverableError).not.toHaveBeenCalled();
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("applies the remembered piece count after mount", async () => {
-    window.localStorage.setItem(`pc:${puzzle.id}`, "12");
+  it("hydrates without a mismatch when nothing is stored", async () => {
     container.innerHTML = serverHtml();
 
-    // 108 pieces → 12 × 9, so 107 connections before the stored value lands.
-    expect(container.querySelector(".progress")?.textContent).toContain("/ 107");
-
+    const onRecoverableError = vi.fn();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
-      hydrateRoot(container, tree());
+      root = hydrateRoot(container, tree(), { onRecoverableError });
     });
 
-    // 12 pieces → 4 × 3, so 11 connections.
-    expect(container.querySelector(".progress")?.textContent).toContain("/ 11");
-    expect(container.querySelector<HTMLSelectElement>("#piece-count")?.value).toBe("12");
+    expect(onRecoverableError).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(progressText()).toBe(`0 / ${CONNECTIONS_108} connected`);
+    expect(select()?.value).toBe("108");
+  });
+
+  it("applies the remembered piece count after mount", async () => {
+    window.localStorage.setItem(storageKey, "12");
+    container.innerHTML = serverHtml();
+
+    expect(progressText()).toBe(`0 / ${CONNECTIONS_108} connected`);
+
+    await hydrate();
+
+    expect(progressText()).toBe(`0 / ${CONNECTIONS_12} connected`);
+    expect(select()?.value).toBe("12");
+  });
+
+  it("counts nothing as connected until the board has rebuilt for the new grid", async () => {
+    // The board keeps reporting the grid it was built for: its chunk and the
+    // image still have to load before it rebuilds for the remembered count.
+    board.reportsFor = (total) => total === 108;
+    window.localStorage.setItem(storageKey, "12");
+    container.innerHTML = serverHtml();
+
+    await hydrate();
+
+    expect(progressText()).toBe(`0 / ${CONNECTIONS_12} connected`);
   });
 
   it("ignores a stored value that is not a preset", async () => {
-    window.localStorage.setItem(`pc:${puzzle.id}`, "7");
+    window.localStorage.setItem(storageKey, "7");
     container.innerHTML = serverHtml();
 
-    await act(async () => {
-      hydrateRoot(container, tree());
-    });
+    await hydrate();
 
-    expect(container.querySelector<HTMLSelectElement>("#piece-count")?.value).toBe("108");
+    expect(select()?.value).toBe("108");
+  });
+
+  it("remembers a piece count the solver picks", async () => {
+    container.innerHTML = serverHtml();
+    await hydrate();
+
+    await choose("48");
+
+    expect(window.localStorage.getItem(storageKey)).toBe("48");
+    expect(select()?.value).toBe("48");
+  });
+
+  it("does not store anything when the count does not change", async () => {
+    container.innerHTML = serverHtml();
+    await hydrate();
+
+    await choose("108");
+
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("does not ask before discarding progress on an untouched board", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    container.innerHTML = serverHtml();
+    await hydrate();
+
+    await choose("48");
+
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("keeps the count when the solver declines to discard progress", async () => {
+    board.groupsFor = (total) => total - 3; // three connections made
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    container.innerHTML = serverHtml();
+    await hydrate();
+
+    expect(progressText()).toBe(`3 / ${CONNECTIONS_108} connected`);
+
+    await choose("48");
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(select()?.value).toBe("108");
+    expect(window.localStorage.getItem(storageKey)).toBeNull();
   });
 });
