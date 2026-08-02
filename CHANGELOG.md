@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Cleared all 11 open Dependabot alerts (1 critical, 6 high, 4 moderate).
+  Upgraded `sharp` 0.33 → 0.35 (libvips CVE-2026-33327/33328/35590/35591),
+  `nodemailer` 8 → 9 (`raw` option bypassing `disableFileAccess`/
+  `disableUrlAccess`) and `vitest` 2 → 3 (arbitrary file read/execute via the
+  UI server), which also lifts `vite` to 7 and `esbuild` to 0.28. Added
+  `overrides` for `postcss`, `brace-expansion` and `nodemailer`, whose parents
+  still pin vulnerable ranges.
+
 ### Fixed
 - Solve view: pieces no longer appear to go missing. Loose single pieces are now
   always drawn above assembled blocks, so they stay clickable — previously the

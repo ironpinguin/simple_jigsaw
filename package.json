@@ -29,17 +29,17 @@
     "next": "^15.1.4",
     "next-auth": "^5.0.0-beta.25",
     "next-intl": "^4.3.4",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "^9.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-konva": "^19.0.2",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.5",
-    "@types/nodemailer": "^6.4.16",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19.0.4",
     "@types/react-dom": "^19.0.2",
     "@eslint/eslintrc": "^3.2.0",
@@ -47,6 +47,13 @@
     "eslint-config-next": "^15.1.4",
     "prisma": "^6.2.1",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.7"
+  },
+  "//overrides": "Transitive security fixes the parent package cannot pull in itself: next pins postcss to an exact 8.4.31 and its optional sharp to ^0.34.3, @eslint/eslintrc still resolves the 1.x line of brace-expansion via minimatch@3, and @auth/core's nodemailer peer range (^7.0.7 || ^8.0.5) predates the 9.0.1 fix — safe to force here because we only register the Credentials provider, so @auth/core never loads nodemailer (our own SMTP code in lib/mail.ts does). Drop an entry once the parent ships a patched range.",
+  "overrides": {
+    "postcss": "^8.5.25",
+    "sharp": "$sharp",
+    "nodemailer": "$nodemailer",
+    "brace-expansion@^1": "^1.1.18"
   }
 }
