@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
-import { generateEdges } from "@/lib/puzzle/edges";
+import { generateEdges, type EdgeGrid } from "@/lib/puzzle/edges";
 import { pieceOutlinePath } from "@/lib/puzzle/outline";
 import {
   pieceId,
@@ -17,6 +17,8 @@ import {
   pieceBox,
   scatterGroups,
   settleGroup,
+  type BoardGeometry,
+  type PieceBox,
   type Rect,
 } from "@/lib/puzzle/board";
 
@@ -69,6 +71,66 @@ function useHtmlImage(src: string): HTMLImageElement | null {
   return img;
 }
 
+/**
+ * Rasterise one piece into its own bitmap: the board image clipped to the
+ * piece's outline, plus the shading that makes it read as cardboard. This is the
+ * only canvas work in the file, which is what keeps `lib/puzzle` — including the
+ * `pieceBox` geometry it sizes itself from — testable in plain node.
+ */
+function renderPieceCanvas(
+  image: HTMLImageElement,
+  grid: EdgeGrid,
+  box: PieceBox,
+  row: number,
+  col: number,
+  { pieceW, pieceH, boardW, boardH }: BoardGeometry,
+): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = box.canvasW;
+  canvas.height = box.canvasH;
+  const ctx = canvas.getContext("2d")!;
+  const path = new Path2D(pieceOutlinePath(grid, row, col, pieceW, pieceH));
+
+  ctx.translate(box.offsetX, box.offsetY);
+
+  // Clip to the piece and paint the corresponding region of the board.
+  ctx.save();
+  ctx.clip(path);
+  ctx.drawImage(image, -col * pieceW, -row * pieceH, boardW, boardH);
+
+  // Beveled cardboard edge: two directional INNER shadows (still clipped to
+  // the piece) — a soft dark rim toward the bottom-right and a lighter rim
+  // toward the top-left. The thin stroke casts a blurred shadow that only
+  // survives on the inside of the clip, giving a rounded, raised edge.
+  ctx.lineWidth = 1;
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.shadowBlur = 7;
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 3;
+  ctx.strokeStyle = "rgba(0,0,0,0.55)";
+  ctx.stroke(path);
+  ctx.restore();
+  ctx.save();
+  ctx.shadowColor = "rgba(255,255,255,0.8)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetX = -3;
+  ctx.shadowOffsetY = -3;
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.stroke(path);
+  ctx.restore();
+  ctx.restore(); // unclip
+
+  // Crisp thin outline on top for a clean cut definition.
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(0,0,0,0.4)";
+  ctx.stroke(path);
+  ctx.restore();
+
+  return canvas;
+}
+
 function buildLayout(
   puzzle: PuzzleData,
   image: HTMLImageElement,
@@ -78,7 +140,7 @@ function buildLayout(
 ): Layout {
   const { seed } = puzzle;
 
-  const { stageW, stageH, boardW, boardH, pieceW, pieceH, snapDist } = boardGeometry({
+  const geo = boardGeometry({
     containerW,
     // Fill most of the viewport height so the play area uses the whole window.
     viewportH: typeof window !== "undefined" ? window.innerHeight : 800,
@@ -86,6 +148,7 @@ function buildLayout(
     cols,
     rows,
   });
+  const { stageW, stageH, pieceW, pieceH, snapDist } = geo;
 
   const grid = generateEdges(cols, rows, seed);
 
@@ -96,55 +159,11 @@ function buildLayout(
     for (let c = 0; c < cols; c++) {
       const id = pieceId(r, c);
       const box = pieceBox(grid, r, c, pieceW, pieceH);
-
-      const canvas = document.createElement("canvas");
-      canvas.width = box.canvasW;
-      canvas.height = box.canvasH;
-      const ctx = canvas.getContext("2d")!;
-      const path = new Path2D(pieceOutlinePath(grid, r, c, pieceW, pieceH));
-
-      ctx.translate(box.offsetX, box.offsetY);
-
-      // Clip to the piece and paint the corresponding region of the board.
-      ctx.save();
-      ctx.clip(path);
-      ctx.drawImage(image, -c * pieceW, -r * pieceH, boardW, boardH);
-
-      // Beveled cardboard edge: two directional INNER shadows (still clipped to
-      // the piece) — a soft dark rim toward the bottom-right and a lighter rim
-      // toward the top-left. The thin stroke casts a blurred shadow that only
-      // survives on the inside of the clip, giving a rounded, raised edge.
-      ctx.lineWidth = 1;
-      ctx.save();
-      ctx.shadowColor = "rgba(0,0,0,0.55)";
-      ctx.shadowBlur = 7;
-      ctx.shadowOffsetX = 3;
-      ctx.shadowOffsetY = 3;
-      ctx.strokeStyle = "rgba(0,0,0,0.55)";
-      ctx.stroke(path);
-      ctx.restore();
-      ctx.save();
-      ctx.shadowColor = "rgba(255,255,255,0.8)";
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetX = -3;
-      ctx.shadowOffsetY = -3;
-      ctx.strokeStyle = "rgba(255,255,255,0.7)";
-      ctx.stroke(path);
-      ctx.restore();
-      ctx.restore(); // unclip
-
-      // Crisp thin outline on top for a clean cut definition.
-      ctx.save();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
-      ctx.stroke(path);
-      ctx.restore();
-
       pieces.set(id, {
         id,
         row: r,
         col: c,
-        canvas,
+        canvas: renderPieceCanvas(image, grid, box, r, c, geo),
         offsetX: box.offsetX,
         offsetY: box.offsetY,
         solvedX: c * pieceW,
