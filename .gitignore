@@ -39,6 +39,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Claude Code — personal settings only; .claude/skills/ and settings.json are shared
+/.claude/settings.local.json
+
 # CI artifacts
 /junit.xml
 /gl-sast-report.json
