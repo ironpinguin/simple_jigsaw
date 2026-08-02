@@ -21,6 +21,13 @@ import {
   type PieceBox,
   type Rect,
 } from "@/lib/puzzle/board";
+import {
+  clampScale,
+  MAX_SCALE,
+  MIN_SCALE,
+  wheelZoomFactor,
+  zoomPercent,
+} from "@/lib/puzzle/zoom";
 
 export interface PuzzleData {
   id: string;
@@ -206,6 +213,9 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
   // react-konva reorders nodes only when the React child order changes.
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
+  // Mirrors the stage scale, which Konva owns, so the readout can render it.
+  const [scale, setScale] = useState(1);
+
   const total = cols * rows;
 
   useEffect(() => {
@@ -289,19 +299,18 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
   }
 
   // --- Zoom & pan -----------------------------------------------------------
-  const MIN_SCALE = 0.35;
-  const MAX_SCALE = 3;
 
   const zoomAround = useCallback((nextScale: number, center: { x: number; y: number }) => {
     const stage = stageRef.current;
     if (!stage) return;
     const old = stage.scaleX();
-    const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
+    const s = clampScale(nextScale);
     // Keep the point under `center` fixed while scaling.
     const anchor = { x: (center.x - stage.x()) / old, y: (center.y - stage.y()) / old };
     stage.scale({ x: s, y: s });
     stage.position({ x: center.x - anchor.x * s, y: center.y - anchor.y * s });
     stage.batchDraw();
+    setScale(s);
   }, []);
 
   const handleWheel = useCallback(
@@ -310,8 +319,7 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
       if (!stage || !pointer) return;
-      const factor = e.evt.deltaY > 0 ? 1 / 1.12 : 1.12;
-      zoomAround(stage.scaleX() * factor, pointer);
+      zoomAround(stage.scaleX() * wheelZoomFactor(e.evt.deltaY, e.evt.deltaMode), pointer);
     },
     [zoomAround],
   );
@@ -331,6 +339,7 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     stage.scale({ x: 1, y: 1 });
     stage.position({ x: 0, y: 0 });
     stage.batchDraw();
+    setScale(1);
   }, []);
 
   // Pinch-to-zoom (two fingers). Pauses stage panning while pinching.
@@ -377,10 +386,23 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
       {layout && (
         <>
           <div className="zoom-controls">
-            <button type="button" aria-label={t("zoomIn")} onClick={() => zoomButton(1.25)}>
+            <output className="zoom-level" aria-label={t("zoomLevel")}>
+              {t("zoomPercent", { percent: zoomPercent(scale) })}
+            </output>
+            <button
+              type="button"
+              aria-label={t("zoomIn")}
+              onClick={() => zoomButton(1.25)}
+              disabled={scale >= MAX_SCALE}
+            >
               +
             </button>
-            <button type="button" aria-label={t("zoomOut")} onClick={() => zoomButton(1 / 1.25)}>
+            <button
+              type="button"
+              aria-label={t("zoomOut")}
+              onClick={() => zoomButton(1 / 1.25)}
+              disabled={scale <= MIN_SCALE}
+            >
               −
             </button>
             <button type="button" aria-label={t("resetView")} onClick={resetView}>

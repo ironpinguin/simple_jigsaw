@@ -81,7 +81,9 @@
     "confirmChange": "Change the number of pieces? Your current progress will be lost.",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
-    "resetView": "Reset view"
+    "resetView": "Reset view",
+    "zoomLevel": "Current zoom level",
+    "zoomPercent": "{percent}%"
   },
   "my": {
     "title": "My puzzles",

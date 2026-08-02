@@ -81,7 +81,9 @@
     "confirmChange": "Teile-Anzahl ändern? Der aktuelle Fortschritt geht verloren.",
     "zoomIn": "Vergrößern",
     "zoomOut": "Verkleinern",
-    "resetView": "Ansicht zurücksetzen"
+    "resetView": "Ansicht zurücksetzen",
+    "zoomLevel": "Aktuelle Zoomstufe",
+    "zoomPercent": "{percent} %"
   },
   "my": {
     "title": "Meine Puzzles",

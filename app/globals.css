@@ -307,8 +307,23 @@ select:focus {
   color: var(--text);
   cursor: pointer;
 }
-.zoom-controls button:hover {
+.zoom-controls button:hover:not(:disabled) {
   border-color: var(--accent);
+}
+.zoom-controls button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.zoom-level {
+  min-width: 38px;
+  padding: 4px 0;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(26, 30, 51, 0.9);
+  color: var(--muted);
 }
 
 .admin-table {
