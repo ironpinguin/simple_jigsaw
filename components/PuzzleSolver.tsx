@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { PuzzleData } from "./PuzzleBoard";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
@@ -27,14 +27,15 @@ export default function PuzzleSolver({
   const storageKey = `pc:${puzzle.id}`;
 
   // Piece count is per solver: default to the creator's value, but remember the
-  // solver's own choice for this puzzle.
-  const [pieceCount, setPieceCount] = useState<number>(() => {
-    if (typeof window !== "undefined") {
-      const saved = Number(window.localStorage.getItem(storageKey));
-      if ((PIECE_PRESETS as readonly number[]).includes(saved)) return saved;
-    }
-    return puzzle.pieceCount;
-  });
+  // solver's own choice for this puzzle. The stored value is only applied after
+  // mount — reading it during render would make the first client render differ
+  // from the server's and break hydration.
+  const [pieceCount, setPieceCount] = useState(puzzle.pieceCount);
+
+  useEffect(() => {
+    const saved = Number(window.localStorage.getItem(storageKey));
+    if ((PIECE_PRESETS as readonly number[]).includes(saved)) setPieceCount(saved);
+  }, [storageKey]);
 
   const { cols, rows } = useMemo(
     () => computeGrid(pieceCount, puzzle.imageWidth / puzzle.imageHeight),
@@ -88,6 +89,8 @@ export default function PuzzleSolver({
         <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
           {t("pieces")}
           <select
+            id="piece-count"
+            name="pieceCount"
             value={pieceCount}
             onChange={(e) => changeCount(Number(e.target.value))}
             style={{ width: "auto" }}

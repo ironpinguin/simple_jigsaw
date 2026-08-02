@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still pin vulnerable ranges.
 
 ### Fixed
+- Solve view: opening a puzzle whose piece count you had changed before no
+  longer throws a hydration error and re-renders the whole board. The
+  remembered piece count is now applied after mount instead of during the first
+  render. The piece-count selector also has an `id` and `name` again.
 - Solve view: pieces no longer appear to go missing. Loose single pieces are now
   always drawn above assembled blocks, so they stay clickable — previously the
   block you dragged last stayed on top for good and swallowed every click over
