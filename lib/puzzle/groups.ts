@@ -41,6 +41,32 @@ export function neighbourIds(id: string, rows: number, cols: number): string[] {
 }
 
 /**
+ * Draw order for the groups on the board, back to front.
+ *
+ * Konva hit-tests an `Image` by its full bounding rectangle, so whatever is
+ * drawn last swallows every pointer event underneath it — a loose piece lying
+ * below an assembled block would be impossible to grab. Largest groups first
+ * therefore sinks the assembled blocks a solver is no longer picking up to the
+ * back, and leaves single pieces drawn last: on top, and always reachable.
+ *
+ * `topId` (the group currently being dragged) is lifted above everything so it
+ * follows the cursor visibly. Passing it explicitly rather than calling
+ * `moveToTop()` matters: react-konva only reorders nodes when the React child
+ * order changes, so an imperative lift would otherwise persist for good.
+ */
+export function renderOrder(
+  groups: Iterable<PieceGroup>,
+  topId?: number | null,
+): PieceGroup[] {
+  // Array.prototype.sort is stable, so equal-sized groups keep their order.
+  return [...groups].sort((a, b) => {
+    if (a.id === topId) return 1;
+    if (b.id === topId) return -1;
+    return b.members.length - a.members.length;
+  });
+}
+
+/**
  * After the group `draggedId` has been repositioned, merge it with any adjacent
  * neighbouring groups whose origin is now within `snapDist`, cascading through
  * chains. Mutates `groups` and `pieceToGroup` in place. Returns the surviving

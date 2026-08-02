@@ -5,9 +5,20 @@ import { useTranslations } from "next-intl";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges } from "@/lib/puzzle/edges";
-import { pieceOutlinePath, pieceOutlinePoints } from "@/lib/puzzle/outline";
-import { mulberry32 } from "@/lib/puzzle/prng";
-import { resolveConnections, type PieceGroup } from "@/lib/puzzle/groups";
+import { pieceOutlinePath } from "@/lib/puzzle/outline";
+import {
+  pieceId,
+  renderOrder,
+  resolveConnections,
+  type PieceGroup,
+} from "@/lib/puzzle/groups";
+import {
+  clampGroupPosition,
+  pieceBox,
+  scatterGroups,
+  unionRect,
+  type Rect,
+} from "@/lib/puzzle/board";
 
 export interface PuzzleData {
   id: string;
@@ -29,6 +40,8 @@ interface PieceInfo {
   /** Corner position in solved (puzzle) space — constant within any group. */
   solvedX: number;
   solvedY: number;
+  /** The bitmap's area in group coordinates; also its (rectangular) hit area. */
+  rect: Rect;
 }
 
 interface Layout {
@@ -41,8 +54,6 @@ interface Layout {
   order: string[]; // piece ids in row-major order
   initialGroups: PieceGroup[];
 }
-
-const TAB_FRAC = 0.2;
 
 function useHtmlImage(src: string): HTMLImageElement | null {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
@@ -84,47 +95,24 @@ function buildLayout(
   }
   const pieceW = boardW / cols;
   const pieceH = boardH / rows;
-  const tabV = TAB_FRAC * pieceW;
-  const tabH = TAB_FRAC * pieceH;
 
   const grid = generateEdges(cols, rows, seed);
-  const rng = mulberry32(seed ^ 0x9e3779b9);
-
-  const boxW = pieceW + 2 * tabV;
-  const boxH = pieceH + 2 * tabH;
 
   const pieces = new Map<string, PieceInfo>();
   const order: string[] = [];
-  const initialGroups: PieceGroup[] = [];
-  let gid = 1;
-
-  const PAD = 7; // room for the bevel/inner-shadow around the outline
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const id = `${r}-${c}`;
-
-      // Outline in local coords (origin = regular cell corner). With vertex
-      // jitter and tabs on any side the extent varies per piece, so size the
-      // canvas to the actual bounding box.
-      const pts = pieceOutlinePoints(grid, r, c, pieceW, pieceH);
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      for (const p of pts) {
-        if (p.x < minX) minX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y > maxY) maxY = p.y;
-      }
-      const ox = -minX + PAD; // local (0,0) position inside the canvas
-      const oy = -minY + PAD;
+      const id = pieceId(r, c);
+      const box = pieceBox(grid, r, c, pieceW, pieceH);
 
       const canvas = document.createElement("canvas");
-      canvas.width = Math.ceil(maxX - minX + 2 * PAD);
-      canvas.height = Math.ceil(maxY - minY + 2 * PAD);
+      canvas.width = box.canvasW;
+      canvas.height = box.canvasH;
       const ctx = canvas.getContext("2d")!;
       const path = new Path2D(pieceOutlinePath(grid, r, c, pieceW, pieceH));
 
-      ctx.translate(ox, oy);
+      ctx.translate(box.offsetX, box.offsetY);
 
       // Clip to the piece and paint the corresponding region of the board.
       ctx.save();
@@ -161,36 +149,23 @@ function buildLayout(
       ctx.stroke(path);
       ctx.restore();
 
-      const solvedX = c * pieceW;
-      const solvedY = r * pieceH;
-
-      // Scatter each single-piece group so its cell corner lands somewhere in
-      // the stage; group origin = scattered corner minus the piece's solved
-      // corner, keeping the shared puzzle coordinate frame intact.
-      const cornerX = tabV + 6 + rng() * Math.max(1, stageW - boxW - 12);
-      const cornerY = tabH + 6 + rng() * Math.max(1, stageH - boxH - 12);
-
       pieces.set(id, {
         id,
         row: r,
         col: c,
         canvas,
-        offsetX: ox,
-        offsetY: oy,
-        solvedX,
-        solvedY,
+        offsetX: box.offsetX,
+        offsetY: box.offsetY,
+        solvedX: c * pieceW,
+        solvedY: r * pieceH,
+        rect: box.rect,
       });
       order.push(id);
-      initialGroups.push({
-        id: gid++,
-        x: cornerX - solvedX,
-        y: cornerY - solvedY,
-        members: [id],
-      });
     }
   }
 
   const snapDist = Math.max(18, 0.4 * Math.min(pieceW, pieceH));
+  const initialGroups = scatterGroups({ cols, rows, seed, pieceW, pieceH, stageW, stageH });
 
   return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
 }
@@ -216,6 +191,11 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
   const pieceToGroupRef = useRef<Map<string, number>>(new Map());
   const [, setVersion] = useState(0);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
+
+  // The group being dragged, so it can be drawn on top declaratively (see
+  // renderOrder). Konva's own moveToTop() would outlive the drag, because
+  // react-konva reorders nodes only when the React child order changes.
+  const [draggingId, setDraggingId] = useState<number | null>(null);
 
   const total = cols * rows;
 
@@ -256,7 +236,18 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     onProgress(groups.size, total);
   }, [layout, total, onProgress, bump]);
 
+  /** A group's extent in its own coordinates — the input for the drag bounds. */
+  function extentOf(g: PieceGroup, pieces: Layout["pieces"]): Rect {
+    return unionRect(
+      g.members
+        .map((pid) => pieces.get(pid)?.rect)
+        .filter((r): r is Rect => r !== undefined),
+    );
+  }
+
   function handleGroupDragEnd(groupId: number, node: Konva.Node) {
+    setDraggingId(null);
+
     const groups = groupsRef.current;
     const p2g = pieceToGroupRef.current;
 
@@ -265,7 +256,22 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     start.x = node.x();
     start.y = node.y();
 
-    resolveConnections(groups, p2g, groupId, rows, cols, layout!.snapDist);
+    const { survivorId } = resolveConnections(groups, p2g, groupId, rows, cols, layout!.snapDist);
+
+    // Merging keeps the survivor's origin but grows its extent, so a block
+    // joined at the edge can reach past the stage by up to snapDist. Pull it
+    // back in — the whole assembly shifts rigidly, connections are membership.
+    const survivor = groups.get(survivorId);
+    if (survivor) {
+      const bounded = clampGroupPosition(
+        { x: survivor.x, y: survivor.y },
+        extentOf(survivor, layout!.pieces),
+        layout!.stageW,
+        layout!.stageH,
+      );
+      survivor.x = bounded.x;
+      survivor.y = bounded.y;
+    }
 
     bump();
     onProgress(groups.size, total);
@@ -352,7 +358,9 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     };
   }, [zoomAround, layout]);
 
-  const groupList = Array.from(groupsRef.current.values());
+  // Largest groups at the back, so loose pieces are never buried under an
+  // assembled block (Konva hit-tests bitmaps by their full rectangle).
+  const groupList = renderOrder(groupsRef.current.values(), draggingId);
 
   return (
     <div ref={wrapRef} className="board-wrap" style={{ width: "100%", position: "relative" }}>
@@ -377,13 +385,32 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
             onWheel={handleWheel}
           >
             <Layer>
-            {groupList.map((g) => (
+            {groupList.map((g) => {
+              // Constant for as long as the group's membership is — computing it
+              // per render keeps it out of the per-mousemove drag bound.
+              const extent = extentOf(g, layout.pieces);
+              return (
               <Group
                 key={g.id}
                 x={g.x}
                 y={g.y}
                 draggable
-                onDragStart={(e) => e.currentTarget.moveToTop()}
+                // Konva hands us an absolute (screen) position; the play area is
+                // defined in stage content coordinates, so undo the current
+                // pan/zoom before clamping and reapply it afterwards.
+                dragBoundFunc={(pos) => {
+                  const stage = stageRef.current;
+                  if (!stage) return pos;
+                  const s = stage.scaleX() || 1;
+                  const clamped = clampGroupPosition(
+                    { x: (pos.x - stage.x()) / s, y: (pos.y - stage.y()) / s },
+                    extent,
+                    layout.stageW,
+                    layout.stageH,
+                  );
+                  return { x: clamped.x * s + stage.x(), y: clamped.y * s + stage.y() };
+                }}
+                onDragStart={() => setDraggingId(g.id)}
                 onDragEnd={(e) => handleGroupDragEnd(g.id, e.currentTarget)}
                 onMouseEnter={(e) => {
                   const stage = e.target.getStage();
@@ -417,7 +444,8 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
                   );
                 })}
               </Group>
-            ))}
+              );
+            })}
             </Layer>
           </Stage>
         </>
