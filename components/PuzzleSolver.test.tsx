@@ -1,4 +1,3 @@
-/** @vitest-environment jsdom */
 import { useEffect } from "react";
 import { act } from "react";
 import { hydrateRoot, type Root } from "react-dom/client";
@@ -94,8 +93,15 @@ describe("PuzzleSolver", () => {
     });
   }
 
-  function progressText() {
-    return container.querySelector(".progress")?.textContent;
+  /**
+   * The two numbers in the progress line. Read as numbers rather than matching
+   * the sentence, so rewording `solve.progress` does not break these tests —
+   * but the connected count is still asserted, which is where the bugs were.
+   */
+  function progress() {
+    const text = container.querySelector(".progress")?.textContent ?? "";
+    const [connected, total] = (text.match(/-?\d+/g) ?? []).map(Number);
+    return { connected, total };
   }
 
   function select() {
@@ -162,7 +168,7 @@ describe("PuzzleSolver", () => {
 
     expect(onRecoverableError).not.toHaveBeenCalled();
     expect(consoleError).not.toHaveBeenCalled();
-    expect(progressText()).toBe(`0 / ${CONNECTIONS_108} connected`);
+    expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_108 });
     expect(select()?.value).toBe("108");
   });
 
@@ -170,11 +176,11 @@ describe("PuzzleSolver", () => {
     window.localStorage.setItem(storageKey, "12");
     container.innerHTML = serverHtml();
 
-    expect(progressText()).toBe(`0 / ${CONNECTIONS_108} connected`);
+    expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_108 });
 
     await hydrate();
 
-    expect(progressText()).toBe(`0 / ${CONNECTIONS_12} connected`);
+    expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_12 });
     expect(select()?.value).toBe("12");
   });
 
@@ -187,11 +193,20 @@ describe("PuzzleSolver", () => {
 
     await hydrate();
 
-    expect(progressText()).toBe(`0 / ${CONNECTIONS_12} connected`);
+    expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_12 });
   });
 
   it("ignores a stored value that is not a preset", async () => {
     window.localStorage.setItem(storageKey, "7");
+    container.innerHTML = serverHtml();
+
+    await hydrate();
+
+    expect(select()?.value).toBe("108");
+  });
+
+  it("ignores a piece count stored for a different puzzle", async () => {
+    window.localStorage.setItem("pc:another-puzzle", "12");
     container.innerHTML = serverHtml();
 
     await hydrate();
@@ -234,7 +249,7 @@ describe("PuzzleSolver", () => {
     container.innerHTML = serverHtml();
     await hydrate();
 
-    expect(progressText()).toBe(`3 / ${CONNECTIONS_108} connected`);
+    expect(progress()).toEqual({ connected: 3, total: CONNECTIONS_108 });
 
     await choose("48");
 
