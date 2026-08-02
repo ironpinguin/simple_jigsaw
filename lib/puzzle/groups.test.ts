@@ -102,10 +102,37 @@ describe("resolveConnections", () => {
       const members = [...groups.values()].flatMap((x) => x.members);
       expect(members.length).toBe(rows * cols);
       expect(new Set(members).size).toBe(rows * cols);
-      // pieceToGroup must stay consistent with the surviving groups.
-      for (const m of members) expect(groups.has(p2g.get(m)!)).toBe(true);
+      // pieceToGroup must name the group that actually holds the piece — a live
+      // but wrong id would make pieces snap to the wrong block.
+      for (const g of groups.values()) {
+        for (const m of g.members) expect(p2g.get(m)).toBe(g.id);
+      }
     }
     expect(groups.size).toBe(1);
+  });
+
+  it("returns a survivor id that is usable and holds the dragged piece", () => {
+    // PuzzleBoard settles the survivor's position after every drop, so a stale
+    // id here would silently skip putting a merged block back on the board.
+    const { groups, p2g } = setup([
+      { id: 1, x: 0, y: 0, members: ["0-0", "0-1"] },
+      { id: 2, x: 2, y: 1, members: ["1-0"] },
+    ]);
+    const res = resolveConnections(groups, p2g, 2, 2, 2, 20);
+    expect(res.changed).toBe(true);
+    expect(groups.has(res.survivorId)).toBe(true);
+    expect(groups.get(res.survivorId)!.members).toContain("1-0");
+  });
+
+  it("returns the dragged group itself when nothing merges", () => {
+    const { groups, p2g } = setup([
+      { id: 7, x: 500, y: 500, members: ["0-0"] },
+      { id: 8, x: 0, y: 0, members: ["0-1"] },
+    ]);
+    const res = resolveConnections(groups, p2g, 7, 2, 2, 20);
+    expect(res.changed).toBe(false);
+    expect(res.survivorId).toBe(7);
+    expect(groups.has(res.survivorId)).toBe(true);
   });
 });
 

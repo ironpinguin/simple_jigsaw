@@ -12,8 +12,13 @@ export interface Point {
   y: number;
 }
 
-/** Fraction of the perpendicular cell dimension that a knob protrudes. */
-const TAB = 0.2;
+/**
+ * Fraction of the perpendicular cell dimension that a knob protrudes. Exported
+ * because ./board needs the same figure to reason about how far a piece's
+ * bitmap reaches beyond its cell; keeping one definition avoids the two drifting
+ * apart.
+ */
+export const TAB = 0.2;
 
 /**
  * Classic jigsaw knob as (t, p) pairs: t runs 0→1 along the edge, p is the

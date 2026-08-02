@@ -71,6 +71,13 @@ export function renderOrder(
  * neighbouring groups whose origin is now within `snapDist`, cascading through
  * chains. Mutates `groups` and `pieceToGroup` in place. Returns the surviving
  * group id and whether anything merged.
+ *
+ * Note the survivor is snapped onto the *stationary* neighbour's origin before
+ * absorbing it, so a merge can move the dragged group's origin by up to
+ * `snapDist` as well as growing its extent.
+ *
+ * Provided `draggedId` is a live key, so is the returned `survivorId`: only the
+ * absorbed group is ever deleted, and the survivor stays in `groups`.
  */
 export function resolveConnections(
   groups: Map<number, PieceGroup>,
