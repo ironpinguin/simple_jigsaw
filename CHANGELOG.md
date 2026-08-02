@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be joined right at the edges.
 
 ### Changed
+- Solve view: the mouse wheel now zooms in small, steerable steps (about 5% per
+  notch instead of 12%, and scaled by how far the wheel or trackpad was
+  actually moved) rather than jumping several steps per gesture. The current
+  zoom level is shown as a percentage above the zoom buttons, and the +/−
+  buttons are disabled once the 35%–300% limits are reached, so the board no
+  longer just stops responding without saying why.
 - Moved the project to GitHub (`ironpinguin/simple_jigsaw`). The GitLab CI
   pipeline is replaced by a GitHub Actions workflow
   (`.github/workflows/ci.yml`) with the same gates (ESLint · Vitest · Next.js

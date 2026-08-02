@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges, type EdgeGrid } from "@/lib/puzzle/edges";
@@ -21,6 +20,8 @@ import {
   type PieceBox,
   type Rect,
 } from "@/lib/puzzle/board";
+import { clampScale, wheelZoomFactor } from "@/lib/puzzle/zoom";
+import ZoomControls, { createScaleStore } from "./ZoomControls";
 
 export interface PuzzleData {
   id: string;
@@ -188,7 +189,6 @@ interface Props {
 }
 
 export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }: Props) {
-  const t = useTranslations("solve");
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [containerW, setContainerW] = useState(0);
@@ -205,6 +205,8 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
   // renderOrder). Konva's own moveToTop() would outlive the drag, because
   // react-konva reorders nodes only when the React child order changes.
   const [draggingId, setDraggingId] = useState<number | null>(null);
+
+  const scaleStore = useMemo(createScaleStore, []);
 
   const total = cols * rows;
 
@@ -289,20 +291,22 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
   }
 
   // --- Zoom & pan -----------------------------------------------------------
-  const MIN_SCALE = 0.35;
-  const MAX_SCALE = 3;
 
-  const zoomAround = useCallback((nextScale: number, center: { x: number; y: number }) => {
-    const stage = stageRef.current;
-    if (!stage) return;
-    const old = stage.scaleX();
-    const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, nextScale));
-    // Keep the point under `center` fixed while scaling.
-    const anchor = { x: (center.x - stage.x()) / old, y: (center.y - stage.y()) / old };
-    stage.scale({ x: s, y: s });
-    stage.position({ x: center.x - anchor.x * s, y: center.y - anchor.y * s });
-    stage.batchDraw();
-  }, []);
+  const zoomAround = useCallback(
+    (nextScale: number, center: { x: number; y: number }) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const old = stage.scaleX();
+      const s = clampScale(nextScale);
+      // Keep the point under `center` fixed while scaling.
+      const anchor = { x: (center.x - stage.x()) / old, y: (center.y - stage.y()) / old };
+      stage.scale({ x: s, y: s });
+      stage.position({ x: center.x - anchor.x * s, y: center.y - anchor.y * s });
+      stage.batchDraw();
+      scaleStore.set(s);
+    },
+    [scaleStore],
+  );
 
   const handleWheel = useCallback(
     (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -310,8 +314,7 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
       const stage = stageRef.current;
       const pointer = stage?.getPointerPosition();
       if (!stage || !pointer) return;
-      const factor = e.evt.deltaY > 0 ? 1 / 1.12 : 1.12;
-      zoomAround(stage.scaleX() * factor, pointer);
+      zoomAround(stage.scaleX() * wheelZoomFactor(e.evt.deltaY, e.evt.deltaMode), pointer);
     },
     [zoomAround],
   );
@@ -331,7 +334,8 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     stage.scale({ x: 1, y: 1 });
     stage.position({ x: 0, y: 0 });
     stage.batchDraw();
-  }, []);
+    scaleStore.set(1);
+  }, [scaleStore]);
 
   // Pinch-to-zoom (two fingers). Pauses stage panning while pinching.
   useEffect(() => {
@@ -376,17 +380,12 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     <div ref={wrapRef} className="board-wrap" style={{ width: "100%", position: "relative" }}>
       {layout && (
         <>
-          <div className="zoom-controls">
-            <button type="button" aria-label={t("zoomIn")} onClick={() => zoomButton(1.25)}>
-              +
-            </button>
-            <button type="button" aria-label={t("zoomOut")} onClick={() => zoomButton(1 / 1.25)}>
-              −
-            </button>
-            <button type="button" aria-label={t("resetView")} onClick={resetView}>
-              ⟲
-            </button>
-          </div>
+          <ZoomControls
+            store={scaleStore}
+            onZoomIn={() => zoomButton(1.25)}
+            onZoomOut={() => zoomButton(1 / 1.25)}
+            onReset={resetView}
+          />
           <Stage
             ref={stageRef}
             width={layout.stageW}
