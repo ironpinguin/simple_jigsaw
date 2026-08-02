@@ -13,10 +13,10 @@ import {
   type PieceGroup,
 } from "@/lib/puzzle/groups";
 import {
-  clampGroupPosition,
+  boardGeometry,
   pieceBox,
   scatterGroups,
-  unionRect,
+  settleGroup,
   type Rect,
 } from "@/lib/puzzle/board";
 
@@ -77,24 +77,15 @@ function buildLayout(
   rows: number,
 ): Layout {
   const { seed } = puzzle;
-  const aspect = puzzle.imageWidth / puzzle.imageHeight;
 
-  const stageW = Math.max(360, containerW);
-  // Fill most of the viewport height so the play area uses the whole window.
-  const viewportH = typeof window !== "undefined" ? window.innerHeight : 800;
-  const stageH = Math.max(520, Math.floor(viewportH - 210));
-
-  // The assembled picture takes ~40% of the width (capped in height), leaving
-  // the rest of the (now full-window) area to spread and assemble pieces.
-  let boardW = stageW * 0.4;
-  let boardH = boardW / aspect;
-  const maxBoardH = Math.min(460, stageH * 0.6);
-  if (boardH > maxBoardH) {
-    boardH = maxBoardH;
-    boardW = boardH * aspect;
-  }
-  const pieceW = boardW / cols;
-  const pieceH = boardH / rows;
+  const { stageW, stageH, boardW, boardH, pieceW, pieceH, snapDist } = boardGeometry({
+    containerW,
+    // Fill most of the viewport height so the play area uses the whole window.
+    viewportH: typeof window !== "undefined" ? window.innerHeight : 800,
+    aspect: puzzle.imageWidth / puzzle.imageHeight,
+    cols,
+    rows,
+  });
 
   const grid = generateEdges(cols, rows, seed);
 
@@ -164,7 +155,6 @@ function buildLayout(
     }
   }
 
-  const snapDist = Math.max(18, 0.4 * Math.min(pieceW, pieceH));
   const initialGroups = scatterGroups({ cols, rows, seed, pieceW, pieceH, stageW, stageH });
 
   return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
@@ -236,15 +226,6 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     onProgress(groups.size, total);
   }, [layout, total, onProgress, bump]);
 
-  /** A group's extent in its own coordinates — the input for the drag bounds. */
-  function extentOf(g: PieceGroup, pieces: Layout["pieces"]): Rect {
-    return unionRect(
-      g.members
-        .map((pid) => pieces.get(pid)?.rect)
-        .filter((r): r is Rect => r !== undefined),
-    );
-  }
-
   function handleGroupDragEnd(groupId: number, node: Konva.Node) {
     setDraggingId(null);
 
@@ -258,19 +239,29 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
 
     const { survivorId } = resolveConnections(groups, p2g, groupId, rows, cols, layout!.snapDist);
 
-    // Merging keeps the survivor's origin but grows its extent, so a block
-    // joined at the edge can reach past the stage by up to snapDist. Pull it
-    // back in — the whole assembly shifts rigidly, connections are membership.
-    const survivor = groups.get(survivorId);
-    if (survivor) {
-      const bounded = clampGroupPosition(
-        { x: survivor.x, y: survivor.y },
-        extentOf(survivor, layout!.pieces),
-        layout!.stageW,
-        layout!.stageH,
-      );
-      survivor.x = bounded.x;
-      survivor.y = bounded.y;
+    // Dragging is unbounded so that a piece can always reach a neighbour parked
+    // against an edge; the drop is what has to land on the board. A merge snaps
+    // the survivor onto the stationary neighbour's origin AND unions the two
+    // extents, so either can push the assembly past the edge. Moving the origin
+    // shifts the whole assembly rigidly — connections are membership, not
+    // positions — so pulling it back in cannot break a connection.
+    // `resolveConnections` always returns a live id when given one.
+    const survivor = groups.get(survivorId)!;
+    const settled = settleGroup(
+      survivor,
+      (pid) => layout!.pieces.get(pid)?.rect,
+      layout!.stageW,
+      layout!.stageH,
+    );
+    if (settled) {
+      survivor.x = settled.x;
+      survivor.y = settled.y;
+      // react-konva writes the x/y props only when they differ from the previous
+      // render, and the node was moved by Konva behind React's back during the
+      // drag. Settling onto the value last rendered would therefore be skipped
+      // and leave the node where it was dropped — off the board, which is the
+      // whole thing being fixed. Sync the dragged node explicitly.
+      if (survivor.id === groupId) node.position({ x: survivor.x, y: survivor.y });
     }
 
     bump();
@@ -385,31 +376,12 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
             onWheel={handleWheel}
           >
             <Layer>
-            {groupList.map((g) => {
-              // Constant for as long as the group's membership is — computing it
-              // per render keeps it out of the per-mousemove drag bound.
-              const extent = extentOf(g, layout.pieces);
-              return (
+            {groupList.map((g) => (
               <Group
                 key={g.id}
                 x={g.x}
                 y={g.y}
                 draggable
-                // Konva hands us an absolute (screen) position; the play area is
-                // defined in stage content coordinates, so undo the current
-                // pan/zoom before clamping and reapply it afterwards.
-                dragBoundFunc={(pos) => {
-                  const stage = stageRef.current;
-                  if (!stage) return pos;
-                  const s = stage.scaleX() || 1;
-                  const clamped = clampGroupPosition(
-                    { x: (pos.x - stage.x()) / s, y: (pos.y - stage.y()) / s },
-                    extent,
-                    layout.stageW,
-                    layout.stageH,
-                  );
-                  return { x: clamped.x * s + stage.x(), y: clamped.y * s + stage.y() };
-                }}
                 onDragStart={() => setDraggingId(g.id)}
                 onDragEnd={(e) => handleGroupDragEnd(g.id, e.currentTarget)}
                 onMouseEnter={(e) => {
@@ -444,8 +416,7 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
                   );
                 })}
               </Group>
-              );
-            })}
+            ))}
             </Layer>
           </Stage>
         </>
