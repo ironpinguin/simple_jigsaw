@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Solve view: a puzzle in progress now survives a reload, a closed tab and a
+  reboot. Where the pieces lie and which of them are joined is kept in the
+  browser (per puzzle, no account or server involved) and restored on the next
+  visit, correctly rescaled if the window is a different size. A new
+  *Start over* button in the toolbar re-scatters the puzzle after a
+  confirmation, and changing the piece count discards the saved state as the
+  existing warning already promised.
 - Solve view: a board overview in the bottom-right corner showing every piece
   and group on the board plus the part of it currently on screen. Click or drag
   inside it — or focus it and use the arrow keys — to jump straight to a region
