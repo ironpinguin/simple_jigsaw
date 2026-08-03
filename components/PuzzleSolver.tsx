@@ -5,6 +5,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { PuzzleData } from "./PuzzleBoard";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
+import {
+  MAX_STORED_SOLVES,
+  SOLVE_KEY_PREFIX,
+  solveKeysToPrune,
+  solveStateKey,
+} from "@/lib/puzzle/solveState";
 
 function BoardLoading() {
   const t = useTranslations("solve");
@@ -16,6 +22,18 @@ const PuzzleBoard = dynamic(() => import("./PuzzleBoard"), {
   loading: () => <BoardLoading />,
 });
 
+/** Every stored solve state, so `saveSolveState` can prune the oldest. */
+function storedSolves(): Array<{ key: string; raw: string | null }> {
+  const entries: Array<{ key: string; raw: string | null }> = [];
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const key = window.localStorage.key(i);
+    if (key?.startsWith(SOLVE_KEY_PREFIX)) {
+      entries.push({ key, raw: window.localStorage.getItem(key) });
+    }
+  }
+  return entries;
+}
+
 export default function PuzzleSolver({
   puzzle,
   title,
@@ -25,6 +43,7 @@ export default function PuzzleSolver({
 }) {
   const t = useTranslations("solve");
   const storageKey = `pc:${puzzle.id}`;
+  const solveKey = solveStateKey(puzzle.id);
 
   // Piece count is per solver: default to the creator's value, but remember the
   // solver's own choice for this puzzle. The stored value is only applied after
@@ -62,6 +81,53 @@ export default function PuzzleSolver({
 
   const onSolved = useCallback(() => setSolved(true), []);
 
+  // Where the pieces lie and which of them are joined, kept in the browser only
+  // (issue #12) — it deliberately does not follow the solver to another device.
+  // The board does the (de)serialising, since it owns the group model and the
+  // stage the positions are relative to; every localStorage call lives here, as
+  // the `pc:` one above already does.
+  const [resetNonce, setResetNonce] = useState(0);
+
+  // The board calls this from an effect, never while rendering: the server has no
+  // localStorage, and reading storage during render is exactly what broke
+  // hydration in issue #7.
+  const loadSolveState = useCallback(() => window.localStorage.getItem(solveKey), [solveKey]);
+
+  const saveSolveState = useCallback(
+    (raw: string) => {
+      // Opening puzzle after puzzle would otherwise fill the origin's storage for
+      // good, so retire the least recently played solves first.
+      for (const key of solveKeysToPrune(storedSolves(), solveKey, MAX_STORED_SOLVES)) {
+        window.localStorage.removeItem(key);
+      }
+      try {
+        window.localStorage.setItem(solveKey, raw);
+      } catch {
+        // Storage full or blocked (quota, private mode). This runs inside a drop
+        // handler, so throwing would take the board down — the puzzle has to stay
+        // playable and only give up on being resumable.
+      }
+    },
+    [solveKey],
+  );
+
+  function clearSolveState() {
+    window.localStorage.removeItem(solveKey);
+  }
+
+  function startOver() {
+    if (!window.confirm(t("confirmReset"))) return;
+    clearSolveState();
+    // The board re-seeds from its scatter when this changes. That scatter is
+    // derived from the puzzle's seed, so starting over gives back the arrangement
+    // the link has always had rather than a new random one.
+    setResetNonce((n) => n + 1);
+    // The board reports again once it has re-seeded; until then say nothing is
+    // connected instead of leaving the old count — and the solved banner up.
+    setProgress(null);
+    setSolved(false);
+  }
+
   // Connections made; total-1 when solved. An unbuilt or just-resized board has
   // not reported for this grid yet, and then nothing is connected.
   const connected = progress?.total === total ? total - progress.groups : 0;
@@ -74,6 +140,9 @@ export default function PuzzleSolver({
     }
     setPieceCount(n);
     window.localStorage.setItem(storageKey, String(n));
+    // A state for the old grid is unusable anyway — `deserialiseSolveState`
+    // rejects it — but dropping it here is what the warning above promises.
+    clearSolveState();
   }
 
   async function share() {
@@ -131,6 +200,9 @@ export default function PuzzleSolver({
         <button className="button secondary" type="button" onClick={share}>
           {copied ? t("copied") : t("share")}
         </button>
+        <button className="button secondary" type="button" onClick={startOver}>
+          {t("reset")}
+        </button>
       </div>
 
       <p className="muted" style={{ marginTop: -4 }}>
@@ -153,6 +225,9 @@ export default function PuzzleSolver({
           showMinimap={showMap}
           onProgress={onProgress}
           onSolved={onSolved}
+          loadSolveState={loadSolveState}
+          saveSolveState={saveSolveState}
+          resetNonce={resetNonce}
         />
       </div>
     </div>

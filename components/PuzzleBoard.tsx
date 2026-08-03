@@ -20,6 +20,7 @@ import {
   type PieceBox,
   type Rect,
 } from "@/lib/puzzle/board";
+import { deserialiseSolveState, serialiseSolveState } from "@/lib/puzzle/solveState";
 import { clampScale, wheelZoomFactor } from "@/lib/puzzle/zoom";
 import { stagePositionFor } from "@/lib/puzzle/minimap";
 import ZoomControls from "./ZoomControls";
@@ -191,6 +192,16 @@ interface Props {
   showMinimap: boolean;
   onProgress: (groups: number, total: number) => void;
   onSolved: () => void;
+  /**
+   * The solve state to resume from, or `null` to scatter. `PuzzleSolver` owns the
+   * storage; this is a callback rather than a prop value so it can be read in the
+   * seeding effect, where the board's own geometry is known and there is no race
+   * with the parent's mount effect.
+   */
+  loadSolveState: () => string | null;
+  saveSolveState: (raw: string) => void;
+  /** Changes when the solver asks to start over; re-seeds from the scatter. */
+  resetNonce: number;
 }
 
 export default function PuzzleBoard({
@@ -200,6 +211,9 @@ export default function PuzzleBoard({
   showMinimap,
   onProgress,
   onSolved,
+  loadSolveState,
+  saveSolveState,
+  resetNonce,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -251,12 +265,30 @@ export default function PuzzleBoard({
     return buildLayout(puzzle, image, containerW, cols, rows);
   }, [image, containerW, puzzle, cols, rows]);
 
-  // Seed the group model whenever the layout is (re)built.
+  // Seed the group model whenever the layout is (re)built: resume the stored
+  // solve if there is a usable one, otherwise scatter. Reading the stored state
+  // here rather than during render is what keeps hydration intact (issue #7) —
+  // and it means the parent never has to have finished reading storage first.
   useEffect(() => {
     if (!layout) return;
+    const { stageW, stageH } = layout;
+
+    const restored = deserialiseSolveState(loadSolveState(), { cols, rows, stageW, stageH });
+    // Origins are stored relative to the stage, but the piece size does not scale
+    // with the stage in step — `boardGeometry` caps the assembled picture's height
+    // — so a group that sat flush against an edge can still overhang after a
+    // resize. Settling each one keeps every group on the board.
+    for (const g of restored ?? []) {
+      const settled = settleGroup(g, (pid) => layout.pieces.get(pid)?.rect, stageW, stageH);
+      if (settled) {
+        g.x = settled.x;
+        g.y = settled.y;
+      }
+    }
+
     const groups = new Map<number, PieceGroup>();
     const p2g = new Map<string, number>();
-    for (const g of layout.initialGroups) {
+    for (const g of restored ?? layout.initialGroups) {
       groups.set(g.id, { ...g, members: [...g.members] });
       for (const m of g.members) p2g.set(m, g.id);
     }
@@ -264,7 +296,10 @@ export default function PuzzleBoard({
     pieceToGroupRef.current = p2g;
     bump();
     onProgress(groups.size, total);
-  }, [layout, total, onProgress, bump]);
+    // `resetNonce` is not read: it is a dependency so that starting over re-runs
+    // this and picks up the state the solver has just deleted, even though the
+    // layout itself is unchanged.
+  }, [layout, cols, rows, total, onProgress, bump, loadSolveState, resetNonce]);
 
   function handleGroupDragEnd(groupId: number, node: Konva.Node) {
     setDraggingId(null);
@@ -307,6 +342,19 @@ export default function PuzzleBoard({
     bump();
     onProgress(groups.size, total);
     if (groups.size === 1) onSolved();
+
+    // A drop is the only thing that changes the group model, and they are far too
+    // rare for debouncing to buy anything.
+    saveSolveState(
+      serialiseSolveState({
+        groups: groups.values(),
+        cols,
+        rows,
+        stageW: layout!.stageW,
+        stageH: layout!.stageH,
+        updatedAt: Date.now(),
+      }),
+    );
   }
 
   // --- Zoom & pan -----------------------------------------------------------
