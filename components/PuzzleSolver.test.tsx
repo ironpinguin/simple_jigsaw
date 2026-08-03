@@ -15,22 +15,32 @@ import PuzzleSolver from "./PuzzleSolver";
 const board = vi.hoisted<{
   reportsFor: (total: number) => boolean;
   groupsFor: (total: number) => number;
+  /** What the solver last asked the board to show; see the overview toggle. */
+  showMinimap: boolean | null;
 }>(() => ({
   reportsFor: () => true,
   groupsFor: (total) => total,
+  showMinimap: null,
 }));
 
 vi.mock("./PuzzleBoard", () => {
   function BoardStub({
     cols,
     rows,
+    showMinimap,
     onProgress,
   }: {
     cols: number;
     rows: number;
+    showMinimap: boolean;
     onProgress: (groups: number, total: number) => void;
   }) {
     const total = cols * rows;
+    // In an effect, not the render body: a render side effect would double-fire
+    // the moment this suite ever runs under StrictMode.
+    useEffect(() => {
+      board.showMinimap = showMinimap;
+    }, [showMinimap]);
     useEffect(() => {
       if (board.reportsFor(total)) onProgress(board.groupsFor(total), total);
     }, [total, onProgress]);
@@ -118,9 +128,15 @@ describe("PuzzleSolver", () => {
     });
   }
 
+  /** A toolbar toggle, found the way a user reads it — by its label. */
+  function toggle(label: string) {
+    return [...container.querySelectorAll("button")].find((b) => b.textContent === label);
+  }
+
   beforeEach(() => {
     board.reportsFor = () => true;
     board.groupsFor = (total) => total;
+    board.showMinimap = null;
     window.localStorage.clear();
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -241,6 +257,20 @@ describe("PuzzleSolver", () => {
     await choose("48");
 
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it("shows the board overview until the solver switches it off", async () => {
+    container.innerHTML = serverHtml();
+    await hydrate();
+
+    expect(board.showMinimap).toBe(true);
+
+    await act(async () => toggle(messages.solve.hideMap)!.click());
+    expect(board.showMinimap).toBe(false);
+    expect(toggle(messages.solve.showMap)?.getAttribute("aria-pressed")).toBe("false");
+
+    await act(async () => toggle(messages.solve.showMap)!.click());
+    expect(board.showMinimap).toBe(true);
   });
 
   it("keeps the count when the solver declines to discard progress", async () => {

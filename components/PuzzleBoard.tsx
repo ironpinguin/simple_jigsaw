@@ -21,7 +21,10 @@ import {
   type Rect,
 } from "@/lib/puzzle/board";
 import { clampScale, wheelZoomFactor } from "@/lib/puzzle/zoom";
-import ZoomControls, { createScaleStore } from "./ZoomControls";
+import { stagePositionFor } from "@/lib/puzzle/minimap";
+import ZoomControls from "./ZoomControls";
+import BoardMinimap from "./BoardMinimap";
+import { createViewStore } from "./viewStore";
 
 export interface PuzzleData {
   id: string;
@@ -184,11 +187,20 @@ interface Props {
   puzzle: PuzzleData;
   cols: number;
   rows: number;
+  /** `PuzzleSolver` owns the toggle. */
+  showMinimap: boolean;
   onProgress: (groups: number, total: number) => void;
   onSolved: () => void;
 }
 
-export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }: Props) {
+export default function PuzzleBoard({
+  puzzle,
+  cols,
+  rows,
+  showMinimap,
+  onProgress,
+  onSolved,
+}: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [containerW, setContainerW] = useState(0);
@@ -206,7 +218,14 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
   // react-konva reorders nodes only when the React child order changes.
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
-  const scaleStore = useMemo(createScaleStore, []);
+  const viewStore = useMemo(() => createViewStore(), []);
+
+  /** Call after every write to the stage transform — see `viewStore`. */
+  const publishView = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    viewStore.set({ x: stage.x(), y: stage.y(), scale: stage.scaleX() });
+  }, [viewStore]);
 
   const total = cols * rows;
 
@@ -303,9 +322,9 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
       stage.scale({ x: s, y: s });
       stage.position({ x: center.x - anchor.x * s, y: center.y - anchor.y * s });
       stage.batchDraw();
-      scaleStore.set(s);
+      publishView();
     },
-    [scaleStore],
+    [publishView],
   );
 
   const handleWheel = useCallback(
@@ -334,8 +353,22 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
     stage.scale({ x: 1, y: 1 });
     stage.position({ x: 0, y: 0 });
     stage.batchDraw();
-    scaleStore.set(1);
-  }, [scaleStore]);
+    publishView();
+  }, [publishView]);
+
+  /** Bring a point of the board — picked on the overview — into the middle. */
+  const jumpTo = useCallback(
+    (centre: { x: number; y: number }) => {
+      const stage = stageRef.current;
+      if (!stage || !layout) return;
+      stage.position(stagePositionFor(centre, stage.scaleX(), layout.stageW, layout.stageH));
+      stage.batchDraw();
+      publishView();
+    },
+    [layout, publishView],
+  );
+
+  const rectOf = useCallback((pid: string) => layout?.pieces.get(pid)?.rect, [layout]);
 
   // Pinch-to-zoom (two fingers). Pauses stage panning while pinching.
   useEffect(() => {
@@ -381,17 +414,38 @@ export default function PuzzleBoard({ puzzle, cols, rows, onProgress, onSolved }
       {layout && (
         <>
           <ZoomControls
-            store={scaleStore}
+            store={viewStore}
             onZoomIn={() => zoomButton(1.25)}
             onZoomOut={() => zoomButton(1 / 1.25)}
             onReset={resetView}
           />
+          {showMinimap && (
+            <BoardMinimap
+              store={viewStore}
+              stageW={layout.stageW}
+              stageH={layout.stageH}
+              groups={groupList}
+              rectOf={rectOf}
+              onJump={jumpTo}
+            />
+          )}
           <Stage
             ref={stageRef}
             width={layout.stageW}
             height={layout.stageH}
             draggable
             onWheel={handleWheel}
+            // Konva bubbles a group's drag events up to the stage, so the
+            // target check is what tells a piece drag from a pan of the stage
+            // itself. The store would discard a piece drag's publishes anyway —
+            // the transform has not changed — but this keeps a drag from
+            // reading the stage back on every frame.
+            onDragMove={(e) => {
+              if (e.target === stageRef.current) publishView();
+            }}
+            onDragEnd={(e) => {
+              if (e.target === stageRef.current) publishView();
+            }}
           >
             <Layer>
             {groupList.map((g) => (

@@ -52,6 +52,7 @@ export default function PuzzleSolver({
   const [progress, setProgress] = useState<{ groups: number; total: number } | null>(null);
   const [solved, setSolved] = useState(false);
   const [showRef, setShowRef] = useState(true);
+  const [showMap, setShowMap] = useState(true);
   const [copied, setCopied] = useState(false);
 
   const onProgress = useCallback((groups: number, boardTotal: number) => {
@@ -119,6 +120,14 @@ export default function PuzzleSolver({
         >
           {showRef ? t("hideRef") : t("showRef")}
         </button>
+        <button
+          className={`button secondary ${showMap ? "active" : ""}`}
+          type="button"
+          aria-pressed={showMap}
+          onClick={() => setShowMap((v) => !v)}
+        >
+          {showMap ? t("hideMap") : t("showMap")}
+        </button>
         <button className="button secondary" type="button" onClick={share}>
           {copied ? t("copied") : t("share")}
         </button>
@@ -141,6 +150,7 @@ export default function PuzzleSolver({
           puzzle={puzzle}
           cols={cols}
           rows={rows}
+          showMinimap={showMap}
           onProgress={onProgress}
           onSolved={onSolved}
         />

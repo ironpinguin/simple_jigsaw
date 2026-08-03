@@ -328,6 +328,40 @@ select:focus {
   color: var(--muted);
 }
 
+/* Board overview. Bottom right, opposite the zoom controls and clear of the
+   reference thumbnail in the top right corner. */
+.minimap {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  display: block;
+  max-width: 40%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(26, 30, 51, 0.9);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  touch-action: none; /* dragging inside it pans the board, not the page */
+}
+.minimap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.minimap .marker {
+  fill: var(--muted);
+}
+/* Assembled blocks stand out from the loose pieces around them. */
+.minimap .marker.joined {
+  fill: var(--accent);
+}
+.minimap .viewport {
+  fill: rgba(255, 255, 255, 0.12);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
 .admin-table {
   width: 100%;
   border-collapse: collapse;

@@ -75,6 +75,8 @@
     "pieces": "Teile",
     "hideRef": "👁 Vorlage ausblenden",
     "showRef": "👁 Vorlage einblenden",
+    "hideMap": "🗺 Übersicht ausblenden",
+    "showMap": "🗺 Übersicht einblenden",
     "share": "Link teilen",
     "copied": "Link kopiert!",
     "instructions": "Ziehe zusammengehörige Teile aneinander — sie rasten ein und lassen sich als Gruppe weiterbewegen. Zoomen mit Mausrad/Pinch oder den Buttons; leere Fläche ziehen verschiebt die Ansicht.",
@@ -83,7 +85,8 @@
     "zoomOut": "Verkleinern",
     "resetView": "Ansicht zurücksetzen",
     "zoomLevel": "Aktuelle Zoomstufe",
-    "zoomPercent": "{percent} %"
+    "zoomPercent": "{percent} %",
+    "minimap": "Übersicht des Spielfelds — anklicken oder mit den Pfeiltasten verschieben, um dorthin zu springen"
   },
   "my": {
     "title": "Meine Puzzles",

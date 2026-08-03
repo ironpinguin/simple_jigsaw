@@ -75,6 +75,8 @@
     "pieces": "Pezzi",
     "hideRef": "👁 Nascondi anteprima",
     "showRef": "👁 Mostra anteprima",
+    "hideMap": "🗺 Nascondi panoramica",
+    "showMap": "🗺 Mostra panoramica",
     "share": "Condividi link",
     "copied": "Link copiato!",
     "instructions": "Trascina i pezzi corrispondenti uno vicino all'altro — si incastrano e si possono spostare come gruppo. Zoom con la rotellina/pinch o con i pulsanti; trascina lo spazio vuoto per spostare la vista.",
@@ -83,7 +85,8 @@
     "zoomOut": "Riduci",
     "resetView": "Reimposta vista",
     "zoomLevel": "Livello di zoom attuale",
-    "zoomPercent": "{percent}%"
+    "zoomPercent": "{percent}%",
+    "minimap": "Panoramica del tavolo — clicca o usa i tasti freccia per spostarti in una zona"
   },
   "my": {
     "title": "I miei puzzle",

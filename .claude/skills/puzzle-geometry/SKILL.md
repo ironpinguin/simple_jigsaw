@@ -18,6 +18,8 @@ in plain node.
 | `outline.ts` | `pieceOutlinePoints` / SVG path in the piece's local space; exports `TAB` |
 | `board.ts` | stage + picture size, piece bitmap boxes, scatter, drag clamping |
 | `groups.ts` | piece ids, neighbours, snapping, group merge cascade |
+| `zoom.ts` | `StageView`, the scale limits, wheel/readout maths |
+| `minimap.ts` | board overview: thumbnail size, visible rect, group markers |
 
 ## The invariants — break one and pieces stop fitting
 

@@ -75,6 +75,8 @@
     "pieces": "Pieces",
     "hideRef": "👁 Hide preview",
     "showRef": "👁 Show preview",
+    "hideMap": "🗺 Hide overview",
+    "showMap": "🗺 Show overview",
     "share": "Share link",
     "copied": "Link copied!",
     "instructions": "Drag matching pieces together — they snap in and can be moved as a group. Zoom with the mouse wheel/pinch or the buttons; drag empty space to pan.",
@@ -83,7 +85,8 @@
     "zoomOut": "Zoom out",
     "resetView": "Reset view",
     "zoomLevel": "Current zoom level",
-    "zoomPercent": "{percent}%"
+    "zoomPercent": "{percent}%",
+    "minimap": "Board overview — click or use the arrow keys to jump to a region"
   },
   "my": {
     "title": "My puzzles",
