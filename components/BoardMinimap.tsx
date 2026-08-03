@@ -133,7 +133,11 @@ export default function BoardMinimap({
       aria-label={t("minimap")}
       onKeyDown={handleKeyDown}
       onPointerDown={(e) => {
+        // Suppresses the text selection a drag across the thumbnail would
+        // otherwise start — and, with it, the focus a click normally gives, so
+        // the arrow keys stay dead after clicking unless focus is taken here.
         e.preventDefault();
+        e.currentTarget.focus();
         panning.current = true;
         e.currentTarget.setPointerCapture?.(e.pointerId);
         jumpToPointer(e);

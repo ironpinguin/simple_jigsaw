@@ -184,6 +184,15 @@ describe("jumping to a region", () => {
     expect(onJump).toHaveBeenLastCalledWith({ x: STAGE_W, y: 0 });
   });
 
+  it("takes focus, so the arrow keys work straight after a click", () => {
+    // The pointerdown is prevented to stop a drag selecting text, which also
+    // suppresses the focus a click would otherwise give.
+    mount(createViewStore());
+    layOut();
+    pointer("pointerdown", 0.5, 0.5);
+    expect(document.activeElement).toBe(svg());
+  });
+
   it("does nothing while the thumbnail has no layout to measure against", () => {
     // Rather than jumping to NaN, which would blank the board.
     const onJump = mount(createViewStore());
