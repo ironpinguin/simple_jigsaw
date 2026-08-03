@@ -3,7 +3,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 import { canZoomIn, canZoomOut, zoomPercent } from "@/lib/puzzle/zoom";
-import type { ViewStore } from "./viewStore";
+import type { ViewSource } from "./viewStore";
 
 /**
  * `aria-disabled` rather than `disabled`: the browser moves focus to `<body>`
@@ -42,13 +42,20 @@ export default function ZoomControls({
   onZoomOut,
   onReset,
 }: {
-  store: ViewStore;
+  store: ViewSource;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onReset: () => void;
 }) {
   const t = useTranslations("solve");
-  const { scale } = useSyncExternalStore(store.subscribe, store.get, store.get);
+  // Select the one field this cares about rather than the whole view: the
+  // snapshot's identity changes on every frame of a *pan* too, and React bails
+  // out on an unchanged primitive where it cannot on an unchanged-but-new view.
+  const scale = useSyncExternalStore(
+    store.subscribe,
+    () => store.get().scale,
+    () => store.get().scale,
+  );
 
   return (
     <div className="zoom-controls">

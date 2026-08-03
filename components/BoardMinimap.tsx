@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import type { PieceGroup } from "@/lib/puzzle/groups";
 import type { Rect } from "@/lib/puzzle/board";
 import { groupMarkers, minimapSize, visibleRect } from "@/lib/puzzle/minimap";
-import type { ViewStore } from "./viewStore";
+import type { ViewSource } from "./viewStore";
 
 /** Largest thumbnail, in CSS pixels; the CSS caps it again on narrow screens. */
 const MAX_W = 190;
@@ -43,7 +43,7 @@ export default function BoardMinimap({
   rectOf,
   onJump,
 }: {
-  store: ViewStore;
+  store: ViewSource;
   stageW: number;
   stageH: number;
   /** Back to front, as the board draws them — largest groups first. */
@@ -54,16 +54,23 @@ export default function BoardMinimap({
 }) {
   const t = useTranslations("solve");
   const view = useSyncExternalStore(store.subscribe, store.get, store.get);
-  const panning = useRef(false);
+  /** The pointer currently panning, so a second finger cannot end its drag. */
+  const panning = useRef<number | null>(null);
 
   const size = useMemo(() => minimapSize(stageW, stageH, MAX_W, MAX_H), [stageW, stageH]);
 
   // Memoised as elements, not just as data: panning re-renders this component
-  // on every frame, and an unchanged element lets React skip the whole subtree
-  // instead of diffing one rect per piece each time.
+  // on every frame, and an identical element lets React bail out of the whole
+  // subtree instead of diffing one rect per group. It holds only because a pan
+  // re-renders this component *without* re-rendering the board — `groupList`
+  // (PuzzleBoard) is a fresh array on every board render, which is what makes
+  // the markers follow a drop.
   const markers = useMemo(
     () => (
       <g>
+        {/* `MIN_MARKER` is a thumbnail length; `groupMarkers` works in stage
+            units, hence the division. The guard matters: this body runs before
+            the zero-size early return below, where the ratio is `Infinity`. */}
         {groupMarkers(groups, rectOf, size.scale > 0 ? MIN_MARKER / size.scale : 0).map((m) => (
           <rect
             key={m.id}
@@ -81,8 +88,11 @@ export default function BoardMinimap({
 
   const centre = useCallback(
     (point: { x: number; y: number }) => {
-      // Clamped here as well as in `stagePositionFor`, so a drag that leaves the
-      // thumbnail keeps sliding along its edge instead of jumping.
+      // `onJump` is documented to take a point *on* the stage, so a drag past
+      // the thumbnail's edge is clamped rather than passed through.
+      // `stagePositionFor` saturates to the same view either way — this keeps
+      // the contract honest at the boundary, it is not what makes the edge
+      // slide.
       onJump({
         x: Math.min(stageW, Math.max(0, point.x)),
         y: Math.min(stageH, Math.max(0, point.y)),
@@ -91,7 +101,11 @@ export default function BoardMinimap({
     [onJump, stageW, stageH],
   );
 
-  /** Where a pointer is, in stage coordinates. */
+  /**
+   * Centre the board on the pointer, converting its client position to stage
+   * coordinates. Does nothing before the thumbnail has been laid out, where the
+   * conversion would be `NaN` and would blank the board.
+   */
   const jumpToPointer = useCallback(
     (e: React.PointerEvent<SVGSVGElement>) => {
       const box = e.currentTarget.getBoundingClientRect();
@@ -129,33 +143,47 @@ export default function BoardMinimap({
       // move the view, so a pointer-only overview would make the corners of a
       // zoomed-in board unreachable without a mouse.
       tabIndex={0}
-      role="img"
+      // `application`, not `img`: a screen reader keeps the virtual cursor over
+      // a graphic and swallows the arrow keys, which would leave the one
+      // keyboard path off a mouse exactly where it is needed least.
+      role="application"
       aria-label={t("minimap")}
       onKeyDown={handleKeyDown}
       onPointerDown={(e) => {
+        // Panning is the primary button's job. Without this a right-click both
+        // jumps the board and starts a drag the context menu then swallows.
+        if (e.button !== 0) return;
         // Suppresses the text selection a drag across the thumbnail would
         // otherwise start — and, with it, the focus a click normally gives, so
         // the arrow keys stay dead after clicking unless focus is taken here.
         e.preventDefault();
         e.currentTarget.focus();
-        panning.current = true;
-        e.currentTarget.setPointerCapture?.(e.pointerId);
+        panning.current = e.pointerId;
+        // Jump before capturing: `setPointerCapture` throws on a pointer id the
+        // element no longer sees, and losing the capture must not also lose the
+        // click that asked for it.
         jumpToPointer(e);
+        e.currentTarget.setPointerCapture?.(e.pointerId);
       }}
       onPointerMove={(e) => {
-        if (panning.current) jumpToPointer(e);
+        if (panning.current !== e.pointerId) return;
+        // A move with no button held ends the drag, whichever terminating event
+        // went missing — a context menu, a window blur or a lost capture can
+        // each swallow the `pointerup`, and capture suppresses `pointerleave`,
+        // so every event-shaped fallback has a hole. This one cannot.
+        if (e.buttons === 0) {
+          panning.current = null;
+          return;
+        }
+        jumpToPointer(e);
       }}
       onPointerUp={(e) => {
-        panning.current = false;
+        if (panning.current !== e.pointerId) return;
+        panning.current = null;
         e.currentTarget.releasePointerCapture?.(e.pointerId);
       }}
-      onPointerCancel={() => {
-        panning.current = false;
-      }}
-      // Only reachable when the pointer was never captured; with capture the
-      // element keeps receiving moves and this stays silent until release.
-      onPointerLeave={() => {
-        panning.current = false;
+      onPointerCancel={(e) => {
+        if (panning.current === e.pointerId) panning.current = null;
       }}
     >
       {markers}
@@ -165,8 +193,8 @@ export default function BoardMinimap({
         y={visible.y}
         width={visible.width}
         height={visible.height}
-        // The viewBox scales the stage down by up to 6×; without this the
-        // indicator's outline would be a fraction of a pixel wide.
+        // The viewBox scales the stage down by roughly an order of magnitude,
+        // so an outline in user units would be a fraction of a pixel wide.
         vectorEffect="non-scaling-stroke"
       />
     </svg>

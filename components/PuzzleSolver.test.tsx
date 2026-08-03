@@ -36,7 +36,11 @@ vi.mock("./PuzzleBoard", () => {
     onProgress: (groups: number, total: number) => void;
   }) {
     const total = cols * rows;
-    board.showMinimap = showMinimap;
+    // In an effect, not the render body: a render side effect would double-fire
+    // the moment this suite ever runs under StrictMode.
+    useEffect(() => {
+      board.showMinimap = showMinimap;
+    }, [showMinimap]);
     useEffect(() => {
       if (board.reportsFor(total)) onProgress(board.groupsFor(total), total);
     }, [total, onProgress]);

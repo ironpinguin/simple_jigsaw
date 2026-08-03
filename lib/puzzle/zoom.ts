@@ -3,6 +3,23 @@
 // the board component wires wheel events, the readout and the button limits to
 // it without owning any of the numbers.
 
+/**
+ * The stage transform, mirrored out of Konva.
+ *
+ * `x`/`y` are the stage's own position — the offset applied *after* scaling, so
+ * a stage panned right has a positive `x` while the content shown starts at a
+ * negative stage coordinate. `scale` is kept within the limits below by
+ * `clampScale`, which is what lets every reader divide by it.
+ *
+ * Lives here rather than with the overview that draws it: this describes the
+ * camera, which the zoom controls and the board share.
+ */
+export interface StageView {
+  x: number;
+  y: number;
+  scale: number;
+}
+
 /** Smallest stage scale the board can be zoomed to (the readout's 35 %). */
 export const MIN_SCALE = 0.35;
 

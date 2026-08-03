@@ -3,30 +3,21 @@
 // a point of the overview into view. Pure like the rest of ./puzzle — the
 // component adds the SVG and the pointer wiring on top.
 //
-// Everything here works in *stage* coordinates. The overview draws the stage
-// rectangle scaled down, so the drawing needs no coordinates of its own; only
-// `minimapSize` knows the thumbnail's pixel size, and it is the SVG viewBox that
-// does the scaling.
+// Everything here works in *stage* coordinates — including `groupMarkers`'
+// `minStageSize`, which the caller converts from a thumbnail length. Only
+// `minimapSize` deals in thumbnail pixels; the drawing needs no coordinates of
+// its own, because the SVG viewBox does the scaling.
 
 import { groupExtent, type Rect } from "./board";
 import type { PieceGroup } from "./groups";
+import type { StageView } from "./zoom";
 
 /**
- * The stage transform, mirrored out of Konva. `x`/`y` are the stage's own
- * position — the offset applied *after* scaling, so a stage panned right has a
- * positive `x` while the content shown starts at a negative stage coordinate.
- */
-export interface StageView {
-  x: number;
-  y: number;
-  scale: number;
-}
-
-/**
- * `0` for `-0`. Negating a position produces one whenever the stage sits at the
- * origin, and while it compares equal to `0` it is not *identical* to it — which
- * is enough to make two positions that describe the same view look different to
- * anything comparing them structurally.
+ * `0` for `-0`. Negating a zero offset produces one, and while `-0 === 0` the
+ * two are not `Object.is`-equal — enough for `toEqual` to call two identical
+ * views different. Nothing in the app compares views structurally (the store
+ * uses `===`, React stringifies `-0` to `"0"`), so the tests are the only
+ * observer; this keeps the outputs canonical for them.
  */
 function zeroed(n: number): number {
   return n === 0 ? 0 : n;
@@ -45,7 +36,8 @@ export interface MinimapSize {
  * keeping the stage's aspect ratio so the overview is not a distorted map.
  *
  * A stage without an area has no meaningful thumbnail; it collapses to zero
- * rather than returning `Infinity` and rendering an SVG with a broken viewBox.
+ * rather than returning a scale of `Infinity` and an SVG sized `NaN × NaN`.
+ * Written `!(stageW > 0)` so a `NaN` stage collapses too, which `<= 0` misses.
  */
 export function minimapSize(
   stageW: number,
@@ -104,7 +96,10 @@ export function stagePositionFor(
 /** One group as the overview draws it: its extent in stage coordinates. */
 export interface GroupMarker extends Rect {
   id: number;
-  /** Pieces in the group, so the drawing can tell a lone piece from a block. */
+  /**
+   * Pieces the group names, so the drawing can tell a lone piece from a block.
+   * Counts members, not the ones the rect covers — see below.
+   */
   count: number;
 }
 
@@ -112,23 +107,27 @@ export interface GroupMarker extends Rect {
  * Where every group sits on the stage. Reuses `groupExtent`, so a marker is the
  * group's real footprint and grows as pieces join — no separate notion of size.
  *
- * `minSize` widens a marker that would otherwise be sub-pixel on the thumbnail,
- * around its centre so it still marks the spot. Groups whose extent is unknown
- * are skipped, exactly as `settleGroup` leaves such a group alone: for the one
- * render between a layout rebuild and the group model being reseeded, a group
- * can still name pieces of the previous grid.
+ * `minStageSize` is in stage units (the caller converts it from a thumbnail
+ * length) and widens a marker that would otherwise be sub-pixel once scaled
+ * down, around its centre so it still marks the spot.
+ *
+ * A group is skipped only when *none* of its pieces resolve; `groupExtent`
+ * unions whichever do. So for the one render between a layout rebuild and the
+ * group model being reseeded — where piece ids overlap between grids — a group
+ * can still produce a marker, sized from mixed-grid geometry. It is one frame
+ * and it self-corrects, matching what the piece rendering already does.
  */
 export function groupMarkers(
   groups: Iterable<PieceGroup>,
   rectOf: (id: string) => Rect | undefined,
-  minSize = 0,
+  minStageSize = 0,
 ): GroupMarker[] {
   const markers: GroupMarker[] = [];
   for (const g of groups) {
     const extent = groupExtent(g.members, rectOf);
     if (!extent) continue;
-    const width = Math.max(extent.width, minSize);
-    const height = Math.max(extent.height, minSize);
+    const width = Math.max(extent.width, minStageSize);
+    const height = Math.max(extent.height, minStageSize);
     markers.push({
       id: g.id,
       count: g.members.length,

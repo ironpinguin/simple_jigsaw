@@ -187,7 +187,7 @@ interface Props {
   puzzle: PuzzleData;
   cols: number;
   rows: number;
-  /** Whether the board overview is shown; the solver toggles it. */
+  /** `PuzzleSolver` owns the toggle. */
   showMinimap: boolean;
   onProgress: (groups: number, total: number) => void;
   onSolved: () => void;
@@ -220,7 +220,7 @@ export default function PuzzleBoard({
 
   const viewStore = useMemo(() => createViewStore(), []);
 
-  /** Copy Konva's transform into the store the overlays render from. */
+  /** Call after every write to the stage transform — see `viewStore`. */
   const publishView = useCallback(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -435,10 +435,11 @@ export default function PuzzleBoard({
             height={layout.stageH}
             draggable
             onWheel={handleWheel}
-            // Konva bubbles a group's drag events up to the stage, so both
-            // handlers have to ignore everything but the stage's own pan —
-            // otherwise dragging a piece would republish an unchanged transform
-            // on every frame.
+            // Konva bubbles a group's drag events up to the stage, so the
+            // target check is what tells a piece drag from a pan of the stage
+            // itself. The store would discard a piece drag's publishes anyway —
+            // the transform has not changed — but this keeps a drag from
+            // reading the stage back on every frame.
             onDragMove={(e) => {
               if (e.target === stageRef.current) publishView();
             }}
