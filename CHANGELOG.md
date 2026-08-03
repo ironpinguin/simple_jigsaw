@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Solve view: a board overview in the bottom-right corner showing every piece
+  and group on the board plus the part of it currently on screen. Click or drag
+  inside it — or focus it and use the arrow keys — to jump straight to a region
+  instead of panning blindly. Assembled blocks are highlighted, and the overview
+  can be switched off like the preview.
+
 ### Security
 - Cleared all 11 open Dependabot alerts (1 critical, 6 high, 4 moderate).
   Upgraded `sharp` 0.33 → 0.35 (libvips CVE-2026-33327/33328/35590/35591),
