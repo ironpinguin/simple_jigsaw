@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-03
+
 ### Added
 - Solve view: a puzzle in progress now survives a reload, a closed tab and a
   reboot. Where the pieces lie and which of them are joined is kept in the
@@ -112,7 +114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.4.0...main
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.5.0...main
+[0.5.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.3.0
 [0.2.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.2.0
