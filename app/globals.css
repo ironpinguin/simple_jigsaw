@@ -29,6 +29,10 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
+  /* Column layout so the footer sits at the bottom of short pages instead of
+     halfway up the viewport. */
+  display: flex;
+  flex-direction: column;
 }
 
 a {
@@ -142,9 +146,56 @@ a:hover {
 }
 
 .site-main {
+  width: 100%;
   max-width: 1100px;
   margin: 0 auto;
   padding: 32px 24px 64px;
+  flex: 1;
+}
+
+.site-footer {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 18px 24px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.site-footer a {
+  color: var(--muted);
+}
+.site-footer a:hover {
+  color: var(--text);
+}
+
+/* Legal texts: a narrower measure than the rest of the app, because these are
+   read as prose rather than scanned. */
+.legal {
+  max-width: 720px;
+}
+.legal h1 {
+  margin: 0 0 4px;
+}
+.legal h2 {
+  font-size: 20px;
+  margin: 32px 0 8px;
+}
+.legal h3 {
+  font-size: 16px;
+  margin: 20px 0 6px;
+}
+.legal p {
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0 0 12px;
+}
+.legal address {
+  font-style: normal;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.legal address span {
+  display: block;
 }
 
 .hero {
