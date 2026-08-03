@@ -351,16 +351,60 @@ describe("PuzzleSolver", () => {
     });
 
     it("keeps the puzzle playable when localStorage is full", async () => {
-      // Only the saving may stop — a throw here would come out of a drop handler
-      // and take the board down with it.
+      // Only the saving may stop. The board calls this from a Konva drag handler,
+      // where an escaping error is uncatchable by any React boundary.
+      //
+      // Note the spy MUST be on Storage.prototype: jsdom's localStorage is a Proxy
+      // that turns property assignment into a stored *item*, so spying on the
+      // instance silently installs an entry named "setItem", records no calls, and
+      // lets the real write through — a test that can never fail.
       container.innerHTML = serverHtml();
       await hydrate();
-      vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
         throw new DOMException("full", "QuotaExceededError");
       });
 
-      await act(async () => board.saveSolveState!(solveJson(1)));
+      expect(() => board.saveSolveState!(solveJson(1))).not.toThrow();
 
+      expect(setItem).toHaveBeenCalled();
+      expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_108 });
+    });
+
+    it("keeps saving once the storage has room again", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+      const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementationOnce(() => {
+        throw new DOMException("full", "QuotaExceededError");
+      });
+
+      board.saveSolveState!(solveJson(1));
+      setItem.mockRestore();
+      await act(async () => board.saveSolveState!(solveJson(2)));
+
+      expect(window.localStorage.getItem(solveKey)).toBe(solveJson(2));
+    });
+
+    it("keeps the puzzle playable when storage is blocked outright", async () => {
+      // Chrome and Firefox throw SecurityError from the `window.localStorage`
+      // getter itself when site data is blocked by policy, or inside a sandboxed
+      // iframe — so guarding only setItem is not enough. A throw out of the read
+      // path is the worse case: it unwinds from an effect, past the board, and
+      // (there is no error boundary in this app) replaces the puzzle with an
+      // error page.
+      const blocked = () => {
+        throw new DOMException("denied", "SecurityError");
+      };
+      for (const method of ["getItem", "setItem", "removeItem", "key"] as const) {
+        vi.spyOn(Storage.prototype, method).mockImplementation(blocked);
+      }
+      vi.spyOn(Storage.prototype, "length", "get").mockImplementation(blocked);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(board.loadSolveState!()).toBeNull();
+      expect(() => board.saveSolveState!(solveJson(1))).not.toThrow();
       expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_108 });
     });
 
@@ -382,6 +426,7 @@ describe("PuzzleSolver", () => {
     });
 
     it("clears the stored state when the piece count changes", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
       window.localStorage.setItem(solveKey, solveJson(7));
       container.innerHTML = serverHtml();
       await hydrate();
@@ -389,6 +434,37 @@ describe("PuzzleSolver", () => {
       await choose("48");
 
       expect(window.localStorage.getItem(solveKey)).toBeNull();
+    });
+
+    it("asks before a piece-count change discards a solve saved earlier", async () => {
+      // `connected` is 0 until the board has built — its chunk, the image and the
+      // container width all have to resolve — so a finished puzzle from an earlier
+      // visit reads as untouched for the first moments of every visit. Gating the
+      // prompt on `connected` alone would delete it without a word.
+      board.reportsFor = () => false; // board still loading
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+      window.localStorage.setItem(solveKey, solveJson(7));
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_108 });
+
+      await choose("48");
+
+      expect(confirm).toHaveBeenCalledOnce();
+      expect(window.localStorage.getItem(solveKey)).toBe(solveJson(7));
+      expect(select()?.value).toBe("108");
+    });
+
+    it("still does not ask when there is neither progress nor a saved solve", async () => {
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await choose("48");
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(select()?.value).toBe("48");
     });
 
     it("keeps the stored state when a piece-count change is declined", async () => {

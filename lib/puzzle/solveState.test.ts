@@ -1,8 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { pieceId, type PieceGroup } from "./groups";
+import { boardGeometry, pieceBox, scatterGroups, type Rect } from "./board";
+import { generateEdges } from "./edges";
 import {
+  MAX_STORED_SOLVES,
   SOLVE_STATE_VERSION,
   deserialiseSolveState,
+  restoreSolveState,
   serialiseSolveState,
   solveKeysToPrune,
   solveStateKey,
@@ -76,9 +80,11 @@ describe("serialise/deserialise round trip", () => {
     expect(back[0]).toMatchObject({ x: -80, y: -40 });
   });
 
-  it("survives a stage of zero width without producing NaN", () => {
-    // boardGeometry floors the stage at 360x520, but a divide-by-zero here would
-    // corrupt every position instead of being rejected, so pin the behaviour.
+  it("rejects a state that was written against a degenerate stage", () => {
+    // Unreachable through boardGeometry, which floors the stage at 360x520. Pinned
+    // because the failure is quiet: dividing by 0 gives Infinity, JSON.stringify
+    // writes that as null, and the finiteness guard on load is the only thing
+    // between that and every group being placed at NaN.
     const back = deserialiseSolveState(stored(GROUPS, { ...BOARD, stageW: 0, stageH: 0 }), BOARD);
     expect(back).toBeNull();
   });
@@ -91,6 +97,16 @@ describe("serialise/deserialise round trip", () => {
       rows: 2,
       updatedAt: 12345,
     });
+  });
+
+  it("writes positions as stage fractions, not pixels", () => {
+    // Asserted on the stored bytes, not just round-tripped: making both sides
+    // absolute would keep every round-trip test green while silently misreading
+    // every `version: 1` entry already in a solver's browser.
+    expect(JSON.parse(stored()).groups).toEqual([
+      { x: 100 / 1000, y: 50 / 600, members: ["0-0", "1-0"] },
+      { x: 600 / 1000, y: 300 / 600, members: ["0-1", "1-1"] },
+    ]);
   });
 });
 
@@ -124,11 +140,41 @@ describe("deserialiseSolveState rejects unusable state", () => {
     expect(deserialiseSolveState(tampered({ groups: {} }), BOARD)).toBeNull();
   });
 
+  it("returns null when a group is not an object", () => {
+    // Without this check the destructure throws instead of rejecting, and the
+    // board never seeds at all — a blank board rather than a fresh scatter.
+    for (const entry of [null, "0-0", 7, []]) {
+      expect(deserialiseSolveState(tampered({ groups: [entry] }), BOARD)).toBeNull();
+    }
+  });
+
   it("returns null when a group position is not a finite number", () => {
-    for (const x of [null, "100", NaN, Infinity]) {
-      expect(deserialiseSolveState(tampered({ groups: [{ x, y: 0, members: ["0-0"] }] }), BOARD))
+    // Both axes: `null * stageH` is 0, so an unchecked y would silently park the
+    // group against the top edge instead of rejecting the state.
+    for (const bad of [null, "100", NaN, Infinity, undefined]) {
+      expect(
+        deserialiseSolveState(tampered({ groups: [{ x: bad, y: 0, members: ["0-0"] }] }), BOARD),
+      ).toBeNull();
+      expect(
+        deserialiseSolveState(tampered({ groups: [{ x: 0, y: bad, members: ["0-0"] }] }), BOARD),
+      ).toBeNull();
+    }
+  });
+
+  it("returns null when members is not an array", () => {
+    for (const members of ["0-0", 7, {}, undefined]) {
+      expect(deserialiseSolveState(tampered({ groups: [{ x: 0, y: 0, members }] }), BOARD))
         .toBeNull();
     }
+  });
+
+  it("returns null when a member is not a string", () => {
+    expect(
+      deserialiseSolveState(
+        tampered({ groups: [{ x: 0, y: 0, members: ["0-0", "0-1", "1-0", 3] }] }),
+        BOARD,
+      ),
+    ).toBeNull();
   });
 
   it("returns null when a piece of the grid is missing", () => {
@@ -187,6 +233,156 @@ describe("deserialiseSolveState rejects unusable state", () => {
   });
 });
 
+describe("restoreSolveState", () => {
+  /**
+   * A real board: `boardGeometry` sizing, real jittered/tabbed piece extents from
+   * `pieceBox`, real starting positions from `scatterGroups`. Needed because the
+   * whole point of settling on restore is the piece bitmaps' extents, which the
+   * fraction arithmetic alone cannot see.
+   */
+  function board(containerW: number, viewportH: number, cols = 12, rows = 9) {
+    const geo = boardGeometry({ containerW, viewportH, aspect: 1200 / 800, cols, rows });
+    const grid = generateEdges(cols, rows, 4242);
+    const rects = new Map<string, Rect>();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        rects.set(pieceId(r, c), pieceBox(grid, r, c, geo.pieceW, geo.pieceH).rect);
+      }
+    }
+    return {
+      geo,
+      cols,
+      rows,
+      stageW: geo.stageW,
+      stageH: geo.stageH,
+      rectOf: (id: string) => rects.get(id),
+    };
+  }
+
+  /** Every member's bitmap lies inside the stage — "no group off the play area". */
+  function expectAllOnStage(groups: PieceGroup[], b: ReturnType<typeof board>) {
+    for (const g of groups) {
+      for (const m of g.members) {
+        const r = b.rectOf(m)!;
+        expect(g.x + r.x).toBeGreaterThanOrEqual(-1e-9);
+        expect(g.y + r.y).toBeGreaterThanOrEqual(-1e-9);
+        expect(g.x + r.x + r.width).toBeLessThanOrEqual(b.stageW + 1e-9);
+        expect(g.y + r.y + r.height).toBeLessThanOrEqual(b.stageH + 1e-9);
+      }
+    }
+  }
+
+  /** Half-solve the board: join each row into one group, then save it. */
+  function halfSolved(b: ReturnType<typeof board>) {
+    const scattered = scatterGroups({
+      cols: b.cols,
+      rows: b.rows,
+      seed: 4242,
+      pieceW: b.geo.pieceW,
+      pieceH: b.geo.pieceH,
+      stageW: b.stageW,
+      stageH: b.stageH,
+    });
+    const rowGroups: PieceGroup[] = [];
+    for (let r = 0; r < b.rows; r++) {
+      const first = scattered[r * b.cols];
+      rowGroups.push({
+        id: r + 1,
+        x: first.x,
+        y: first.y,
+        members: Array.from({ length: b.cols }, (_, c) => pieceId(r, c)),
+      });
+    }
+    return rowGroups;
+  }
+
+  it("keeps every group on the board when the window is much narrower", () => {
+    // The acceptance criterion from issue #12: "A state saved at one window width
+    // restores correctly at another; no group ends up outside the play area."
+    const wide = board(2400, 1400);
+    const narrow = board(380, 700);
+    const raw = serialiseSolveState({
+      groups: halfSolved(wide),
+      cols: wide.cols,
+      rows: wide.rows,
+      stageW: wide.stageW,
+      stageH: wide.stageH,
+      updatedAt: 1,
+    });
+
+    const back = restoreSolveState(raw, narrow, narrow.rectOf)!;
+
+    expect(back).toHaveLength(9);
+    expectAllOnStage(back, narrow);
+  });
+
+  it("keeps every group on the board when the window is much wider", () => {
+    const narrow = board(380, 700);
+    const wide = board(2400, 1400);
+    const raw = serialiseSolveState({
+      groups: halfSolved(narrow),
+      cols: narrow.cols,
+      rows: narrow.rows,
+      stageW: narrow.stageW,
+      stageH: narrow.stageH,
+      updatedAt: 1,
+    });
+
+    const back = restoreSolveState(raw, wide, wide.rectOf)!;
+
+    expectAllOnStage(back, wide);
+  });
+
+  it("loses no piece and duplicates none across the rescale", () => {
+    const wide = board(2400, 1400);
+    const narrow = board(380, 700);
+    const raw = serialiseSolveState({
+      groups: halfSolved(wide),
+      cols: wide.cols,
+      rows: wide.rows,
+      stageW: wide.stageW,
+      stageH: wide.stageH,
+      updatedAt: 1,
+    });
+
+    const members = restoreSolveState(raw, narrow, narrow.rectOf)!.flatMap((g) => g.members);
+
+    expect(members).toHaveLength(narrow.cols * narrow.rows);
+    expect(new Set(members).size).toBe(narrow.cols * narrow.rows);
+  });
+
+  it("leaves a group that already fits exactly where it is", () => {
+    // Settling must be a clamp, not a re-layout: reloading in an unchanged window
+    // has to give the solver their arrangement back untouched. Restoring twice is
+    // what makes that testable — the first pass produces positions known to fit,
+    // so any drift on the second is the clamp moving something it should not.
+    const b = board(1400, 1000);
+    const save = (groups: PieceGroup[]) =>
+      serialiseSolveState({
+        groups,
+        cols: b.cols,
+        rows: b.rows,
+        stageW: b.stageW,
+        stageH: b.stageH,
+        updatedAt: 1,
+      });
+
+    const once = restoreSolveState(save(halfSolved(b)), b, b.rectOf)!;
+    const twice = restoreSolveState(save(once), b, b.rectOf)!;
+
+    for (const [i, g] of twice.entries()) {
+      expect(g.x).toBeCloseTo(once[i].x, 6);
+      expect(g.y).toBeCloseTo(once[i].y, 6);
+    }
+  });
+
+  it("returns null for a state it cannot use, so the caller scatters", () => {
+    const b = board(1400, 1000);
+    expect(restoreSolveState(null, b, b.rectOf)).toBeNull();
+    expect(restoreSolveState("{not json", b, b.rectOf)).toBeNull();
+  });
+});
+
 describe("solveKeysToPrune", () => {
   function entry(key: string, updatedAt: number) {
     return { key, raw: JSON.stringify({ version: SOLVE_STATE_VERSION, updatedAt }) };
@@ -216,11 +412,37 @@ describe("solveKeysToPrune", () => {
     const entries = [
       { key: "solve:junk", raw: "{not json" },
       { key: "solve:noTime", raw: JSON.stringify({ version: SOLVE_STATE_VERSION }) },
-      entry("solve:old", 1),
+      { key: "solve:empty", raw: null },
+      entry("solve:old", 0), // the oldest possible real stamp still beats unreadable
     ];
     expect(solveKeysToPrune(entries, "solve:new", 2).sort()).toEqual([
+      "solve:empty",
       "solve:junk",
       "solve:noTime",
     ]);
+  });
+
+  it("drops an entry of a foreign format version before any usable one", () => {
+    // It could never be restored, so ranking it by recency would let it evict an
+    // older entry that still works.
+    const entries = [
+      { key: "solve:future", raw: JSON.stringify({ version: 99, updatedAt: 9999 }) },
+      entry("solve:usable", 1),
+    ];
+    expect(solveKeysToPrune(entries, "solve:new", 2)).toEqual(["solve:future"]);
+  });
+
+  it("drops everything but the entry being written when the cap is one", () => {
+    const entries = [entry("solve:a", 10), entry("solve:b", 20)];
+    expect(solveKeysToPrune(entries, "solve:new", 1).sort()).toEqual(["solve:a", "solve:b"]);
+  });
+
+  it("keeps the real cap at MAX_STORED_SOLVES entries in total", () => {
+    // 19 others survive alongside the one being written.
+    const entries = Array.from({ length: 40 }, (_, i) => entry(`solve:p-${i}`, i));
+    const pruned = solveKeysToPrune(entries, "solve:new", MAX_STORED_SOLVES);
+    expect(entries.length - pruned.length).toBe(MAX_STORED_SOLVES - 1);
+    expect(pruned).toContain("solve:p-0");
+    expect(pruned).not.toContain("solve:p-39");
   });
 });

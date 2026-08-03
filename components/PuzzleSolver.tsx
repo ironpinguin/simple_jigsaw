@@ -22,13 +22,38 @@ const PuzzleBoard = dynamic(() => import("./PuzzleBoard"), {
   loading: () => <BoardLoading />,
 });
 
-/** Every stored solve state, so `saveSolveState` can prune the oldest. */
-function storedSolves(): Array<{ key: string; raw: string | null }> {
+/**
+ * Run `fn` against localStorage, falling back to `whenUnavailable` if storage
+ * cannot be used at all.
+ *
+ * Reaching for `window.localStorage` is itself throwing code: browsers raise
+ * `SecurityError` from the *getter* when site data is blocked by policy or the
+ * page is a sandboxed iframe. So it is not enough to guard the individual
+ * `setItem` — every touch has to go through here, including the reads, which run
+ * from effects where an escaping error unwinds past the board (this app has no
+ * error boundary) and replaces the puzzle with Next's error page.
+ */
+function withStorage<T>(fn: (store: Storage) => T, whenUnavailable: T): T {
+  try {
+    return fn(window.localStorage);
+  } catch (err) {
+    // Covers both shapes of failure, since neither is recoverable here and the
+    // error itself names which one it was: `SecurityError` from the getter, and
+    // `QuotaExceededError` from a write against a full origin.
+    console.warn("[solve] localStorage unavailable or full; progress is not saved", err);
+    return whenUnavailable;
+  }
+}
+
+/** Every stored solve state, so `saveSolveState` can prune the least recent. */
+function storedSolves(store: Storage): Array<{ key: string; raw: string | null }> {
   const entries: Array<{ key: string; raw: string | null }> = [];
-  for (let i = 0; i < window.localStorage.length; i++) {
-    const key = window.localStorage.key(i);
+  // Enumerate fully before deleting anything: removing inside this loop would
+  // shift the indices and skip every other key.
+  for (let i = 0; i < store.length; i++) {
+    const key = store.key(i);
     if (key?.startsWith(SOLVE_KEY_PREFIX)) {
-      entries.push({ key, raw: window.localStorage.getItem(key) });
+      entries.push({ key, raw: store.getItem(key) });
     }
   }
   return entries;
@@ -53,7 +78,7 @@ export default function PuzzleSolver({
   const [pieceCount, setPieceCount] = useState(puzzle.pieceCount);
 
   useEffect(() => {
-    const saved = Number(window.localStorage.getItem(storageKey));
+    const saved = Number(withStorage((s) => s.getItem(storageKey), null));
     if ((PIECE_PRESETS as readonly number[]).includes(saved)) setPieceCount(saved);
   }, [storageKey]);
 
@@ -81,46 +106,71 @@ export default function PuzzleSolver({
 
   const onSolved = useCallback(() => setSolved(true), []);
 
+  // --- The solve state -------------------------------------------------------
+  //
   // Where the pieces lie and which of them are joined, kept in the browser only
   // (issue #12) — it deliberately does not follow the solver to another device.
   // The board does the (de)serialising, since it owns the group model and the
   // stage the positions are relative to; every localStorage call lives here, as
   // the `pc:` one above already does.
+
   const [resetNonce, setResetNonce] = useState(0);
 
-  // The board calls this from an effect, never while rendering: the server has no
-  // localStorage, and reading storage during render is exactly what broke
-  // hydration in issue #7.
-  const loadSolveState = useCallback(() => window.localStorage.getItem(solveKey), [solveKey]);
+  /**
+   * Read by the board from its seeding effect, never during a render — this
+   * component *does* render on the server, where there is no storage at all
+   * (`PuzzleSolver.test.tsx` hides the globals to keep that honest).
+   *
+   * Must stay referentially stable: the board lists it in that effect's
+   * dependencies, so an inline arrow here would re-seed the board from storage on
+   * every parent render — every toolbar toggle would re-assign group ids.
+   */
+  const loadSolveState = useCallback(
+    () => withStorage((s) => s.getItem(solveKey), null),
+    [solveKey],
+  );
 
   const saveSolveState = useCallback(
     (raw: string) => {
-      // Opening puzzle after puzzle would otherwise fill the origin's storage for
-      // good, so retire the least recently played solves first.
-      for (const key of solveKeysToPrune(storedSolves(), solveKey, MAX_STORED_SOLVES)) {
-        window.localStorage.removeItem(key);
-      }
-      try {
-        window.localStorage.setItem(solveKey, raw);
-      } catch {
-        // Storage full or blocked (quota, private mode). This runs inside a drop
-        // handler, so throwing would take the board down — the puzzle has to stay
-        // playable and only give up on being resumable.
-      }
+      withStorage((store) => {
+        // Opening puzzle after puzzle would otherwise grow the origin's storage
+        // without bound, so retire the least recently played solves first. This is
+        // a retention policy rather than a way of making room for this one write:
+        // the entries it drops are already past the cap.
+        for (const key of solveKeysToPrune(storedSolves(store), solveKey, MAX_STORED_SOLVES)) {
+          store.removeItem(key);
+        }
+        // A full origin throws here, and `withStorage` is what swallows it. That
+        // matters most on this path: the board calls this from a Konva `dragend`
+        // handler, so an escaping error would not unmount anything — it would
+        // surface as an uncaught error out of Konva's event dispatch, once per
+        // drop, where no React error boundary can reach it.
+        store.setItem(solveKey, raw);
+      }, undefined);
     },
     [solveKey],
   );
 
   function clearSolveState() {
-    window.localStorage.removeItem(solveKey);
+    withStorage((s) => s.removeItem(solveKey), undefined);
+  }
+
+  /**
+   * Whether there is a saved solve to lose. `connected` cannot answer that: it
+   * comes from the board's in-memory report, which is 0 until the board has built
+   * — its chunk, the image and the container width all have to resolve first — so
+   * for the first moments of every visit a fully joined board reads as untouched.
+   */
+  function hasStoredSolve() {
+    return withStorage((s) => s.getItem(solveKey) !== null, false);
   }
 
   function startOver() {
     if (!window.confirm(t("confirmReset"))) return;
     clearSolveState();
     // The board re-seeds from its scatter when this changes. That scatter is
-    // derived from the puzzle's seed, so starting over gives back the arrangement
-    // the link has always had rather than a new random one.
+    // derived from the puzzle's seed, so starting over gives back the same
+    // relative arrangement the link has always had rather than a new random one.
     setResetNonce((n) => n + 1);
     // The board reports again once it has re-seeded; until then say nothing is
     // connected instead of leaving the old count — and the solved banner up.
@@ -134,14 +184,18 @@ export default function PuzzleSolver({
 
   function changeCount(n: number) {
     if (n === pieceCount) return;
-    // Warn if the solver has already connected pieces (rebuild resets progress).
-    if (connected > 0 && !window.confirm(t("confirmChange"))) {
+    // Warn if there is progress to lose — either connected on the board in front
+    // of the solver, or saved from an earlier visit. Asking about the saved state
+    // too is what keeps the prompt honest now that the rebuild deletes something
+    // durable: a board still loading reports nothing connected, and gating on that
+    // alone would throw a finished puzzle away without a word.
+    if ((connected > 0 || hasStoredSolve()) && !window.confirm(t("confirmChange"))) {
       return;
     }
     setPieceCount(n);
-    window.localStorage.setItem(storageKey, String(n));
-    // A state for the old grid is unusable anyway — `deserialiseSolveState`
-    // rejects it — but dropping it here is what the warning above promises.
+    withStorage((s) => s.setItem(storageKey, String(n)), undefined);
+    // The new grid could not restore it anyway — `deserialiseSolveState` rejects a
+    // cols/rows mismatch — but deleting it here is what the warning promises.
     clearSolveState();
   }
 

@@ -20,7 +20,7 @@ import {
   type PieceBox,
   type Rect,
 } from "@/lib/puzzle/board";
-import { deserialiseSolveState, serialiseSolveState } from "@/lib/puzzle/solveState";
+import { restoreSolveState, serialiseSolveState } from "@/lib/puzzle/solveState";
 import { clampScale, wheelZoomFactor } from "@/lib/puzzle/zoom";
 import { stagePositionFor } from "@/lib/puzzle/minimap";
 import ZoomControls from "./ZoomControls";
@@ -193,12 +193,21 @@ interface Props {
   onProgress: (groups: number, total: number) => void;
   onSolved: () => void;
   /**
-   * The solve state to resume from, or `null` to scatter. `PuzzleSolver` owns the
-   * storage; this is a callback rather than a prop value so it can be read in the
-   * seeding effect, where the board's own geometry is known and there is no race
-   * with the parent's mount effect.
+   * The raw stored solve state to resume from, or `null` to scatter — the board
+   * also scatters when a state is present but unusable. `PuzzleSolver` owns the
+   * storage.
+   *
+   * A callback rather than a value so the board pulls it exactly when it seeds. As
+   * a value prop, `startOver` would have to make the board tell "not read yet"
+   * apart from "deliberately cleared"; re-reading on a `resetNonce` change needs
+   * no such distinction. Must be referentially stable — it is a dependency of the
+   * seeding effect.
    */
   loadSolveState: () => string | null;
+  /**
+   * Must not throw: this is called from a Konva `dragend` handler, where an error
+   * escapes into Konva's event dispatch and no React error boundary can catch it.
+   */
   saveSolveState: (raw: string) => void;
   /** Changes when the solver asks to start over; re-seeds from the scatter. */
   resetNonce: number;
@@ -265,27 +274,29 @@ export default function PuzzleBoard({
     return buildLayout(puzzle, image, containerW, cols, rows);
   }, [image, containerW, puzzle, cols, rows]);
 
-  // Seed the group model whenever the layout is (re)built: resume the stored
-  // solve if there is a usable one, otherwise scatter. Reading the stored state
-  // here rather than during render is what keeps hydration intact (issue #7) —
-  // and it means the parent never has to have finished reading storage first.
+  // Seed the group model whenever the layout is (re)built: resume the stored solve
+  // if there is a usable one, otherwise scatter.
+  //
+  // The read belongs in an effect because it needs `layout` — which exists only
+  // once the lazily imported chunk, the image and the container width have all
+  // resolved — and because it has to run again whenever the layout is rebuilt or
+  // `resetNonce` changes. (Not for hydration's sake: this component is imported
+  // with `ssr: false`, so it never renders on the server. Issue #7 was about
+  // `PuzzleSolver`, which does.)
   useEffect(() => {
     if (!layout) return;
     const { stageW, stageH } = layout;
 
-    const restored = deserialiseSolveState(loadSolveState(), { cols, rows, stageW, stageH });
-    // Origins are stored relative to the stage, but the piece size does not scale
-    // with the stage in step — `boardGeometry` caps the assembled picture's height
-    // — so a group that sat flush against an edge can still overhang after a
-    // resize. Settling each one keeps every group on the board.
-    for (const g of restored ?? []) {
-      const settled = settleGroup(g, (pid) => layout.pieces.get(pid)?.rect, stageW, stageH);
-      if (settled) {
-        g.x = settled.x;
-        g.y = settled.y;
-      }
-    }
+    const restored = restoreSolveState(
+      loadSolveState(),
+      { cols, rows, stageW, stageH },
+      (pid) => layout.pieces.get(pid)?.rect,
+    );
 
+    // Note the settled positions are deliberately not written back. Storage keeps
+    // the fractions as they were saved, so each restore clamps from the original
+    // rather than from the last clamp — otherwise a few resizes would walk a group
+    // inward step by step.
     const groups = new Map<number, PieceGroup>();
     const p2g = new Map<string, number>();
     for (const g of restored ?? layout.initialGroups) {
@@ -297,12 +308,19 @@ export default function PuzzleBoard({
     bump();
     onProgress(groups.size, total);
     // `resetNonce` is not read: it is a dependency so that starting over re-runs
-    // this and picks up the state the solver has just deleted, even though the
-    // layout itself is unchanged.
+    // this, finds the entry the solver has just deleted gone, and falls through to
+    // a fresh scatter — even though the layout itself is unchanged. A `key` on the
+    // component would do it too, but that remounts and re-rasterises every piece.
   }, [layout, cols, rows, total, onProgress, bump, loadSolveState, resetNonce]);
 
   function handleGroupDragEnd(groupId: number, node: Konva.Node) {
     setDraggingId(null);
+
+    // Read once instead of asserting at each use: a drag can only have started
+    // from nodes this layout rendered, but an error thrown here escapes into
+    // Konva's event dispatch, where no error boundary can catch it.
+    const current = layout;
+    if (!current) return;
 
     const groups = groupsRef.current;
     const p2g = pieceToGroupRef.current;
@@ -312,7 +330,7 @@ export default function PuzzleBoard({
     start.x = node.x();
     start.y = node.y();
 
-    const { survivorId } = resolveConnections(groups, p2g, groupId, rows, cols, layout!.snapDist);
+    const { survivorId } = resolveConnections(groups, p2g, groupId, rows, cols, current.snapDist);
 
     // Dragging is unbounded so that a piece can always reach a neighbour parked
     // against an edge; the drop is what has to land on the board. A merge snaps
@@ -324,9 +342,9 @@ export default function PuzzleBoard({
     const survivor = groups.get(survivorId)!;
     const settled = settleGroup(
       survivor,
-      (pid) => layout!.pieces.get(pid)?.rect,
-      layout!.stageW,
-      layout!.stageH,
+      (pid) => current.pieces.get(pid)?.rect,
+      current.stageW,
+      current.stageH,
     );
     if (settled) {
       survivor.x = settled.x;
@@ -343,15 +361,15 @@ export default function PuzzleBoard({
     onProgress(groups.size, total);
     if (groups.size === 1) onSolved();
 
-    // A drop is the only thing that changes the group model, and they are far too
-    // rare for debouncing to buy anything.
+    // Drops are far too rare for debouncing to buy anything. (The seeding effect
+    // also replaces the model, and deliberately does not save — see there.)
     saveSolveState(
       serialiseSolveState({
         groups: groups.values(),
         cols,
         rows,
-        stageW: layout!.stageW,
-        stageH: layout!.stageH,
+        stageW: current.stageW,
+        stageH: current.stageH,
         updatedAt: Date.now(),
       }),
     );
