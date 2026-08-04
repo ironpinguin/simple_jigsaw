@@ -1,12 +1,19 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { legalOperator, isOperatorComplete } from "@/lib/legal";
+import {
+  legalOperator,
+  legalInstance,
+  isOperatorComplete,
+  missingOperatorFields,
+  warnIncompleteOperator,
+} from "@/lib/legal";
 
 // The operator details come from the environment, and in the Docker setup
 // `next build` runs with a different environment than the container that later
 // serves the page — prerendering would bake in the build-time values (usually
-// none at all).
+// none at all). See lib/legal.ts for why this stays even though the `[locale]`
+// layout's `auth()` call already de-opts the segment.
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
@@ -28,14 +35,17 @@ export default async function ImprintPage({
   setRequestLocale(locale);
   const t = await getTranslations("legal");
   const operator = legalOperator();
+  const instance = legalInstance();
 
   if (!isOperatorComplete(operator)) {
+    const missing = missingOperatorFields(operator);
+    warnIncompleteOperator(missing);
     return (
       <div className="legal">
         <h1>{t("imprintTitle")}</h1>
         <div className="card">
           <h2>{t("notConfiguredTitle")}</h2>
-          <p>{t("notConfiguredText")}</p>
+          <p>{t("notConfiguredText", { fields: missing.join(", ") })}</p>
         </div>
       </div>
     );
@@ -49,27 +59,25 @@ export default async function ImprintPage({
       <h2>{t("responsibleTitle")}</h2>
       <address>
         {operator.name}
-        {operator.addressLines.map((line) => (
-          <span key={line}>{line}</span>
+        {/* Keyed by index: the lines are operator-supplied free text and a
+            repeated one (a doubled c/o, a city equal to the region) would
+            collide. The list is static and never reorders. */}
+        {operator.addressLines.map((line, i) => (
+          <span key={i}>{line}</span>
         ))}
       </address>
 
-      {(operator.email || operator.phone) && (
-        <>
-          <h2>{t("contactTitle")}</h2>
-          <p>
-            {operator.email && (
-              <>
-                {t("emailLabel")}: <a href={`mailto:${operator.email}`}>{operator.email}</a>
-                <br />
-              </>
-            )}
-            {operator.phone && `${t("phoneLabel")}: ${operator.phone}`}
-          </p>
-        </>
+      <h2>{t("contactTitle")}</h2>
+      <p>
+        {t("emailLabel")}: <a href={`mailto:${operator.email}`}>{operator.email}</a>
+      </p>
+      {operator.phone && (
+        <p>
+          {t("phoneLabel")}: {operator.phone}
+        </p>
       )}
 
-      <p className="muted">{t("privateService")}</p>
+      {instance.privateService && <p className="muted">{t("privateService")}</p>}
       <p>
         <Link href="/legal/privacy">{t("privacyLink")}</Link>
       </p>

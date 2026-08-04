@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import { getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { legalProcessors } from "@/lib/legal";
+import {
+  legalOperator,
+  legalInstance,
+  legalProcessors,
+  isOperatorComplete,
+  PRIVACY_UPDATED,
+} from "@/lib/legal";
 
-// Same reason as the Impressum: the named processors come from the environment,
-// which is only known at run time.
+// The named processors and the hosting region come from the environment, and in
+// the Docker setup `next build` sees a different one than the running container
+// — see lib/legal.ts.
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata({
@@ -26,14 +33,19 @@ export default async function PrivacyPage({
   setRequestLocale(locale);
   const t = await getTranslations("legal");
   const processors = legalProcessors();
+  const instance = legalInstance();
+  const operator = legalOperator();
 
   return (
     <div className="legal">
       <h1>{t("privacyTitle")}</h1>
-      <p className="muted">{t("privacyUpdated")}</p>
+      <p className="muted">{t("privacyUpdated", { date: new Date(PRIVACY_UPDATED) })}</p>
 
       <h2>{t("controllerTitle")}</h2>
-      <p>{t("controllerText")}</p>
+      {/* Without operator details there is no controller to name, and the rights
+          section below sends people to an address that does not exist — so say
+          that instead of asserting a controller. */}
+      <p>{isOperatorComplete(operator) ? t("controllerText") : t("controllerMissing")}</p>
       <p>
         <Link href="/legal/imprint">{t("imprintLink")}</Link>
       </p>
@@ -79,7 +91,11 @@ export default async function PrivacyPage({
       <p>{t("recipientsOther")}</p>
 
       <h2>{t("hostingTitle")}</h2>
-      <p>{t("hostingText")}</p>
+      <p>
+        {instance.hostingRegion
+          ? t("hostingTextRegion", { region: instance.hostingRegion })
+          : t("hostingTextUnknown")}
+      </p>
 
       <h2>{t("retentionTitle")}</h2>
       <p>{t("retentionText")}</p>

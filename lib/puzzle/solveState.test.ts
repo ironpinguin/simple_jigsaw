@@ -240,8 +240,8 @@ describe("restoreSolveState", () => {
    * whole point of settling on restore is the piece bitmaps' extents, which the
    * fraction arithmetic alone cannot see.
    */
-  function board(containerW: number, viewportH: number, cols = 12, rows = 9) {
-    const geo = boardGeometry({ containerW, viewportH, aspect: 1200 / 800, cols, rows });
+  function board(containerW: number, availableH: number, cols = 12, rows = 9) {
+    const geo = boardGeometry({ containerW, availableH, aspect: 1200 / 800, cols, rows });
     const grid = generateEdges(cols, rows, 4242);
     const rects = new Map<string, Rect>();
     for (let r = 0; r < rows; r++) {
@@ -299,8 +299,8 @@ describe("restoreSolveState", () => {
   it("keeps every group on the board when the window is much narrower", () => {
     // The acceptance criterion from issue #12: "A state saved at one window width
     // restores correctly at another; no group ends up outside the play area."
-    const wide = board(2400, 1400);
-    const narrow = board(380, 700);
+    const wide = board(2400, 1190);
+    const narrow = board(380, 490);
     const raw = serialiseSolveState({
       groups: halfSolved(wide),
       cols: wide.cols,
@@ -317,8 +317,8 @@ describe("restoreSolveState", () => {
   });
 
   it("keeps every group on the board when the window is much wider", () => {
-    const narrow = board(380, 700);
-    const wide = board(2400, 1400);
+    const narrow = board(380, 490);
+    const wide = board(2400, 1190);
     const raw = serialiseSolveState({
       groups: halfSolved(narrow),
       cols: narrow.cols,
@@ -334,8 +334,8 @@ describe("restoreSolveState", () => {
   });
 
   it("loses no piece and duplicates none across the rescale", () => {
-    const wide = board(2400, 1400);
-    const narrow = board(380, 700);
+    const wide = board(2400, 1190);
+    const narrow = board(380, 490);
     const raw = serialiseSolveState({
       groups: halfSolved(wide),
       cols: wide.cols,
@@ -356,7 +356,7 @@ describe("restoreSolveState", () => {
     // has to give the solver their arrangement back untouched. Restoring twice is
     // what makes that testable — the first pass produces positions known to fit,
     // so any drift on the second is the clamp moving something it should not.
-    const b = board(1400, 1000);
+    const b = board(1400, 790);
     const save = (groups: PieceGroup[]) =>
       serialiseSolveState({
         groups,
@@ -377,7 +377,7 @@ describe("restoreSolveState", () => {
   });
 
   it("returns null for a state it cannot use, so the caller scatters", () => {
-    const b = board(1400, 1000);
+    const b = board(1400, 790);
     expect(restoreSolveState(null, b, b.rectOf)).toBeNull();
     expect(restoreSolveState("{not json", b, b.rectOf)).toBeNull();
   });
