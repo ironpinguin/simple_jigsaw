@@ -72,9 +72,9 @@ export interface SerialiseInput extends SolveBoard {
  * The stored JSON for one puzzle.
  *
  * Group origins are stored as a fraction of the stage, not in pixels. The stage
- * is sized from the container width and the window height (`boardGeometry`), so a
- * state saved in a maximised window would otherwise restore off-screen in a
- * narrow one.
+ * is sized from the container width and the height left over around it
+ * (`boardGeometry`), so a state saved in a maximised window would otherwise
+ * restore off-screen in a narrow one.
  */
 export function serialiseSolveState({
   groups,

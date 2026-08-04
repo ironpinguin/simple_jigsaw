@@ -22,8 +22,13 @@ export interface Rect {
 export interface GeometryInput {
   /** Width available to the board element. */
   containerW: number;
-  /** Window height; the stage fills what is left below the toolbar. */
-  viewportH: number;
+  /**
+   * Height the stage may take without pushing the page into a scrollbar, i.e.
+   * the window minus the chrome above and below the board. The caller measures
+   * it — a constant here went stale the moment a footer was added below the
+   * board, and only this module's caller can see the real layout.
+   */
+  availableH: number;
   /** imageWidth / imageHeight. */
   aspect: number;
   cols: number;
@@ -49,13 +54,15 @@ export interface BoardGeometry {
  */
 export function boardGeometry({
   containerW,
-  viewportH,
+  availableH,
   aspect,
   cols,
   rows,
 }: GeometryInput): BoardGeometry {
   const stageW = Math.max(360, containerW);
-  const stageH = Math.max(520, Math.floor(viewportH - 210));
+  // The floor wins on a short window: a stage below this is unplayable, and a
+  // scrollbar is the better trade.
+  const stageH = Math.max(520, Math.floor(availableH));
 
   let boardW = stageW * 0.4;
   let boardH = boardW / aspect;

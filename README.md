@@ -110,6 +110,14 @@ im Code, siehe `lib/roles.ts`).
 Für Produktion echtes SMTP setzen (`SMTP_HOST/PORT/USER/PASS/FROM`), `APP_URL`
 auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
 
+- **Rechtliche Seiten**: `LEGAL_NAME`, `LEGAL_ADDRESS` und `LEGAL_EMAIL` sind
+  Pflicht, bevor die Instanz öffentlich erreichbar ist — sonst zeigt
+  `/legal/imprint` statt eines Impressums einen Hinweis auf die fehlenden
+  Variablen. Läuft Mail oder Bild-Speicher bei einem externen Anbieter, muss
+  `LEGAL_MAIL_PROCESSOR` bzw. `LEGAL_STORAGE_PROCESSOR` ihn benennen, sonst
+  behauptet die Datenschutzerklärung Eigenbetrieb. `.env.example` erklärt alle
+  `LEGAL_*`-Variablen im Detail.
+
 ## Tests
 
 ```bash

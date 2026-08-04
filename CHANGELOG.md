@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Legal pages: an Impressum and a privacy policy under `/legal/imprint` and
+  `/legal/privacy`, in all three languages, reachable from a new site footer on
+  every page. The privacy policy describes what the app actually stores —
+  account, verification links, blocked addresses, puzzles, uploaded images and
+  the solve progress kept in the browser — and states that images of public
+  puzzles are served without sign-in.
+- The operator's name, address and contact details for those pages come from
+  the environment (`LEGAL_NAME`, `LEGAL_ADDRESS`, `LEGAL_EMAIL`, `LEGAL_PHONE`),
+  so no personal data lives in the repository. All three of name, address and
+  email are required — until they are set the Impressum names the missing
+  variables instead of rendering a page that looks complete, and the privacy
+  policy says no controller is configured rather than pointing at one.
+- Statements that are only true for some operators are configurable and off by
+  default, so no instance publishes a claim it cannot keep:
+  `LEGAL_MAIL_PROCESSOR` / `LEGAL_STORAGE_PROCESSOR` name an external mail or
+  storage provider as a processor, `LEGAL_HOSTING_REGION` states where the
+  instance runs (unset: the policy says the location is not stated, rather than
+  claiming the EU), and `LEGAL_PRIVATE_SERVICE` adds the private,
+  non-commercial note for operators for whom it holds.
+
+### Changed
+- The site layout is a column that keeps the footer at the bottom of short
+  pages, which affects every page, not just the legal ones.
+
 ## [0.5.0] - 2026-08-03
 
 ### Added

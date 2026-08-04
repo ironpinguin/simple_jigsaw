@@ -15,18 +15,18 @@ import {
   type Rect,
 } from "./board";
 
-const STAGE = { containerW: 1400, viewportH: 1080, aspect: 4 / 3 };
+const STAGE = { containerW: 1400, availableH: 870, aspect: 4 / 3 };
 
 describe("boardGeometry", () => {
   it("keeps the assembled picture well inside the stage", () => {
     // clampGroupPosition pins (and freezes) a group too large for the stage.
     // These bounds are what makes that branch unreachable in the real app.
     for (const containerW of [320, 768, 1400, 2560]) {
-      for (const viewportH of [500, 720, 900, 1440]) {
+      for (const availableH of [290, 510, 690, 1230]) {
         for (const aspect of [3 / 4, 1, 4 / 3, 16 / 9]) {
           for (const preset of PIECE_PRESETS) {
             const { cols, rows } = computeGrid(preset, aspect);
-            const g = boardGeometry({ containerW, viewportH, aspect, cols, rows });
+            const g = boardGeometry({ containerW, availableH, aspect, cols, rows });
             expect(g.boardW).toBeLessThan(g.stageW);
             expect(g.boardH).toBeLessThan(g.stageH);
             expect(g.pieceW).toBeGreaterThan(0);
@@ -38,13 +38,13 @@ describe("boardGeometry", () => {
   });
 
   it("enforces a minimum stage even in a tiny window", () => {
-    const g = boardGeometry({ containerW: 100, viewportH: 300, aspect: 1, cols: 4, rows: 3 });
+    const g = boardGeometry({ containerW: 100, availableH: 90, aspect: 1, cols: 4, rows: 3 });
     expect(g.stageW).toBe(360);
     expect(g.stageH).toBe(520);
   });
 
   it("caps the picture's height for a tall image instead of overflowing", () => {
-    const tall = boardGeometry({ containerW: 4000, viewportH: 1080, aspect: 1 / 2, cols: 4, rows: 3 });
+    const tall = boardGeometry({ containerW: 4000, availableH: 870, aspect: 1 / 2, cols: 4, rows: 3 });
     expect(tall.boardH).toBeLessThanOrEqual(460);
     // width follows from the cap, so the aspect ratio is preserved
     expect(tall.boardW / tall.boardH).toBeCloseTo(1 / 2, 6);

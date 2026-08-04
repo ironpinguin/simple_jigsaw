@@ -136,19 +136,56 @@ function renderPieceCanvas(
   return canvas;
 }
 
+/**
+ * Fallback when there is nothing to measure: server rendering, or a test that
+ * mounts the board outside the site layout. Equivalent to the old fixed budget on
+ * an 800px window, and the stage floor takes over below it anyway.
+ */
+const FALLBACK_AVAILABLE_H = 590;
+
+/**
+ * The height the stage can take without the page needing a scrollbar: the window
+ * minus what sits above the board and what sits below it. Measured rather than
+ * assumed — the budget used to be a constant here, and it went stale the moment a
+ * site footer appeared below the board.
+ *
+ * Nothing in here depends on the board's current height, so the first call gets
+ * the same answer as every later one, while the stage is still empty. That rules
+ * out `documentElement.scrollHeight`, which `body { min-height: 100vh }` floors
+ * at the viewport height and which would therefore report the whole empty page as
+ * chrome. What is below the board is instead its `<main>`'s bottom padding plus
+ * whatever follows that `<main>` — assuming, as the solve view does, that the
+ * board is the last thing inside it.
+ */
+function availableBoardHeight(wrap: HTMLElement | null): number {
+  if (typeof window === "undefined" || !wrap) return FALLBACK_AVAILABLE_H;
+  const main = wrap.closest("main");
+  if (!main) return FALLBACK_AVAILABLE_H;
+
+  const topInDocument = wrap.getBoundingClientRect().top + window.scrollY;
+  let below = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+  for (let el = main.nextElementSibling; el; el = el.nextElementSibling) {
+    below += el.getBoundingClientRect().height;
+  }
+  // stageH is the canvas box; the wrapper's own border sits outside it.
+  const wrapBorders = wrap.offsetHeight - wrap.clientHeight;
+
+  return window.innerHeight - topInDocument - below - wrapBorders;
+}
+
 function buildLayout(
   puzzle: PuzzleData,
   image: HTMLImageElement,
   containerW: number,
   cols: number,
   rows: number,
+  availableH: number,
 ): Layout {
   const { seed } = puzzle;
 
   const geo = boardGeometry({
     containerW,
-    // Fill most of the viewport height so the play area uses the whole window.
-    viewportH: typeof window !== "undefined" ? window.innerHeight : 800,
+    availableH,
     aspect: puzzle.imageWidth / puzzle.imageHeight,
     cols,
     rows,
@@ -271,7 +308,10 @@ export default function PuzzleBoard({
 
   const layout = useMemo(() => {
     if (!image || containerW === 0) return null;
-    return buildLayout(puzzle, image, containerW, cols, rows);
+    // Measured here rather than inside buildLayout so lib/puzzle stays free of
+    // the DOM. Like the container width it is read once, when the layout is
+    // built: a later window resize does not re-lay-out the board.
+    return buildLayout(puzzle, image, containerW, cols, rows, availableBoardHeight(wrapRef.current));
   }, [image, containerW, puzzle, cols, rows]);
 
   // Seed the group model whenever the layout is (re)built: resume the stored solve

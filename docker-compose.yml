@@ -45,6 +45,17 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-Jigsaw <no-reply@jigsaw.local>}
+      # Impressum / privacy policy — .env.example documents what each one says on
+      # the page and which three are required. Do not restate it here; one
+      # authoritative copy is the point.
+      LEGAL_NAME: ${LEGAL_NAME:-}
+      LEGAL_ADDRESS: ${LEGAL_ADDRESS:-}
+      LEGAL_EMAIL: ${LEGAL_EMAIL:-}
+      LEGAL_PHONE: ${LEGAL_PHONE:-}
+      LEGAL_MAIL_PROCESSOR: ${LEGAL_MAIL_PROCESSOR:-}
+      LEGAL_STORAGE_PROCESSOR: ${LEGAL_STORAGE_PROCESSOR:-}
+      LEGAL_HOSTING_REGION: ${LEGAL_HOSTING_REGION:-}
+      LEGAL_PRIVATE_SERVICE: ${LEGAL_PRIVATE_SERVICE:-}
     depends_on:
       postgres:
         condition: service_healthy

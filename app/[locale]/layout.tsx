@@ -81,6 +81,10 @@ export default async function LocaleLayout({
           </nav>
         </header>
         <main className="site-main">{children}</main>
+        <footer className="site-footer">
+          <Link href="/legal/imprint">{t("imprint")}</Link>
+          <Link href="/legal/privacy">{t("privacy")}</Link>
+        </footer>
         </NextIntlClientProvider>
       </body>
     </html>
