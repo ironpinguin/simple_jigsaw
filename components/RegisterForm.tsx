@@ -9,6 +9,7 @@ export default function RegisterForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -21,7 +22,7 @@ export default function RegisterForm() {
     const res = await fetch("/api/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, termsAccepted }),
     });
 
     setLoading(false);
@@ -77,6 +78,29 @@ export default function RegisterForm() {
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
         />
+      </div>
+      <div className="checkbox-row">
+        <input
+          id="terms"
+          type="checkbox"
+          required
+          checked={termsAccepted}
+          onChange={(e) => setTermsAccepted(e.target.checked)}
+        />
+        <label htmlFor="terms">
+          {t.rich("acceptTerms", {
+            terms: (chunks) => (
+              <Link href="/legal/terms" target="_blank">
+                {chunks}
+              </Link>
+            ),
+            privacy: (chunks) => (
+              <Link href="/legal/privacy" target="_blank">
+                {chunks}
+              </Link>
+            ),
+          })}
+        </label>
       </div>
       <button className="button" type="submit" disabled={loading}>
         {loading ? t("registerLoading") : t("registerSubmit")}

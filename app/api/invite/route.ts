@@ -4,11 +4,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { consumeToken } from "@/lib/tokens";
 import { checkEmailBanned } from "@/lib/moderation";
+import { TERMS_VERSION } from "@/lib/legal";
 import { getErrorT } from "@/lib/i18n-server";
 
 const Schema = z.object({
   token: z.string().min(1),
   password: z.string().min(8),
+  // Invited users accept the terms when they activate the account.
+  termsAccepted: z.literal(true),
 });
 
 export async function POST(request: Request) {
@@ -16,8 +19,9 @@ export async function POST(request: Request) {
   const parsed = Schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
+    const onTerms = parsed.error.issues.some((i) => i.path.includes("termsAccepted"));
     return NextResponse.json(
-      { error: onPassword ? t("passwordMin") : t("invalidInput") },
+      { error: onPassword ? t("passwordMin") : onTerms ? t("termsNotAccepted") : t("invalidInput") },
       { status: 400 },
     );
   }
@@ -38,7 +42,12 @@ export async function POST(request: Request) {
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash, emailVerified: new Date() },
+    data: {
+      passwordHash,
+      emailVerified: new Date(),
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+    },
   });
 
   return NextResponse.json({ ok: true });

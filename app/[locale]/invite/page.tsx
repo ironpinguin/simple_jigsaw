@@ -10,6 +10,7 @@ export default function InvitePage() {
   const params = useSearchParams();
   const token = params.get("token");
   const [password, setPassword] = useState("");
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -25,7 +26,7 @@ export default function InvitePage() {
     const res = await fetch("/api/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, password, termsAccepted }),
     });
     setLoading(false);
     if (res.ok) {
@@ -64,6 +65,29 @@ export default function InvitePage() {
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
         />
+      </div>
+      <div className="checkbox-row">
+        <input
+          id="terms"
+          type="checkbox"
+          required
+          checked={termsAccepted}
+          onChange={(e) => setTermsAccepted(e.target.checked)}
+        />
+        <label htmlFor="terms">
+          {t.rich("acceptTerms", {
+            terms: (chunks) => (
+              <Link href="/legal/terms" target="_blank">
+                {chunks}
+              </Link>
+            ),
+            privacy: (chunks) => (
+              <Link href="/legal/privacy" target="_blank">
+                {chunks}
+              </Link>
+            ),
+          })}
+        </label>
       </div>
       <button className="button" type="submit" disabled={loading}>
         {loading ? t("inviteLoading") : t("inviteSubmit")}

@@ -22,6 +22,14 @@
 /** The date the privacy policy text last changed. Rendered per locale. */
 export const PRIVACY_UPDATED = "2026-08-04";
 
+/**
+ * The current terms-of-use version, as the ISO date the text last changed.
+ * Rendered on /legal/terms and persisted on `User.termsVersion` at registration
+ * and invite acceptance, so a later text change can tell who accepted what —
+ * see docs/terms-versioning.md for how such a change is handled.
+ */
+export const TERMS_VERSION = "2026-08-05";
+
 export interface LegalOperator {
   /** null when LEGAL_NAME is unset; the Impressum then refuses to render. */
   name: string | null;

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Terms of use under `/legal/terms` in all three languages, linked from the
+  footer. They prohibit pornographic, illegal and rights-infringing uploads and
+  reserve the right to remove content and accounts. Registration and invite
+  activation now require accepting them — an unchecked checkbox linking the
+  terms and the privacy policy, enforced server-side with a translated error —
+  and the acceptance time and version are stored on the account. How a later
+  change to the terms is handled is documented in `docs/terms-versioning.md`.
 - Legal pages: an Impressum and a privacy policy under `/legal/imprint` and
   `/legal/privacy`, in all three languages, reachable from a new site footer on
   every page. The privacy policy describes what the app actually stores —

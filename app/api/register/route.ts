@@ -8,12 +8,15 @@ import { isAdminEmail } from "@/lib/admin-emails";
 import { createToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/mail";
 import { isRegistrationEnabled } from "@/lib/registration";
+import { TERMS_VERSION } from "@/lib/legal";
 import { getErrorT, localeFromCookie } from "@/lib/i18n-server";
 
 const RegisterSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
   name: z.string().trim().max(80).optional(),
+  // Must be sent, must be true — the form cannot submit without the checkbox.
+  termsAccepted: z.literal(true),
 });
 
 export async function POST(request: Request) {
@@ -33,8 +36,9 @@ export async function POST(request: Request) {
   const parsed = RegisterSchema.safeParse(json);
   if (!parsed.success) {
     const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
+    const onTerms = parsed.error.issues.some((i) => i.path.includes("termsAccepted"));
     return NextResponse.json(
-      { error: onPassword ? t("passwordMin") : t("invalidInput") },
+      { error: onPassword ? t("passwordMin") : onTerms ? t("termsNotAccepted") : t("invalidInput") },
       { status: 400 },
     );
   }
@@ -58,6 +62,8 @@ export async function POST(request: Request) {
       name: parsed.data.name || null,
       role: isAdminEmail(email) ? "ADMIN" : "USER",
       emailVerified: null,
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
     },
     select: { id: true },
   });
