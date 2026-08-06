@@ -9,6 +9,7 @@ interface PuzzleSummary {
   title: string;
   imageKey: string;
   pieceCount: number;
+  isPublic: boolean;
 }
 
 export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
@@ -40,6 +41,21 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
     }
   }
 
+  async function toggleVisibility(id: string, isPublic: boolean) {
+    setBusyId(id);
+    const res = await fetch(`/api/puzzles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isPublic }),
+    });
+    setBusyId(null);
+    if (res.ok) {
+      setPuzzles((list) => list.map((p) => (p.id === id ? { ...p, isPublic } : p)));
+    } else {
+      alert(t("visibilityFailed"));
+    }
+  }
+
   return (
     <div className="grid-cards">
       {puzzles.map((p) => (
@@ -50,7 +66,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
           </Link>
           <h3>{p.title}</h3>
           <p className="muted" style={{ margin: 0 }}>
-            {t("pieces", { count: p.pieceCount })}
+            {t("pieces", { count: p.pieceCount })} · {p.isPublic ? t("public") : t("private")}
           </p>
           <div className="card-actions">
             <Link href={`/puzzle/${p.id}`} className="button">
@@ -58,6 +74,14 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
             </Link>
             <button className="button secondary" type="button" onClick={() => share(p.id)}>
               {copiedId === p.id ? t("copied") : t("share")}
+            </button>
+            <button
+              className="button secondary"
+              type="button"
+              disabled={busyId === p.id}
+              onClick={() => toggleVisibility(p.id, !p.isPublic)}
+            >
+              {p.isPublic ? t("makePrivate") : t("makePublic")}
             </button>
             <button
               className="button danger"
