@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
+import { z } from "zod";
 
 export async function GET(
   _request: Request,
@@ -28,6 +29,40 @@ export async function GET(
   }
 
   return NextResponse.json({ puzzle });
+}
+
+const UpdateSchema = z.object({ isPublic: z.boolean() });
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const t = await getErrorT();
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: t("notLoggedIn") }, { status: 401 });
+  }
+
+  const parsed = UpdateSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
+  }
+
+  const { id } = await params;
+  const puzzle = await prisma.puzzle.findUnique({ where: { id } });
+  // 404 for a missing puzzle and for someone else's alike — visibility is the
+  // owner's call, and the route must not confirm a foreign puzzle exists.
+  if (!puzzle || puzzle.ownerId !== user.id) {
+    return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+  }
+
+  const updated = await prisma.puzzle.update({
+    where: { id },
+    data: { isPublic: parsed.data.isPublic },
+    select: { id: true, isPublic: true },
+  });
+
+  return NextResponse.json({ puzzle: updated });
 }
 
 export async function DELETE(

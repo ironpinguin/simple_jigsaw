@@ -17,7 +17,7 @@ vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
 }));
 
-import { GET } from "./route";
+import { GET, PATCH } from "./route";
 
 const PUZZLE = {
   id: "p1",
@@ -31,6 +31,17 @@ function callGet() {
   return GET(new Request("http://test/api/puzzles/p1"), {
     params: Promise.resolve({ id: "p1" }),
   });
+}
+
+function callPatch(body: unknown) {
+  return PATCH(
+    new Request("http://test/api/puzzles/p1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ id: "p1" }) },
+  );
 }
 
 beforeEach(() => {
@@ -68,5 +79,38 @@ describe("GET /api/puzzles/[id]", () => {
     const res = await callGet();
     expect(res.status).toBe(200);
     expect(authMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /api/puzzles/[id]", () => {
+  it("requires login", async () => {
+    getSessionUserMock.mockResolvedValue(null);
+    const res = await callPatch({ isPublic: true });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a body without a boolean isPublic", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    const res = await callPatch({ isPublic: "yes" });
+    expect(res.status).toBe(400);
+  });
+
+  it("answers 404 for a non-owner so it does not confirm the puzzle exists", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
+    const res = await callPatch({ isPublic: true });
+    expect(res.status).toBe(404);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("lets the owner change visibility", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    update.mockResolvedValue({ id: "p1", isPublic: true });
+    const res = await callPatch({ isPublic: true });
+    expect(res.status).toBe(200);
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { isPublic: true },
+      select: { id: true, isPublic: true },
+    });
   });
 });
