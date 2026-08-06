@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Puzzle visibility is now enforced: a non-public puzzle's image and metadata
+  answer 404 to anyone but the owner or an admin, and private images are no
+  longer cached publicly. Visibility can be chosen at creation and toggled on
+  the my-puzzles page (#21).
 - Terms of use under `/legal/terms` in all three languages, linked from the
   footer. They prohibit pornographic, illegal and rights-infringing uploads and
   reserve the right to remove content and accounts. Registration and invite
