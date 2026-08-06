@@ -23,17 +23,23 @@ export default function InvitePage() {
       return;
     }
     setLoading(true);
-    const res = await fetch("/api/invite", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, password, termsAccepted }),
-    });
-    setLoading(false);
-    if (res.ok) {
-      setDone(true);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || t("inviteFailed"));
+    try {
+      const res = await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password, termsAccepted }),
+      });
+      if (res.ok) {
+        setDone(true);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || t("inviteFailed"));
+      }
+    } catch {
+      // fetch rejects without a response when the network fails.
+      setError(t("inviteFailed"));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -77,12 +83,12 @@ export default function InvitePage() {
         <label htmlFor="terms">
           {t.rich("acceptTerms", {
             terms: (chunks) => (
-              <Link href="/legal/terms" target="_blank">
+              <Link href="/legal/terms" target="_blank" rel="noopener noreferrer">
                 {chunks}
               </Link>
             ),
             privacy: (chunks) => (
-              <Link href="/legal/privacy" target="_blank">
+              <Link href="/legal/privacy" target="_blank" rel="noopener noreferrer">
                 {chunks}
               </Link>
             ),

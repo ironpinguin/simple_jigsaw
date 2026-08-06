@@ -229,7 +229,7 @@
     "termsLiabilityTitle": "7. Liability",
     "termsLiabilityText": "We are fully liable for intent and gross negligence, and for damage resulting from injury to life, body or health. Beyond that, liability is excluded to the extent permitted by law.",
     "termsChangesTitle": "8. Changes to these terms",
-    "termsChangesText": "We update these terms when the service or the legal situation changes. The current version is always on this page; the date above shows when it last changed. For material changes we will ask you to accept the new version at your next sign-in."
+    "termsChangesText": "We update these terms when the service or the legal situation changes. The current version is always on this page; the date above shows the last substantive change. For material changes we will ask you to accept the new version at your next sign-in."
   },
   "errors": {
     "invalidRequest": "Invalid request.",
@@ -240,7 +240,8 @@
     "emailTaken": "This email is already taken.",
     "emailRegistered": "This email is already registered.",
     "registrationDisabled": "Registration is disabled.",
-    "termsNotAccepted": "The terms of use must be accepted.",
+    "termsNotAccepted": "The terms of use must be accepted. If the form shows no checkbox for this, please reload the page.",
+    "verificationEmailFailed": "The account was created, but the verification email could not be sent. Please contact the operator.",
     "passwordMin": "Password must be at least 8 characters.",
     "invalidEmail": "Invalid email.",
     "noFile": "No file submitted.",

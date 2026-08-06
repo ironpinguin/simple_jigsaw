@@ -40,7 +40,7 @@
     "registerSubmit": "Crea account",
     "registerLoading": "Creazione account…",
     "registerFailed": "Registrazione non riuscita.",
-    "acceptTerms": "Accetto le <terms>condizioni d'uso</terms> e ho preso visione dell'<privacy>informativa sulla privacy</privacy>.",
+    "acceptTerms": "Accetto le <terms>condizioni d'uso</terms> e ho preso visione dell''<privacy>informativa sulla privacy</privacy>.",
     "registerDoneTitle": "Ci siamo quasi",
     "registerDoneText": "Ti abbiamo inviato un'e-mail di conferma a {email}. Clicca il link al suo interno per attivare il tuo account. Dopodiché potrai accedere.",
     "toLogin": "Vai all'accesso",
@@ -229,7 +229,7 @@
     "termsLiabilityTitle": "7. Responsabilità",
     "termsLiabilityText": "Rispondiamo senza limitazioni per dolo e colpa grave, nonché per danni derivanti da lesioni alla vita, al corpo o alla salute. Per il resto la responsabilità è esclusa nella misura consentita dalla legge.",
     "termsChangesTitle": "8. Modifiche a queste condizioni",
-    "termsChangesText": "Aggiorniamo queste condizioni quando il servizio o il quadro giuridico cambiano. La versione corrente è sempre su questa pagina; la data in alto indica l'ultima modifica. In caso di modifiche sostanziali ti chiederemo di accettare la nuova versione al prossimo accesso."
+    "termsChangesText": "Aggiorniamo queste condizioni quando il servizio o il quadro giuridico cambiano. La versione corrente è sempre su questa pagina; la data in alto indica l'ultima modifica sostanziale. In caso di modifiche sostanziali ti chiederemo di accettare la nuova versione al prossimo accesso."
   },
   "errors": {
     "invalidRequest": "Richiesta non valida.",
@@ -240,7 +240,8 @@
     "emailTaken": "Questa e-mail è già in uso.",
     "emailRegistered": "Questa e-mail è già registrata.",
     "registrationDisabled": "La registrazione è disattivata.",
-    "termsNotAccepted": "Le condizioni d'uso devono essere accettate.",
+    "termsNotAccepted": "Le condizioni d'uso devono essere accettate. Se il modulo non mostra la casella, ricarica la pagina.",
+    "verificationEmailFailed": "L'account è stato creato, ma non è stato possibile inviare l'e-mail di conferma. Contatta il gestore dell'istanza.",
     "passwordMin": "La password deve avere almeno 8 caratteri.",
     "invalidEmail": "E-mail non valida.",
     "noFile": "Nessun file inviato.",

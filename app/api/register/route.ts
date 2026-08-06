@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
@@ -9,15 +8,8 @@ import { createToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/mail";
 import { isRegistrationEnabled } from "@/lib/registration";
 import { TERMS_VERSION } from "@/lib/legal";
+import { RegisterSchema, signupErrorKey } from "@/lib/signup";
 import { getErrorT, localeFromCookie } from "@/lib/i18n-server";
-
-const RegisterSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(8),
-  name: z.string().trim().max(80).optional(),
-  // Must be sent, must be true — the form cannot submit without the checkbox.
-  termsAccepted: z.literal(true),
-});
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -35,12 +27,7 @@ export async function POST(request: Request) {
 
   const parsed = RegisterSchema.safeParse(json);
   if (!parsed.success) {
-    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
-    const onTerms = parsed.error.issues.some((i) => i.path.includes("termsAccepted"));
-    return NextResponse.json(
-      { error: onPassword ? t("passwordMin") : onTerms ? t("termsNotAccepted") : t("invalidInput") },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: t(signupErrorKey(parsed.error.issues)) }, { status: 400 });
   }
 
   const email = normalizeEmail(parsed.data.email);
@@ -68,8 +55,16 @@ export async function POST(request: Request) {
     select: { id: true },
   });
 
-  const token = await createToken(user.id, "EMAIL_VERIFY");
-  await sendVerificationEmail(email, token, await localeFromCookie());
+  try {
+    const token = await createToken(user.id, "EMAIL_VERIFY");
+    await sendVerificationEmail(email, token, await localeFromCookie());
+  } catch (error) {
+    // The account already exists here — a retry only yields the 409. Say what
+    // actually happened instead of an opaque 500, and leave a server-side
+    // trace, or an operator has nothing to debug a "mail never arrived" with.
+    console.error(`[register] verification email for user ${user.id} failed:`, error);
+    return NextResponse.json({ error: t("verificationEmailFailed") }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true, requiresVerification: true }, { status: 201 });
 }

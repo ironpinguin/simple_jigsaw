@@ -19,21 +19,27 @@ export default function RegisterForm() {
     setError(null);
     setLoading(true);
 
-    const res = await fetch("/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password, termsAccepted }),
-    });
+    try {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, termsAccepted }),
+      });
 
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || t("registerFailed"));
-      return;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || t("registerFailed"));
+        return;
+      }
+
+      // No auto-login: the account must confirm its email first.
+      setDone(true);
+    } catch {
+      // fetch rejects without a response when the network fails.
+      setError(t("registerFailed"));
+    } finally {
+      setLoading(false);
     }
-
-    // No auto-login: the account must confirm its email first.
-    setDone(true);
   }
 
   if (done) {
@@ -90,12 +96,12 @@ export default function RegisterForm() {
         <label htmlFor="terms">
           {t.rich("acceptTerms", {
             terms: (chunks) => (
-              <Link href="/legal/terms" target="_blank">
+              <Link href="/legal/terms" target="_blank" rel="noopener noreferrer">
                 {chunks}
               </Link>
             ),
             privacy: (chunks) => (
-              <Link href="/legal/privacy" target="_blank">
+              <Link href="/legal/privacy" target="_blank" rel="noopener noreferrer">
                 {chunks}
               </Link>
             ),

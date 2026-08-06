@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The site layout is a column that keeps the footer at the bottom of short
   pages, which affects every page, not just the legal ones.
 
+### Fixed
+- The registration and invite-activation forms recover from a network failure
+  with an error message instead of hanging on the loading state, and a
+  registration whose verification mail could not be sent now says so instead
+  of reporting a generic failure.
+
 ## [0.5.0] - 2026-08-03
 
 ### Added

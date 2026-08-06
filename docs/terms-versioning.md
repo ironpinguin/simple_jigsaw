@@ -13,8 +13,18 @@ Every acceptance lands on the `User` row:
   `/legal/terms`).
 
 Both are set at public registration (`app/api/register/route.ts`) and at
-invite activation (`app/api/invite/route.ts`). Accounts created before the
-terms existed, or by an admin through the CLI, carry `NULL` in both columns.
+invite activation (`app/api/invite/route.ts`). `NULL` in both columns means
+no recorded acceptance, which today covers three kinds of accounts:
+
+- created before the terms existed,
+- created by an admin — through the CLI (`scripts/create-user.mjs`) or the
+  direct-create endpoint (`app/api/admin/users/route.ts`); an admin cannot
+  accept on the user's behalf,
+- invited but not yet activated (the row exists from the moment the admin
+  sends the invite).
+
+The re-accept flow below treats `NULL` as outdated, so all of them are asked
+once it exists.
 
 ## Decision: re-accept on next login
 

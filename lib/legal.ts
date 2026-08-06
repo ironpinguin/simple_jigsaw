@@ -23,10 +23,11 @@
 export const PRIVACY_UPDATED = "2026-08-04";
 
 /**
- * The current terms-of-use version, as the ISO date the text last changed.
- * Rendered on /legal/terms and persisted on `User.termsVersion` at registration
- * and invite acceptance, so a later text change can tell who accepted what —
- * see docs/terms-versioning.md for how such a change is handled.
+ * The current terms-of-use version, as the ISO date of the last substantive
+ * change — purely editorial fixes do not bump it. Rendered on /legal/terms and
+ * persisted on `User.termsVersion` at registration and invite acceptance, so a
+ * later text change can tell who accepted what — see docs/terms-versioning.md
+ * for how such a change is handled.
  */
 export const TERMS_VERSION = "2026-08-05";
 
