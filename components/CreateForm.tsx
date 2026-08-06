@@ -12,6 +12,7 @@ export default function CreateForm() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [pieceCount, setPieceCount] = useState<number>(48);
+  const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -60,6 +61,7 @@ export default function CreateForm() {
           imageWidth: upData.width,
           imageHeight: upData.height,
           pieceCount,
+          isPublic,
         }),
       });
       if (res.status === 401) return router.push("/login?callbackUrl=/create");
@@ -118,6 +120,21 @@ export default function CreateForm() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label>{t("visibility")}</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: "normal" }}>
+          <input
+            type="checkbox"
+            checked={isPublic}
+            onChange={(e) => setIsPublic(e.target.checked)}
+          />
+          {t("publicLabel")}
+        </label>
+        <p className="muted" style={{ margin: "4px 0 0" }}>
+          {t("publicHint")}
+        </p>
       </div>
 
       <button className="button" type="submit" disabled={busy}>
