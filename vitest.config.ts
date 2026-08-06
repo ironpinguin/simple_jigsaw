@@ -26,6 +26,10 @@ export default defineConfig({
           include: ["components/**/*.test.{ts,tsx}"],
         },
       },
+      {
+        extends: true,
+        test: { name: "api", environment: "node", include: ["app/api/**/*.test.ts"] },
+      },
     ],
   },
 });
