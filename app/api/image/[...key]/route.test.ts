@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { findMany, authMock, getObjectMock } = vi.hoisted(() => ({
+const { findMany, getSessionViewerMock, getObjectMock } = vi.hoisted(() => ({
   findMany: vi.fn(),
-  authMock: vi.fn(),
+  getSessionViewerMock: vi.fn(),
   getObjectMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { puzzle: { findMany } } }));
-vi.mock("@/lib/auth", () => ({ auth: authMock }));
+vi.mock("@/lib/auth", () => ({ getSessionViewer: getSessionViewerMock }));
 vi.mock("@/lib/storage", () => ({ getObject: getObjectMock }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
@@ -27,32 +27,43 @@ beforeEach(() => {
 });
 
 describe("GET /api/image/[...key]", () => {
-  it("serves a public image without auth and with the long immutable cache", async () => {
+  it("resolves the puzzles referencing exactly the requested key", async () => {
+    findMany.mockResolvedValue([{ isPublic: true, ownerId: "owner-1" }]);
+    await callRoute();
+    expect(findMany).toHaveBeenCalledWith({
+      where: { imageKey: "puzzles/abc.webp" },
+      select: { isPublic: true, ownerId: true },
+    });
+    expect(getObjectMock).toHaveBeenCalledWith("puzzles/abc.webp");
+  });
+
+  it("serves a public image without auth and with a day-long public cache", async () => {
     findMany.mockResolvedValue([{ isPublic: true, ownerId: "owner-1" }]);
     const res = await callRoute();
     expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
-    expect(authMock).not.toHaveBeenCalled();
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    expect(getSessionViewerMock).not.toHaveBeenCalled();
   });
 
   it("answers 404 for a private image to an anonymous visitor without touching storage", async () => {
     findMany.mockResolvedValue([{ isPublic: false, ownerId: "owner-1" }]);
-    authMock.mockResolvedValue(null);
+    getSessionViewerMock.mockResolvedValue(null);
     const res = await callRoute();
     expect(res.status).toBe(404);
     expect(getObjectMock).not.toHaveBeenCalled();
   });
 
-  it("answers 404 for a private image to a different signed-in user", async () => {
+  it("answers 404 for a private image to a different signed-in user without touching storage", async () => {
     findMany.mockResolvedValue([{ isPublic: false, ownerId: "owner-1" }]);
-    authMock.mockResolvedValue({ user: { id: "stranger", role: "USER" } });
+    getSessionViewerMock.mockResolvedValue({ id: "stranger", role: "USER" });
     const res = await callRoute();
     expect(res.status).toBe(404);
+    expect(getObjectMock).not.toHaveBeenCalled();
   });
 
   it("serves a private image to its owner with a no-store cache header", async () => {
     findMany.mockResolvedValue([{ isPublic: false, ownerId: "owner-1" }]);
-    authMock.mockResolvedValue({ user: { id: "owner-1", role: "USER" } });
+    getSessionViewerMock.mockResolvedValue({ id: "owner-1", role: "USER" });
     const res = await callRoute();
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
@@ -60,7 +71,7 @@ describe("GET /api/image/[...key]", () => {
 
   it("serves a private image to an admin with a no-store cache header", async () => {
     findMany.mockResolvedValue([{ isPublic: false, ownerId: "owner-1" }]);
-    authMock.mockResolvedValue({ user: { id: "admin-1", role: "ADMIN" } });
+    getSessionViewerMock.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
     const res = await callRoute();
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
@@ -73,15 +84,15 @@ describe("GET /api/image/[...key]", () => {
     expect(getObjectMock).not.toHaveBeenCalled();
   });
 
-  it("serves publicly (immutable cache) when one of several referencing puzzles is public", async () => {
+  it("serves publicly when one of several referencing puzzles is public", async () => {
     findMany.mockResolvedValue([
       { isPublic: false, ownerId: "owner-a" },
       { isPublic: true, ownerId: "owner-b" },
     ]);
     const res = await callRoute();
     expect(res.status).toBe(200);
-    expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
-    expect(authMock).not.toHaveBeenCalled();
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    expect(getSessionViewerMock).not.toHaveBeenCalled();
   });
 
   it("serves privately when the viewer owns one of several private referencing puzzles", async () => {
@@ -89,9 +100,31 @@ describe("GET /api/image/[...key]", () => {
       { isPublic: false, ownerId: "owner-a" },
       { isPublic: false, ownerId: "owner-b" },
     ]);
-    authMock.mockResolvedValue({ user: { id: "owner-b", role: "USER" } });
+    getSessionViewerMock.mockResolvedValue({ id: "owner-b", role: "USER" });
     const res = await callRoute();
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("answers 404 when the storage object is missing (fs ENOENT / s3 NoSuchKey), but logs the drift", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    findMany.mockResolvedValue([{ isPublic: true, ownerId: "owner-1" }]);
+    const enoent = Object.assign(new Error("no such file"), { code: "ENOENT" });
+    getObjectMock.mockRejectedValue(enoent);
+    const res = await callRoute();
+    expect(res.status).toBe(404);
+    // A referenced key missing in storage is an anomaly the operator must see.
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("puzzles/abc.webp"));
+    errorSpy.mockRestore();
+  });
+
+  it("answers 500 and logs when storage fails for an image that should exist", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    findMany.mockResolvedValue([{ isPublic: true, ownerId: "owner-1" }]);
+    getObjectMock.mockRejectedValue(new Error("connect ECONNREFUSED"));
+    const res = await callRoute();
+    expect(res.status).toBe(500);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 });

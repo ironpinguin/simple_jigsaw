@@ -242,6 +242,7 @@
   "errors": {
     "invalidRequest": "Invalid request.",
     "invalidInput": "Invalid input.",
+    "serverError": "Internal error. Please try again later.",
     "notLoggedIn": "Not signed in.",
     "noAccess": "No access.",
     "emailBanned": "This email address is banned.",

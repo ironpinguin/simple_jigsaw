@@ -78,4 +78,7 @@ model Puzzle {
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([ownerId])
+  // Image delivery, key claiming and delete cleanup all filter on imageKey.
+  // Not unique: an owner may reuse a key across their own puzzles.
+  @@index([imageKey])
 }

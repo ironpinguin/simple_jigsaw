@@ -53,7 +53,9 @@ export async function POST(request: Request) {
 
   // Uploads aren't tracked in the DB until a puzzle claims them, so anyone
   // holding a leaked imageKey could otherwise attach it to their own (public)
-  // puzzle and expose someone else's private image via /api/image.
+  // puzzle and expose someone else's private image via /api/image. For a key
+  // that was uploaded but never claimed there is no owner row to compare
+  // against — its only protection is that keys are unguessable UUIDs.
   const foreign = await prisma.puzzle.findFirst({
     where: { imageKey, ownerId: { not: user.id } },
     select: { id: true },

@@ -242,6 +242,7 @@
   "errors": {
     "invalidRequest": "Ungültige Anfrage.",
     "invalidInput": "Ungültige Eingabe.",
+    "serverError": "Interner Fehler. Bitte später erneut versuchen.",
     "notLoggedIn": "Nicht angemeldet.",
     "noAccess": "Kein Zugriff.",
     "emailBanned": "Diese E-Mail-Adresse ist gesperrt.",

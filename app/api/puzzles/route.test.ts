@@ -56,6 +56,23 @@ describe("POST /api/puzzles", () => {
     const json = await res.json();
     expect(json.error).toBe("invalidInput");
     expect(create).not.toHaveBeenCalled();
+    // The lookup that produced the rejection only matches foreign puzzles.
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { imageKey: BODY.imageKey, ownerId: { not: "owner-1" } },
+      select: { id: true },
+    });
+  });
+
+  it("allows reusing an imageKey across the caller's own puzzles", async () => {
+    // findFirst resolves null because the foreign-reference lookup excludes
+    // the caller's puzzles — a same-owner reuse is not a hit.
+    const res = await callPost(BODY);
+    expect(res.status).toBe(201);
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { imageKey: BODY.imageKey, ownerId: { not: "owner-1" } },
+      select: { id: true },
+    });
+    expect(create).toHaveBeenCalled();
   });
 
   it("creates the puzzle with a fresh imageKey, defaulting isPublic to true", async () => {

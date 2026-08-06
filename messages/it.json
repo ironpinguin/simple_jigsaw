@@ -242,6 +242,7 @@
   "errors": {
     "invalidRequest": "Richiesta non valida.",
     "invalidInput": "Input non valido.",
+    "serverError": "Errore interno. Riprova più tardi.",
     "notLoggedIn": "Non hai effettuato l'accesso.",
     "noAccess": "Nessun accesso.",
     "emailBanned": "Questo indirizzo e-mail è bloccato.",
