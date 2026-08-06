@@ -26,6 +26,12 @@ model User {
   role         String  @default("USER")
   // Null until the user confirms their email (or an admin creates them verified).
   emailVerified DateTime?
+  // Terms-of-use acceptance: when, and which version (TERMS_VERSION in lib/legal.ts).
+  // Null for accounts that predate the terms, were created by an admin (CLI
+  // or direct create), or were invited and not yet activated — see
+  // docs/terms-versioning.md.
+  termsAcceptedAt DateTime?
+  termsVersion    String?
   createdAt    DateTime @default(now())
 
   puzzles Puzzle[]

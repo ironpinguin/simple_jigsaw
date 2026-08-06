@@ -8,6 +8,8 @@ import {
   isOperatorComplete,
   missingOperatorFields,
   legalProcessors,
+  PRIVACY_UPDATED,
+  TERMS_VERSION,
 } from "./legal";
 
 /** A configuration that satisfies every requirement, to vary one field at a time. */
@@ -167,12 +169,32 @@ describe("legal instance", () => {
   });
 });
 
+describe("legal date constants", () => {
+  // These strings are rendered through `{date, date, long}` on the legal pages
+  // — and TERMS_VERSION is also persisted verbatim to `User.termsVersion` as
+  // the record of which text a user accepted. A malformed bump ("2026-8-5",
+  // "05.08.2026") would render Invalid Date for every visitor and corrupt the
+  // stored version strings with no other test noticing.
+  it.each([
+    ["PRIVACY_UPDATED", PRIVACY_UPDATED],
+    ["TERMS_VERSION", TERMS_VERSION],
+  ])("%s is a full ISO date", (_name, value) => {
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(Number.isNaN(new Date(value).getTime())).toBe(false);
+  });
+});
+
 describe("legal pages are never prerendered", () => {
   // Deliberately a source-text assertion. The directive is the only thing
   // between a correct Impressum and one that bakes in the empty build-time
   // environment, and nothing else notices if it goes: the [locale] layout's
   // auth() call de-opts the segment today, so removing it changes no build
   // output until someone makes that layout static.
+  //
+  // The terms page is deliberately absent: it reads no LEGAL_* env, so there
+  // is nothing a prerender could bake in wrongly and force-dynamic would add
+  // nothing. Its catalog completeness is guarded by messages.test.ts, not by
+  // the build. Don't "fix" this list by adding it.
   it.each(["imprint", "privacy"])("%s declares force-dynamic", (page) => {
     const source = readFileSync(
       join(process.cwd(), "app/[locale]/legal", page, "page.tsx"),

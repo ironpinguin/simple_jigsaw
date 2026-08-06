@@ -256,6 +256,19 @@ select:focus {
   border-color: var(--accent);
 }
 
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.checkbox-row input[type="checkbox"] {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.checkbox-row label {
+  margin-bottom: 0;
+}
+
 .error {
   color: var(--danger);
   font-size: 14px;

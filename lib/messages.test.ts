@@ -33,6 +33,22 @@ function placeholders(message: string): string[] {
   return [...message.matchAll(/\{\s*(\w+)/g)].map((m) => m[1]).sort();
 }
 
+/** Rich-text tag names used by a message, e.g. `<terms>…</terms>`. */
+function richTags(message: string): string[] {
+  return [...message.matchAll(/<(\w+)>/g)].map((m) => m[1]).sort();
+}
+
+/**
+ * An ASCII apostrophe directly before an ICU syntax character ({ } < # |)
+ * opens a quoted literal that runs to the end of the message. next-intl does
+ * not error on it — the markup after the apostrophe renders as visible text,
+ * so the mistake survives lint, tests and build. `''` is the escaped literal
+ * apostrophe and is fine; write `dell''<privacy>`, not `dell'<privacy>`.
+ */
+function quotingHazards(message: string): string[] {
+  return [...message.replaceAll("''", "").matchAll(/'[{}<#|]/g)].map((m) => m[0]);
+}
+
 const DEFAULT = routing.defaultLocale;
 const OTHERS = routing.locales.filter((l) => l !== DEFAULT);
 
@@ -71,6 +87,28 @@ describe(`message catalogs (${routing.locales.join(", ")})`, () => {
       }))
       .filter(({ expected, actual }) => expected.join(",") !== actual.join(","));
     expect(mismatched).toEqual([]);
+  });
+
+  it.each(OTHERS)("%s uses the same rich-text tags as the default locale", (locale) => {
+    // Dropping <privacy> from a translation silently drops the privacy-policy
+    // link from the consent checkbox — the string still renders.
+    const mismatched = entries
+      .get(locale)!
+      .map(([key, message], i) => ({
+        key,
+        expected: richTags(reference[i][1]),
+        actual: richTags(message),
+      }))
+      .filter(({ expected, actual }) => expected.join(",") !== actual.join(","));
+    expect(mismatched).toEqual([]);
+  });
+
+  it.each(routing.locales)("%s never quotes ICU syntax with a bare apostrophe", (locale) => {
+    const hazards = entries
+      .get(locale)!
+      .filter(([, message]) => quotingHazards(message).length > 0)
+      .map(([key, message]) => ({ key, hazards: quotingHazards(message), message }));
+    expect(hazards).toEqual([]);
   });
 
   it.each(routing.locales)("%s has no empty messages", (locale) => {

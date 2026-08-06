@@ -84,6 +84,7 @@ export default async function LocaleLayout({
         <footer className="site-footer">
           <Link href="/legal/imprint">{t("imprint")}</Link>
           <Link href="/legal/privacy">{t("privacy")}</Link>
+          <Link href="/legal/terms">{t("terms")}</Link>
         </footer>
         </NextIntlClientProvider>
       </body>

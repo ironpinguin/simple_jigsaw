@@ -1,25 +1,17 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { consumeToken } from "@/lib/tokens";
 import { checkEmailBanned } from "@/lib/moderation";
+import { TERMS_VERSION } from "@/lib/legal";
+import { InviteSchema, signupErrorKey } from "@/lib/signup";
 import { getErrorT } from "@/lib/i18n-server";
-
-const Schema = z.object({
-  token: z.string().min(1),
-  password: z.string().min(8),
-});
 
 export async function POST(request: Request) {
   const t = await getErrorT();
-  const parsed = Schema.safeParse(await request.json().catch(() => null));
+  const parsed = InviteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
-    return NextResponse.json(
-      { error: onPassword ? t("passwordMin") : t("invalidInput") },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: t(signupErrorKey(parsed.error.issues)) }, { status: 400 });
   }
 
   const result = await consumeToken(parsed.data.token, "INVITE");
@@ -38,7 +30,12 @@ export async function POST(request: Request) {
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash, emailVerified: new Date() },
+    data: {
+      passwordHash,
+      emailVerified: new Date(),
+      termsAcceptedAt: new Date(),
+      termsVersion: TERMS_VERSION,
+    },
   });
 
   return NextResponse.json({ ok: true });
