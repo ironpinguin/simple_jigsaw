@@ -12,6 +12,7 @@ const CreateSchema = z.object({
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
   pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n)),
+  isPublic: z.boolean().optional().default(true),
 });
 
 export async function GET() {
@@ -48,7 +49,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
   }
 
-  const { title, imageKey, imageWidth, imageHeight, pieceCount } = parsed.data;
+  const { title, imageKey, imageWidth, imageHeight, pieceCount, isPublic } = parsed.data;
+
+  // Uploads aren't tracked in the DB until a puzzle claims them, so anyone
+  // holding a leaked imageKey could otherwise attach it to their own (public)
+  // puzzle and expose someone else's private image via /api/image. For a key
+  // that was uploaded but never claimed there is no owner row to compare
+  // against — its only protection is that keys are unguessable UUIDs.
+  const foreign = await prisma.puzzle.findFirst({
+    where: { imageKey, ownerId: { not: user.id } },
+    select: { id: true },
+  });
+  if (foreign) {
+    return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
+  }
+
   const { cols, rows } = computeGrid(pieceCount, imageWidth / imageHeight);
   const seed = randomInt(0, 2 ** 31 - 1);
 
@@ -62,7 +77,7 @@ export async function POST(request: Request) {
       cols,
       rows,
       seed,
-      isPublic: true,
+      isPublic,
       ownerId: user.id,
     },
     select: { id: true },

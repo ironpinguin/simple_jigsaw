@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Puzzle visibility can be chosen at creation (public remains the default) and
+  toggled at any time on the my-puzzles page; the toggle reports a failure
+  instead of flipping the badge silently, and an expired session redirects to
+  the login page. Admins can now view non-public puzzles, with the role
+  checked against the database rather than the login token (#21).
 - Terms of use under `/legal/terms` in all three languages, linked from the
   footer. They prohibit pornographic, illegal and rights-infringing uploads and
   reserve the right to remove content and accounts. Registration and invite
@@ -40,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pages, which affects every page, not just the legal ones.
 
 ### Fixed
+- Puzzle visibility is now enforced: a non-public puzzle's image and metadata
+  answer 404 to anyone but the owner or an admin, and private images are never
+  cached. Public images are cached for a day instead of a year, so making a
+  puzzle private also stops its image being served from caches — browser and
+  shared caches alike — within a day (#21).
+- The delete button on the my-puzzles page recovers from a network failure
+  with an error message instead of staying disabled, and an expired session
+  redirects to the login page.
 - The registration and invite-activation forms recover from a network failure
   with an error message instead of hanging on the loading state, and a
   registration whose verification mail could not be sent now says so instead

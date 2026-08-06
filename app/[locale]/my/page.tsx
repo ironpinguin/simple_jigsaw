@@ -24,7 +24,7 @@ export default async function MyPage({
   const puzzles = await prisma.puzzle.findMany({
     where: { ownerId: session.user.id },
     orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, imageKey: true, pieceCount: true },
+    select: { id: true, title: true, imageKey: true, pieceCount: true, isPublic: true },
   });
 
   return (

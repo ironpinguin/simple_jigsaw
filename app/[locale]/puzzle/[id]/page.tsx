@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { prisma } from "@/lib/db";
-import { auth } from "@/lib/auth";
+import { getSessionViewer } from "@/lib/auth";
+import { canViewPuzzle } from "@/lib/visibility";
 import PuzzleSolver from "@/components/PuzzleSolver";
 
 // Loads the puzzle from the DB per request; do not prerender at build time.
@@ -18,8 +19,7 @@ export default async function PuzzlePage({
   if (!puzzle) notFound();
 
   if (!puzzle.isPublic) {
-    const session = await auth();
-    if (session?.user?.id !== puzzle.ownerId) notFound();
+    if (!canViewPuzzle(puzzle, await getSessionViewer())) notFound();
   }
 
   const data = {

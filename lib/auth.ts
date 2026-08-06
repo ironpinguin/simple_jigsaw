@@ -8,6 +8,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "./db";
 import { checkEmailBanned } from "./moderation";
 import { isAdminEmail } from "./admin-emails";
+import { toViewer } from "./visibility";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -87,5 +88,16 @@ export async function getSessionUser() {
 /** Like getSessionUser, but returns null unless the user is an ADMIN. */
 export async function requireAdmin() {
   const user = await getSessionUser();
-  return user && user.role === "ADMIN" ? user : null;
+  // Role via toViewer so the string column is validated at one boundary only.
+  return user && toViewer(user)?.role === "ADMIN" ? user : null;
+}
+
+/**
+ * The current user as a Viewer for visibility checks. Deliberately built on
+ * getSessionUser, not the raw session: the role must come from the database,
+ * not the JWT claim, so a demoted admin loses private-puzzle access with the
+ * demotion instead of when their token expires.
+ */
+export async function getSessionViewer() {
+  return toViewer(await getSessionUser());
 }
