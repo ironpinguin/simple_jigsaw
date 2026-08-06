@@ -191,9 +191,10 @@ describe("legal pages are never prerendered", () => {
   // auth() call de-opts the segment today, so removing it changes no build
   // output until someone makes that layout static.
   //
-  // The terms page is deliberately absent: it reads no LEGAL_* env, so static
-  // prerendering is correct there — a missing message key fails the build
-  // instead of reaching a visitor. Don't "fix" this list by adding it.
+  // The terms page is deliberately absent: it reads no LEGAL_* env, so there
+  // is nothing a prerender could bake in wrongly and force-dynamic would add
+  // nothing. Its catalog completeness is guarded by messages.test.ts, not by
+  // the build. Don't "fix" this list by adding it.
   it.each(["imprint", "privacy"])("%s declares force-dynamic", (page) => {
     const source = readFileSync(
       join(process.cwd(), "app/[locale]/legal", page, "page.tsx"),
