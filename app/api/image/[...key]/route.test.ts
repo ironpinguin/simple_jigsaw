@@ -72,4 +72,26 @@ describe("GET /api/image/[...key]", () => {
     expect(res.status).toBe(404);
     expect(getObjectMock).not.toHaveBeenCalled();
   });
+
+  it("serves publicly (immutable cache) when one of several referencing puzzles is public", async () => {
+    findMany.mockResolvedValue([
+      { isPublic: false, ownerId: "owner-a" },
+      { isPublic: true, ownerId: "owner-b" },
+    ]);
+    const res = await callRoute();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    expect(authMock).not.toHaveBeenCalled();
+  });
+
+  it("serves privately when the viewer owns one of several private referencing puzzles", async () => {
+    findMany.mockResolvedValue([
+      { isPublic: false, ownerId: "owner-a" },
+      { isPublic: false, ownerId: "owner-b" },
+    ]);
+    authMock.mockResolvedValue({ user: { id: "owner-b", role: "USER" } });
+    const res = await callRoute();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  });
 });

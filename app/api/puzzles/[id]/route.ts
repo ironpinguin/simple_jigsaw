@@ -77,16 +77,24 @@ export async function DELETE(
 
   const { id } = await params;
   const puzzle = await prisma.puzzle.findUnique({ where: { id } });
-  if (!puzzle) {
+  // 404 for a missing puzzle and for someone else's alike — see the same
+  // check in PATCH above; a 403 here would confirm a foreign puzzle exists.
+  if (!puzzle || puzzle.ownerId !== user.id) {
     return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
-  }
-  if (puzzle.ownerId !== user.id) {
-    return NextResponse.json({ error: t("noAccess") }, { status: 403 });
   }
 
   await prisma.puzzle.delete({ where: { id } });
-  // Best-effort image cleanup; ignore storage errors.
-  await deleteObject(puzzle.imageKey).catch(() => {});
+
+  // Another puzzle may still reference the same imageKey (same-owner reuse),
+  // so only remove the storage object when this was the last reference.
+  const stillReferenced = await prisma.puzzle.findFirst({
+    where: { imageKey: puzzle.imageKey, id: { not: id } },
+    select: { id: true },
+  });
+  if (!stillReferenced) {
+    // Best-effort image cleanup; ignore storage errors.
+    await deleteObject(puzzle.imageKey).catch(() => {});
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -50,6 +50,18 @@ export async function POST(request: Request) {
   }
 
   const { title, imageKey, imageWidth, imageHeight, pieceCount, isPublic } = parsed.data;
+
+  // Uploads aren't tracked in the DB until a puzzle claims them, so anyone
+  // holding a leaked imageKey could otherwise attach it to their own (public)
+  // puzzle and expose someone else's private image via /api/image.
+  const foreign = await prisma.puzzle.findFirst({
+    where: { imageKey, ownerId: { not: user.id } },
+    select: { id: true },
+  });
+  if (foreign) {
+    return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
+  }
+
   const { cols, rows } = computeGrid(pieceCount, imageWidth / imageHeight);
   const seed = randomInt(0, 2 ** 31 - 1);
 

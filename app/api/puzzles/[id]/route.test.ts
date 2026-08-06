@@ -1,23 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { findUnique, update, deleteFn, authMock, getSessionUserMock } = vi.hoisted(() => ({
-  findUnique: vi.fn(),
-  update: vi.fn(),
-  deleteFn: vi.fn(),
-  authMock: vi.fn(),
-  getSessionUserMock: vi.fn(),
-}));
+const { findUnique, findFirst, update, deleteFn, deleteObjectMock, authMock, getSessionUserMock } =
+  vi.hoisted(() => ({
+    findUnique: vi.fn(),
+    findFirst: vi.fn(),
+    update: vi.fn(),
+    deleteFn: vi.fn(),
+    deleteObjectMock: vi.fn(),
+    authMock: vi.fn(),
+    getSessionUserMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { puzzle: { findUnique, update, delete: deleteFn } },
+  prisma: { puzzle: { findUnique, findFirst, update, delete: deleteFn } },
 }));
 vi.mock("@/lib/auth", () => ({ auth: authMock, getSessionUser: getSessionUserMock }));
-vi.mock("@/lib/storage", () => ({ deleteObject: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/lib/storage", () => ({ deleteObject: deleteObjectMock }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
 }));
 
-import { GET, PATCH } from "./route";
+import { DELETE, GET, PATCH } from "./route";
 
 const PUZZLE = {
   id: "p1",
@@ -44,9 +47,17 @@ function callPatch(body: unknown) {
   );
 }
 
+function callDelete() {
+  return DELETE(new Request("http://test/api/puzzles/p1", { method: "DELETE" }), {
+    params: Promise.resolve({ id: "p1" }),
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   findUnique.mockResolvedValue(PUZZLE);
+  findFirst.mockResolvedValue(null);
+  deleteObjectMock.mockResolvedValue(undefined);
 });
 
 describe("GET /api/puzzles/[id]", () => {
@@ -112,5 +123,51 @@ describe("PATCH /api/puzzles/[id]", () => {
       data: { isPublic: true },
       select: { id: true, isPublic: true },
     });
+  });
+});
+
+describe("DELETE /api/puzzles/[id]", () => {
+  it("requires login", async () => {
+    getSessionUserMock.mockResolvedValue(null);
+    const res = await callDelete();
+    expect(res.status).toBe(401);
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a non-owner so it does not confirm the puzzle exists", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
+    const res = await callDelete();
+    expect(res.status).toBe(404);
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a missing puzzle", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    findUnique.mockResolvedValue(null);
+    const res = await callDelete();
+    expect(res.status).toBe(404);
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it("lets the owner delete their puzzle and removes the storage object when no puzzle still references it", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    findFirst.mockResolvedValue(null);
+    const res = await callDelete();
+    expect(res.status).toBe(200);
+    expect(deleteFn).toHaveBeenCalledWith({ where: { id: "p1" } });
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { imageKey: PUZZLE.imageKey, id: { not: "p1" } },
+      select: { id: true },
+    });
+    expect(deleteObjectMock).toHaveBeenCalledWith(PUZZLE.imageKey);
+  });
+
+  it("does not delete the storage object when another puzzle still references the imageKey", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    findFirst.mockResolvedValue({ id: "other-puzzle" });
+    const res = await callDelete();
+    expect(res.status).toBe(200);
+    expect(deleteFn).toHaveBeenCalledWith({ where: { id: "p1" } });
+    expect(deleteObjectMock).not.toHaveBeenCalled();
   });
 });
