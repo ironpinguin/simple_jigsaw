@@ -3,6 +3,7 @@ import { auth, getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
+import { canViewPuzzle } from "@/lib/visibility";
 
 export async function GET(
   _request: Request,
@@ -16,9 +17,13 @@ export async function GET(
   }
 
   if (!puzzle.isPublic) {
-    const session = await auth();
-    if (session?.user?.id !== puzzle.ownerId) {
-      return NextResponse.json({ error: t("noAccess") }, { status: 403 });
+    const sessionUser = (await auth())?.user;
+    const viewer = sessionUser?.id
+      ? { id: sessionUser.id, role: sessionUser.role ?? "USER" }
+      : null;
+    // 404, not 403 — a private puzzle must not confirm its own existence.
+    if (!canViewPuzzle(puzzle, viewer)) {
+      return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
     }
   }
 
