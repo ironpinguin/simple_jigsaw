@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import ReportsAdmin, { type ReportRow } from "@/components/admin/ReportsAdmin";
 
@@ -12,6 +14,8 @@ export default async function AdminReportsPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  const admin = await requireAdmin();
+  if (!admin) redirect(`/${locale}`);
 
   const open = await prisma.report.findMany({
     where: { status: "OPEN" },
