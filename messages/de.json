@@ -115,6 +115,25 @@
     "confirmDelete": "Dieses Puzzle wirklich löschen?",
     "deleteFailed": "Löschen fehlgeschlagen."
   },
+  "report": {
+    "reportLink": "Melden",
+    "title": "Dieses Puzzle melden",
+    "intro": "Warum meldest du dieses Puzzle?",
+    "categoryNSFW": "Expliziter Inhalt",
+    "categoryILLEGAL": "Gewalt oder illegaler Inhalt",
+    "categoryCOPYRIGHT": "Urheberrechtsverletzung",
+    "categoryOTHER": "Sonstiges",
+    "messageLabel": "Details",
+    "messagePlaceholder": "Bitte beschreibe das Problem (mindestens 10 Zeichen).",
+    "emailLabel": "Deine E-Mail (optional)",
+    "emailHint": "Wird nur für Rückfragen verwendet.",
+    "submit": "Meldung senden",
+    "sending": "Wird gesendet…",
+    "doneText": "Danke — wir haben deine Meldung erhalten und prüfen sie.",
+    "close": "Schließen",
+    "failed": "Das Senden der Meldung ist fehlgeschlagen. Bitte versuche es später erneut.",
+    "tooMany": "Zu viele Meldungen von deinem Anschluss. Bitte versuche es später erneut."
+  },
   "admin": {
     "title": "Administration",
     "usersTab": "Nutzer",

@@ -115,6 +115,25 @@
     "confirmDelete": "Really delete this puzzle?",
     "deleteFailed": "Delete failed."
   },
+  "report": {
+    "reportLink": "Report",
+    "title": "Report this puzzle",
+    "intro": "Why are you reporting this puzzle?",
+    "categoryNSFW": "Explicit content",
+    "categoryILLEGAL": "Violence or illegal content",
+    "categoryCOPYRIGHT": "Copyright infringement",
+    "categoryOTHER": "Other",
+    "messageLabel": "Details",
+    "messagePlaceholder": "Please describe the problem (at least 10 characters).",
+    "emailLabel": "Your email (optional)",
+    "emailHint": "Only used if we have follow-up questions.",
+    "submit": "Send report",
+    "sending": "Sending…",
+    "doneText": "Thank you — we received your report and will review it.",
+    "close": "Close",
+    "failed": "Sending the report failed. Please try again later.",
+    "tooMany": "Too many reports from your connection. Please try again later."
+  },
   "admin": {
     "title": "Administration",
     "usersTab": "Users",

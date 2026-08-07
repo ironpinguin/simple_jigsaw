@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { PuzzleData } from "./PuzzleBoard";
+import ReportDialog from "@/components/ReportDialog";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import {
   MAX_STORED_SOLVES,
@@ -257,6 +258,7 @@ export default function PuzzleSolver({
         <button className="button secondary" type="button" onClick={startOver}>
           {t("reset")}
         </button>
+        <ReportDialog puzzleId={puzzle.id} />
       </div>
 
       <p className="muted" style={{ marginTop: -4 }}>
