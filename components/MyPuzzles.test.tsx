@@ -44,11 +44,11 @@ const PUZZLE = {
   isPublic: false,
 };
 
-function mount() {
+function mount(initial = [PUZZLE]) {
   act(() => {
     root.render(
       <NextIntlClientProvider locale="en" messages={messages}>
-        <MyPuzzles initial={[PUZZLE]} />
+        <MyPuzzles initial={initial} />
       </NextIntlClientProvider>,
     );
   });
@@ -84,6 +84,30 @@ describe("MyPuzzles visibility toggle", () => {
     });
     expect(container.textContent).toContain("Public");
     expect(buttonByText("Make private")).toBeTruthy();
+  });
+
+  it("swaps the thumbnail to the rotated imageKey when making a puzzle private", async () => {
+    // Flipping to private rotates the imageKey server-side; the old key
+    // answers 404 from then on, so the tile must re-render with the new one.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          puzzle: { id: "p1", isPublic: false, imageKey: "puzzles/rotated.webp" },
+        }),
+      }),
+    );
+    mount([{ ...PUZZLE, isPublic: true }]);
+
+    await act(async () => {
+      buttonByText("Make private")!.click();
+    });
+
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(
+      "/api/image/puzzles/rotated.webp",
+    );
+    expect(container.textContent).toContain("Private");
   });
 
   it("keeps the badge and surfaces the server's error when the PATCH is rejected", async () => {

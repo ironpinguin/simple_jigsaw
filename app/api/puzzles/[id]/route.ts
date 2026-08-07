@@ -78,9 +78,11 @@ export async function PATCH(
   }
 
   // Making a puzzle private rotates its imageKey: browsers may hold the old
-  // public URL with a year-long immutable cache header, and a header change
-  // cannot purge those. A fresh key makes every previously shared URL stop
-  // resolving. 404 covers missing and foreign alike (no existence oracle).
+  // public URL with the year-long immutable cache header older releases sent
+  // (today's is capped at a day — see lib/visibility.ts), and a header change
+  // cannot purge caches already populated. A fresh key makes every previously
+  // shared URL stop resolving. 404 covers missing and foreign alike (no
+  // existence oracle).
   const puzzle = await prisma.puzzle.findUnique({
     where: { id },
     select: { ownerId: true, imageKey: true, isPublic: true },
@@ -90,7 +92,7 @@ export async function PATCH(
   }
   if (!puzzle.isPublic) {
     // Already private — nothing to change, nothing to rotate.
-    return NextResponse.json({ puzzle: { id, isPublic: false } });
+    return NextResponse.json({ puzzle: { id, isPublic: false, imageKey: puzzle.imageKey } });
   }
 
   const newKey = `puzzles/${randomUUID()}${extname(puzzle.imageKey) || ".webp"}`;
@@ -130,7 +132,9 @@ export async function PATCH(
     });
   }
 
-  return NextResponse.json({ puzzle: { id, isPublic: false } });
+  // The new key must reach the client: thumbnails render from imageKey, and
+  // the old key stops resolving the moment the rotation lands.
+  return NextResponse.json({ puzzle: { id, isPublic: false, imageKey: newKey } });
 }
 
 export async function DELETE(

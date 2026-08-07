@@ -82,7 +82,17 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
           console.error("[my] PATCH answered 200 without puzzle.isPublic:", data);
         }
         const next = typeof confirmed === "boolean" ? confirmed : isPublic;
-        setPuzzles((list) => list.map((p) => (p.id === id ? { ...p, isPublic: next } : p)));
+        // Making a puzzle private rotates its imageKey server-side; without
+        // the new key the thumbnail keeps pointing at the rotated-away (404)
+        // one until a reload.
+        const newKey: unknown = data?.puzzle?.imageKey;
+        setPuzzles((list) =>
+          list.map((p) =>
+            p.id === id
+              ? { ...p, isPublic: next, ...(typeof newKey === "string" ? { imageKey: newKey } : {}) }
+              : p,
+          ),
+        );
       } else if (res.status === 401) {
         router.push("/login?callbackUrl=/my");
       } else {

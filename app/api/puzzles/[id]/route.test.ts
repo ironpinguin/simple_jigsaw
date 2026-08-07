@@ -271,6 +271,9 @@ describe("PATCH /api/puzzles/[id] — imageKey rotation", () => {
       data: { isPublic: false, imageKey: dest },
     });
     expect(deleteObjectMock).toHaveBeenCalledWith(PUZZLE.imageKey);
+    // The client renders thumbnails from imageKey — without the new key in
+    // the response, the list keeps pointing at the rotated-away (404) key.
+    expect(await res.json()).toEqual({ puzzle: { id: "p1", isPublic: false, imageKey: dest } });
   });
 
   it("copies before the row update, deletes the old object after it", async () => {
@@ -306,6 +309,9 @@ describe("PATCH /api/puzzles/[id] — imageKey rotation", () => {
     expect(res.status).toBe(200);
     expect(copyObjectMock).not.toHaveBeenCalled();
     expect(updateMany).not.toHaveBeenCalled();
+    expect(await res.json()).toEqual({
+      puzzle: { id: "p1", isPublic: false, imageKey: PUZZLE.imageKey },
+    });
   });
 
   it("answers 404 to a non-owner without touching storage", async () => {
