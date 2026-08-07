@@ -132,7 +132,7 @@ export default function ReportsAdmin({
                 <button
                   className="button"
                   type="button"
-                  disabled={busyId === r.id}
+                  disabled={busyId !== null}
                   onClick={() => takedown(r)}
                 >
                   {t("takedown")}
@@ -141,7 +141,7 @@ export default function ReportsAdmin({
               <button
                 className="button secondary"
                 type="button"
-                disabled={busyId === r.id}
+                disabled={busyId !== null}
                 onClick={() => dismiss(r)}
               >
                 {t("dismiss")}
