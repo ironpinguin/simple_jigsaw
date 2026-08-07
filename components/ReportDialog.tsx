@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-
-const CATEGORIES = ["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"] as const;
+import {
+  REPORT_CATEGORIES,
+  REPORT_MESSAGE_MAX,
+  REPORT_MESSAGE_MIN,
+  type ReportCategory,
+} from "@/lib/reports";
 
 /**
  * "Report this puzzle" — trigger button plus modal form. Works without a
@@ -13,7 +17,7 @@ const CATEGORIES = ["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"] as const;
 export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
   const t = useTranslations("report");
   const [open, setOpen] = useState(false);
-  const [category, setCategory] = useState<(typeof CATEGORIES)[number]>("NSFW");
+  const [category, setCategory] = useState<ReportCategory>("NSFW");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
@@ -51,7 +55,12 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
       setState("done");
     } else {
       setState("idle");
-      setError(res?.status === 429 ? t("tooMany") : t("failed"));
+      // The API answers with a localized, specific message (e.g. "puzzle not
+      // found") — show it rather than a generic "try again later" that a
+      // retry can never fix. 429 keeps the client wording, matched to the
+      // page locale.
+      const data = res ? await res.json().catch(() => null) : null;
+      setError(res?.status === 429 ? t("tooMany") : (data?.error ?? t("failed")));
     }
   }
 
@@ -76,7 +85,8 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
         >
           <div
             style={{
-              background: "var(--background, #fff)",
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
               padding: 24,
               borderRadius: 8,
               maxWidth: 420,
@@ -96,7 +106,7 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
             ) : (
               <form onSubmit={submit}>
                 <p>{t("intro")}</p>
-                {CATEGORIES.map((c) => (
+                {REPORT_CATEGORIES.map((c) => (
                   <label key={c} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input
                       type="radio"
@@ -114,7 +124,7 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     rows={4}
-                    maxLength={2000}
+                    maxLength={REPORT_MESSAGE_MAX}
                     placeholder={t("messagePlaceholder")}
                     style={{ width: "100%" }}
                   />
@@ -134,7 +144,7 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
                   <button
                     className="button"
                     type="submit"
-                    disabled={state === "sending" || message.trim().length < 10}
+                    disabled={state === "sending" || message.trim().length < REPORT_MESSAGE_MIN}
                   >
                     {state === "sending" ? t("sending") : t("submit")}
                   </button>
