@@ -7,6 +7,7 @@ const {
   puzzleDeleteMany,
   reportFindFirst,
   reportUpdateMany,
+  transactionMock,
   deleteObjectMock,
   sendTakedownNoticeMock,
 } = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const {
   puzzleDeleteMany: vi.fn(),
   reportFindFirst: vi.fn(),
   reportUpdateMany: vi.fn(),
+  transactionMock: vi.fn(),
   deleteObjectMock: vi.fn(),
   sendTakedownNoticeMock: vi.fn(),
 }));
@@ -25,6 +27,7 @@ vi.mock("@/lib/db", () => ({
   prisma: {
     puzzle: { findUnique: puzzleFindUnique, findFirst: puzzleFindFirst, deleteMany: puzzleDeleteMany },
     report: { findFirst: reportFindFirst, updateMany: reportUpdateMany },
+    $transaction: transactionMock,
   },
 }));
 vi.mock("@/lib/storage", () => ({ deleteObject: deleteObjectMock }));
@@ -55,6 +58,14 @@ beforeEach(() => {
   puzzleDeleteMany.mockResolvedValue({ count: 1 });
   reportFindFirst.mockResolvedValue({ category: "NSFW" });
   reportUpdateMany.mockResolvedValue({ count: 1 });
+  // Interactive transaction: hand the callback the same mocks, so the
+  // existing per-statement assertions keep working.
+  transactionMock.mockImplementation(async (fn) =>
+    fn({
+      puzzle: { deleteMany: puzzleDeleteMany },
+      report: { findFirst: reportFindFirst, updateMany: reportUpdateMany },
+    }),
+  );
   deleteObjectMock.mockResolvedValue(undefined);
   sendTakedownNoticeMock.mockResolvedValue(undefined);
 });
@@ -116,22 +127,37 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
     });
   });
 
-  it("notifies the owner with title and reported category", async () => {
+  it("runs the row delete and the report resolution in one transaction", async () => {
     await callDelete();
-    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", "NSFW");
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(puzzleDeleteMany).toHaveBeenCalledWith({ where: { id: "p1" } });
+    expect(reportUpdateMany).toHaveBeenCalled();
   });
 
-  it("falls back to OTHER when no open report carries a category", async () => {
+  it("notifies the owner with title and reported category and reports it in the body", async () => {
+    const res = await callDelete();
+    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", "NSFW");
+    expect(await res.json()).toEqual({ ok: true, ownerNotified: true });
+  });
+
+  it("sends a category-less notice when no open report exists — nothing gets invented", async () => {
     reportFindFirst.mockResolvedValue(null);
     await callDelete();
-    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", "OTHER");
+    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null);
   });
 
-  it("still answers 200 when the owner mail fails, but logs it", async () => {
+  it("sends a category-less notice when the stored category is not canonical", async () => {
+    reportFindFirst.mockResolvedValue({ category: "LEGACY" });
+    await callDelete();
+    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null);
+  });
+
+  it("answers 200 with ownerNotified=false when the owner mail fails, and logs it", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     sendTakedownNoticeMock.mockRejectedValue(new Error("smtp down"));
     const res = await callDelete();
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, ownerNotified: false });
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });

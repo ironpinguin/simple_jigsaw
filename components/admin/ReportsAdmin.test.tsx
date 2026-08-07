@@ -94,6 +94,26 @@ describe("ReportsAdmin", () => {
     expect(container.textContent.match(new RegExp(messages.admin.decisionTakedown, "g"))).toHaveLength(2);
   });
 
+  it("warns when the takedown succeeded but the owner notification failed", async () => {
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const alertMock = vi.fn();
+    vi.stubGlobal("alert", alertMock);
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ ok: true, ownerNotified: false }), { status: 200 }),
+        ),
+    );
+    mount();
+    await act(async () => buttonByText(messages.admin.takedown)!.click());
+
+    expect(alertMock).toHaveBeenCalledWith(messages.admin.ownerNotifyFailed);
+    // The takedown itself succeeded — the report still moves to resolved.
+    expect(container.textContent).toContain(messages.admin.decisionTakedown);
+  });
+
   it("does not call the API when the confirmation is declined", async () => {
     vi.stubGlobal("confirm", vi.fn(() => false));
     const fetchMock = vi.fn();

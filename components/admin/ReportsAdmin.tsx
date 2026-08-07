@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
+import { isReportCategory } from "@/lib/reports";
 
 export interface ReportRow {
   id: string;
@@ -63,6 +64,12 @@ export default function ReportsAdmin({
     try {
       const res = await tryFetch(`/api/admin/puzzles/${report.puzzleId}`, { method: "DELETE" });
       if (res?.ok) {
+        // The takedown succeeded, but the owner may not know: tell the admin
+        // to contact them manually instead of pretending everything worked.
+        const data = await res.json().catch(() => null);
+        if (data?.ownerNotified === false) {
+          alert(t("ownerNotifyFailed"));
+        }
         // One takedown resolves every open report of the same puzzle.
         resolveLocally(
           new Set(openReports.filter((r) => r.puzzleId === report.puzzleId).map((r) => r.id)),
@@ -97,10 +104,10 @@ export default function ReportsAdmin({
   }
 
   function categoryLabel(category: string) {
-    // The four categories are fixed (lib/reports.ts); show raw legacy values.
-    return ["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"].includes(category)
-      ? t(`category${category}`)
-      : category;
+    // Fall back to the raw string for any value outside the canonical set
+    // (future or hand-edited data), so a row never hits a missing-translation
+    // key and crashes the queue.
+    return isReportCategory(category) ? t(`category${category}`) : category;
   }
 
   return (
@@ -109,7 +116,7 @@ export default function ReportsAdmin({
       {openReports.length === 0 && <p className="muted">{t("reportsEmpty")}</p>}
       <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 12 }}>
         {openReports.map((r) => (
-          <li key={r.id} style={{ border: "1px solid #ccc", borderRadius: 8, padding: 12 }}>
+          <li key={r.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 12 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
               <strong>{categoryLabel(r.category)}</strong>
               {r.puzzleExists ? (

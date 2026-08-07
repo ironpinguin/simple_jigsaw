@@ -104,20 +104,25 @@ export async function sendReportNotification(
   });
 }
 
+// category null = no canonical reported category exists (takedown without an
+// open report): the notice then cites a review instead of inventing a reason.
 export async function sendTakedownNotice(
   to: string,
   puzzleTitle: string,
-  category: ReportCategory,
+  category: ReportCategory | null,
   locale?: string,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
-  const categoryLabel = t(`category${category}`);
+  const intro = (title: string) =>
+    category
+      ? t("takedownIntro", { title, category: t(`category${category}`) })
+      : t("takedownIntroNoReport", { title });
   await transport().sendMail({
     from: FROM,
     to,
     subject: t("takedownSubject"),
-    text: t("takedownIntro", { title: puzzleTitle, category: categoryLabel }),
-    html: `<p>${t("takedownIntro", { title: escapeHtml(puzzleTitle), category: categoryLabel })}</p>`,
+    text: intro(puzzleTitle),
+    html: `<p>${intro(escapeHtml(puzzleTitle))}</p>`,
   });
 }
