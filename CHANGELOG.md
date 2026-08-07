@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Anyone can report a puzzle (category + description, no account needed); admins
+  are notified by email and review reports in a new admin queue, where they can
+  delete a single puzzle including its image or dismiss the report. The owner
+  is notified when their puzzle is removed. (#22)
 - Puzzle visibility can be chosen at creation (public remains the default) and
   toggled at any time on the my-puzzles page; the toggle reports a failure
   instead of flipping the badge silently, and an expired session redirects to
@@ -57,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an error message instead of hanging on the loading state, and a
   registration whose verification mail could not be sent now says so instead
   of reporting a generic failure.
+
+### Security
+- Switching a puzzle to private now rotates its image key, so previously shared
+  image URLs (and their year-long browser caches) stop resolving. (#21, #22)
 
 ## [0.5.0] - 2026-08-03
 
