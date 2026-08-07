@@ -267,7 +267,8 @@
     "alreadyBanned": "Already banned.",
     "invalidRole": "Invalid role.",
     "invalidDomain": "Invalid domain.",
-    "tooManyReports": "Too many reports from your connection. Please try again later."
+    "tooManyReports": "Too many reports from your connection. Please try again later.",
+    "storageFailed": "The image storage is currently unavailable. Please try again."
   },
   "email": {
     "verifySubject": "Confirm your email — Jigsaw",

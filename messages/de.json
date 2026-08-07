@@ -267,7 +267,8 @@
     "alreadyBanned": "Bereits gebannt.",
     "invalidRole": "Ungültige Rolle.",
     "invalidDomain": "Ungültige Domain.",
-    "tooManyReports": "Zu viele Meldungen von deinem Anschluss. Bitte versuche es später erneut."
+    "tooManyReports": "Zu viele Meldungen von deinem Anschluss. Bitte versuche es später erneut.",
+    "storageFailed": "Der Bildspeicher ist derzeit nicht erreichbar. Bitte versuche es erneut."
   },
   "email": {
     "verifySubject": "Bestätige deine E-Mail — Jigsaw",
