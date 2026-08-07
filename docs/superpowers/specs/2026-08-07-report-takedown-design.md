@@ -63,8 +63,10 @@ Postgres and SQLite, `npm run db:push`.
 2. The puzzle must exist **and be public**. Unknown and private both answer
    **404** — same no-existence-oracle line as PR #29; a stranger cannot see a
    private puzzle, so they cannot report it either.
-3. Client IP from the first `x-forwarded-for` entry, hashed as
-   `HMAC-SHA256(AUTH_SECRET, ip)`. The plain IP is never stored or logged.
+3. Client IP from the last `x-forwarded-for` entry — the one appended by the
+   deployment's own trusted reverse proxy, since earlier entries are
+   client-supplied and spoofable — hashed as `HMAC-SHA256(AUTH_SECRET, ip)`.
+   The plain IP is never stored or logged.
 4. **Rate limit:** more than 5 reports from the same IP hash in the last hour
    → 429 (translated error).
 5. **Dedup:** an existing `OPEN` report with the same IP hash for the same

@@ -34,8 +34,10 @@ describe("hashReporterIp", () => {
     expect(hash).not.toContain("203.0.113.7");
   });
 
-  it("uses only the first x-forwarded-for entry", () => {
-    expect(hashReporterIp("203.0.113.7, 10.0.0.1")).toBe(hashReporterIp("203.0.113.7"));
+  it("uses the last x-forwarded-for entry — earlier ones are client-spoofable", () => {
+    expect(hashReporterIp("6.6.6.6, 203.0.113.7")).toBe(hashReporterIp("203.0.113.7"));
+    expect(hashReporterIp("1.1.1.1, 2.2.2.2, 203.0.113.7")).toBe(hashReporterIp("203.0.113.7"));
+    expect(hashReporterIp("6.6.6.6, 203.0.113.7")).not.toBe(hashReporterIp("6.6.6.6"));
   });
 
   it("falls back to a stable bucket when the header is missing", () => {

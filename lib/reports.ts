@@ -15,13 +15,16 @@ export const REPORT_RATE_LIMIT = 5;
 export const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 /**
- * HMAC of the reporter's IP (first x-forwarded-for entry) so rate limiting
- * and dedup work without ever storing the plain address. Keyed with
- * AUTH_SECRET so the hashes are useless outside this deployment. A missing
- * header falls into one shared "unknown" bucket — collectively rate-limited
- * rather than unlimited.
+ * HMAC of the reporter's IP (last x-forwarded-for entry) so rate limiting
+ * and dedup work without ever storing the plain address. The hash uses the
+ * LAST x-forwarded-for entry because that is the one appended by the
+ * deployment's own trusted reverse proxy — earlier entries are
+ * client-supplied and spoofable. Keyed with AUTH_SECRET so the hashes are
+ * useless outside this deployment. Without any proxy the header is absent
+ * and every visitor shares one collectively rate-limited "unknown" bucket.
  */
 export function hashReporterIp(forwardedFor: string | null): string {
-  const ip = (forwardedFor ?? "").split(",")[0].trim() || "unknown";
+  const entries = (forwardedFor ?? "").split(",");
+  const ip = entries[entries.length - 1].trim() || "unknown";
   return createHmac("sha256", process.env.AUTH_SECRET ?? "").update(ip).digest("hex");
 }
