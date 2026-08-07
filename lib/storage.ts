@@ -58,6 +58,12 @@ async function fsDelete(key: string): Promise<void> {
   await fs.rm(fsPathFor(key), { force: true });
 }
 
+async function fsCopy(srcKey: string, destKey: string): Promise<void> {
+  const dest = fsPathFor(destKey);
+  await fs.mkdir(path.dirname(dest), { recursive: true });
+  await fs.copyFile(fsPathFor(srcKey), dest);
+}
+
 /* -------------------------------------------------------------------------- */
 /* S3 / MinIO driver (lazily loaded so fs-only setups need no AWS SDK)        */
 /* -------------------------------------------------------------------------- */
@@ -115,6 +121,21 @@ async function s3Delete(key: string): Promise<void> {
   await client.send(new DeleteObjectCommand({ Bucket: bucket(), Key: key }));
 }
 
+async function s3Copy(srcKey: string, destKey: string): Promise<void> {
+  const { CopyObjectCommand } = await import("@aws-sdk/client-s3");
+  const client = await s3Client();
+  // Objects only ever exist under app-minted keys (upload and rotation both
+  // write `puzzles/<uuid>.<ext>`), and a copy can only name a key that has an
+  // object — so CopySource needs no URL-encoding beyond joining bucket and key.
+  await client.send(
+    new CopyObjectCommand({
+      Bucket: bucket(),
+      CopySource: `${bucket()}/${srcKey}`,
+      Key: destKey,
+    }),
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Public API                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -133,4 +154,9 @@ export async function getObject(key: string): Promise<StoredObject> {
 
 export async function deleteObject(key: string): Promise<void> {
   return driver === "s3" ? s3Delete(key) : fsDelete(key);
+}
+
+/** Server-side copy so imageKey rotation never streams the bytes through the app. */
+export async function copyObject(srcKey: string, destKey: string): Promise<void> {
+  return driver === "s3" ? s3Copy(srcKey, destKey) : fsCopy(srcKey, destKey);
 }

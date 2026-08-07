@@ -115,6 +115,25 @@
     "confirmDelete": "Really delete this puzzle?",
     "deleteFailed": "Delete failed."
   },
+  "report": {
+    "reportLink": "Report",
+    "title": "Report this puzzle",
+    "intro": "Why are you reporting this puzzle?",
+    "categoryNSFW": "Explicit content",
+    "categoryILLEGAL": "Violence or illegal content",
+    "categoryCOPYRIGHT": "Copyright infringement",
+    "categoryOTHER": "Other",
+    "messageLabel": "Details",
+    "messagePlaceholder": "Please describe the problem (at least 10 characters).",
+    "emailLabel": "Your email (optional)",
+    "emailHint": "Only used if we have follow-up questions.",
+    "submit": "Send report",
+    "sending": "Sending…",
+    "doneText": "Thank you — we received your report and will review it.",
+    "close": "Close",
+    "failed": "Sending the report failed. Please try again later.",
+    "tooMany": "Too many reports in a short time. Please try again later."
+  },
   "admin": {
     "title": "Administration",
     "usersTab": "Users",
@@ -163,7 +182,25 @@
     "banColSince": "Since",
     "banColAction": "Action",
     "banNone": "No bans.",
-    "banRemove": "Remove"
+    "banRemove": "Remove",
+    "reportsTab": "Reports",
+    "reportsOpenTitle": "Open reports",
+    "reportsResolvedTitle": "Resolved",
+    "reportsEmpty": "No open reports.",
+    "reportPuzzleDeleted": "puzzle already deleted",
+    "reporterContact": "Reporter contact",
+    "takedown": "Delete puzzle",
+    "dismiss": "Dismiss",
+    "confirmTakedown": "Delete this puzzle and its image? This cannot be undone.",
+    "takedownFailed": "Deleting the puzzle failed.",
+    "ownerNotifyFailed": "The puzzle was removed, but the notification to the owner could not be sent. Please inform them manually.",
+    "dismissFailed": "Dismissing the report failed.",
+    "decisionTakedown": "Removed",
+    "decisionDismissed": "Dismissed",
+    "categoryNSFW": "Explicit content",
+    "categoryILLEGAL": "Violence or illegal content",
+    "categoryCOPYRIGHT": "Copyright infringement",
+    "categoryOTHER": "Other"
   },
   "legal": {
     "imprintTitle": "Legal notice",
@@ -266,7 +303,10 @@
     "lastAdminDelete": "The last admin cannot be deleted.",
     "alreadyBanned": "Already banned.",
     "invalidRole": "Invalid role.",
-    "invalidDomain": "Invalid domain."
+    "invalidDomain": "Invalid domain.",
+    "tooManyReports": "Too many reports in a short time. Please try again later.",
+    "storageFailed": "The image storage is currently unavailable. Please try again.",
+    "reportNotFound": "Report not found."
   },
   "email": {
     "verifySubject": "Confirm your email — Jigsaw",
@@ -276,6 +316,16 @@
     "inviteSubject": "You've been invited to Jigsaw",
     "inviteIntro": "You've been invited to Jigsaw.",
     "inviteAction": "Set your password and activate your account:",
-    "inviteExpiry": "The link is valid for 7 days."
+    "inviteExpiry": "The link is valid for 7 days.",
+    "reportSubject": "A puzzle was reported",
+    "reportIntro": "The puzzle “{title}” was reported ({category}).",
+    "reportAction": "Review the report in the admin area:",
+    "takedownSubject": "Your puzzle was removed",
+    "takedownIntro": "Your puzzle “{title}” was removed by an administrator following a report ({category}).",
+    "takedownIntroNoReport": "Your puzzle “{title}” was removed by an administrator after a review.",
+    "categoryNSFW": "Explicit content",
+    "categoryILLEGAL": "Violence or illegal content",
+    "categoryCOPYRIGHT": "Copyright infringement",
+    "categoryOTHER": "Other"
   }
 }

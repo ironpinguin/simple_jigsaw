@@ -7,6 +7,7 @@
 import nodemailer from "nodemailer";
 import { getTranslations } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
+import type { ReportCategory } from "./reports";
 
 function transport() {
   return nodemailer.createTransport({
@@ -37,6 +38,15 @@ export function verifyUrl(token: string, locale: Locale): string {
 
 export function inviteUrl(token: string, locale: Locale): string {
   return `${appUrl()}/${locale}/invite?token=${encodeURIComponent(token)}`;
+}
+
+// Puzzle titles are user input and get interpolated into HTML bodies.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export async function sendVerificationEmail(
@@ -70,5 +80,54 @@ export async function sendInviteEmail(
     subject: t("inviteSubject"),
     text: `${t("inviteIntro")}\n\n${t("inviteAction")}\n${url}\n\n${t("inviteExpiry")}`,
     html: `<p>${t("inviteIntro")}</p><p>${t("inviteAction")}</p><p><a href="${url}">${url}</a></p><p>${t("inviteExpiry")}</p>`,
+  });
+}
+
+// Known gap: both report mails go out in the default locale. Their recipients
+// (an admin, the reported puzzle's owner) are not the person making the
+// request, so the acting user's locale would be the wrong one to use — the
+// recipient's own language needs a `locale` column on User, populated at
+// signup. Until then the `locale` parameter is only reachable from tests.
+export async function sendReportNotification(
+  to: string,
+  puzzleTitle: string,
+  category: ReportCategory,
+  locale?: string,
+): Promise<void> {
+  const loc = resolveLocale(locale);
+  const t = await getTranslations({ locale: loc, namespace: "email" });
+  const url = `${appUrl()}/${loc}/admin/reports`;
+  const categoryLabel = t(`category${category}`);
+  const text = t("reportIntro", { title: puzzleTitle, category: categoryLabel });
+  const html = t("reportIntro", { title: escapeHtml(puzzleTitle), category: categoryLabel });
+  await transport().sendMail({
+    from: FROM,
+    to,
+    subject: t("reportSubject"),
+    text: `${text}\n\n${t("reportAction")}\n${url}`,
+    html: `<p>${html}</p><p>${t("reportAction")}</p><p><a href="${url}">${url}</a></p>`,
+  });
+}
+
+// category null = no canonical reported category exists (takedown without an
+// open report): the notice then cites a review instead of inventing a reason.
+export async function sendTakedownNotice(
+  to: string,
+  puzzleTitle: string,
+  category: ReportCategory | null,
+  locale?: string,
+): Promise<void> {
+  const loc = resolveLocale(locale);
+  const t = await getTranslations({ locale: loc, namespace: "email" });
+  const intro = (title: string) =>
+    category
+      ? t("takedownIntro", { title, category: t(`category${category}`) })
+      : t("takedownIntroNoReport", { title });
+  await transport().sendMail({
+    from: FROM,
+    to,
+    subject: t("takedownSubject"),
+    text: intro(puzzleTitle),
+    html: `<p>${intro(escapeHtml(puzzleTitle))}</p>`,
   });
 }

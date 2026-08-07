@@ -82,3 +82,27 @@ model Puzzle {
   // Not unique: an owner may reuse a key across their own puzzles.
   @@index([imageKey])
 }
+
+model Report {
+  id             String    @id @default(cuid())
+  // Deliberately no relation to Puzzle: the report must survive the takedown
+  // deleting the puzzle row. Existence is checked at read time in the queue.
+  puzzleId       String
+  puzzleTitle    String
+  // "NSFW" | "ILLEGAL" | "COPYRIGHT" | "OTHER" (see lib/reports.ts)
+  category       String
+  message        String
+  // Both nulled when the report is resolved (anonymization).
+  reporterEmail  String?
+  reporterIpHash String?
+  // "OPEN" | "TAKEDOWN" | "DISMISSED" (see lib/reports.ts)
+  status         String    @default("OPEN")
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  // The queue filters on status, rate limiting on reporterIpHash + createdAt,
+  // dedup and takedown resolution on puzzleId.
+  @@index([status])
+  @@index([reporterIpHash])
+  @@index([puzzleId])
+}

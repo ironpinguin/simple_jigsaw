@@ -95,10 +95,10 @@ function solveJson(updatedAt: number) {
 const CONNECTIONS_108 = 107;
 const CONNECTIONS_12 = 11;
 
-function tree() {
+function tree(isPublic = true) {
   return (
     <NextIntlClientProvider locale="en" messages={messages}>
-      <PuzzleSolver puzzle={puzzle} title="Test" />
+      <PuzzleSolver puzzle={puzzle} title="Test" isPublic={isPublic} />
     </NextIntlClientProvider>
   );
 }
@@ -188,6 +188,13 @@ describe("PuzzleSolver", () => {
     const aspect = puzzle.imageWidth / puzzle.imageHeight;
     expect(computeGrid(108, aspect)).toMatchObject({ cols: 12, rows: 9 });
     expect(computeGrid(12, aspect)).toMatchObject({ cols: 4, rows: 3 });
+  });
+
+  it("offers the report button on a public puzzle but not on a private one", () => {
+    // /api/report answers 404 for a private puzzle, so an owner or admin
+    // looking at their own private puzzle would be told it does not exist.
+    expect(renderToString(tree(true))).toContain(messages.report.reportLink);
+    expect(renderToString(tree(false))).not.toContain(messages.report.reportLink);
   });
 
   it("hydrates without a mismatch when a piece count was remembered", async () => {

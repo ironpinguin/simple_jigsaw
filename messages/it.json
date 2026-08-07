@@ -115,6 +115,25 @@
     "confirmDelete": "Eliminare davvero questo puzzle?",
     "deleteFailed": "Eliminazione non riuscita."
   },
+  "report": {
+    "reportLink": "Segnala",
+    "title": "Segnala questo puzzle",
+    "intro": "Perché segnali questo puzzle?",
+    "categoryNSFW": "Contenuto esplicito",
+    "categoryILLEGAL": "Violenza o contenuto illegale",
+    "categoryCOPYRIGHT": "Violazione del diritto d’autore",
+    "categoryOTHER": "Altro",
+    "messageLabel": "Dettagli",
+    "messagePlaceholder": "Descrivi il problema (almeno 10 caratteri).",
+    "emailLabel": "La tua e-mail (facoltativa)",
+    "emailHint": "Usata solo per eventuali domande.",
+    "submit": "Invia segnalazione",
+    "sending": "Invio in corso…",
+    "doneText": "Grazie — abbiamo ricevuto la tua segnalazione e la esamineremo.",
+    "close": "Chiudi",
+    "failed": "Invio della segnalazione non riuscito. Riprova più tardi.",
+    "tooMany": "Troppe segnalazioni in poco tempo. Riprova più tardi."
+  },
   "admin": {
     "title": "Amministrazione",
     "usersTab": "Utenti",
@@ -163,7 +182,25 @@
     "banColSince": "Dal",
     "banColAction": "Azione",
     "banNone": "Nessun blocco.",
-    "banRemove": "Rimuovi"
+    "banRemove": "Rimuovi",
+    "reportsTab": "Segnalazioni",
+    "reportsOpenTitle": "Segnalazioni aperte",
+    "reportsResolvedTitle": "Risolte",
+    "reportsEmpty": "Nessuna segnalazione aperta.",
+    "reportPuzzleDeleted": "puzzle già eliminato",
+    "reporterContact": "Contatto del segnalante",
+    "takedown": "Elimina puzzle",
+    "dismiss": "Respingi",
+    "confirmTakedown": "Eliminare questo puzzle e la sua immagine? L’operazione non può essere annullata.",
+    "takedownFailed": "Eliminazione del puzzle non riuscita.",
+    "ownerNotifyFailed": "Il puzzle è stato rimosso, ma non è stato possibile inviare la notifica al proprietario. Informalo manualmente.",
+    "dismissFailed": "Respingimento della segnalazione non riuscito.",
+    "decisionTakedown": "Rimosso",
+    "decisionDismissed": "Respinta",
+    "categoryNSFW": "Contenuto esplicito",
+    "categoryILLEGAL": "Violenza o contenuto illegale",
+    "categoryCOPYRIGHT": "Violazione del diritto d’autore",
+    "categoryOTHER": "Altro"
   },
   "legal": {
     "imprintTitle": "Note legali",
@@ -266,7 +303,10 @@
     "lastAdminDelete": "L'ultimo admin non può essere eliminato.",
     "alreadyBanned": "Già bloccato.",
     "invalidRole": "Ruolo non valido.",
-    "invalidDomain": "Dominio non valido."
+    "invalidDomain": "Dominio non valido.",
+    "tooManyReports": "Troppe segnalazioni in poco tempo. Riprova più tardi.",
+    "storageFailed": "L’archivio immagini non è al momento raggiungibile. Riprova.",
+    "reportNotFound": "Segnalazione non trovata."
   },
   "email": {
     "verifySubject": "Conferma la tua e-mail — Jigsaw",
@@ -276,6 +316,16 @@
     "inviteSubject": "Sei stato invitato su Jigsaw",
     "inviteIntro": "Sei stato invitato su Jigsaw.",
     "inviteAction": "Imposta la tua password e attiva il tuo account:",
-    "inviteExpiry": "Il link è valido per 7 giorni."
+    "inviteExpiry": "Il link è valido per 7 giorni.",
+    "reportSubject": "Un puzzle è stato segnalato",
+    "reportIntro": "Il puzzle “{title}” è stato segnalato ({category}).",
+    "reportAction": "Esamina la segnalazione nell’area admin:",
+    "takedownSubject": "Il tuo puzzle è stato rimosso",
+    "takedownIntro": "Il tuo puzzle “{title}” è stato rimosso da un amministratore in seguito a una segnalazione ({category}).",
+    "takedownIntroNoReport": "Il tuo puzzle “{title}” è stato rimosso da un amministratore dopo una verifica.",
+    "categoryNSFW": "Contenuto esplicito",
+    "categoryILLEGAL": "Violenza o contenuto illegale",
+    "categoryCOPYRIGHT": "Violazione del diritto d’autore",
+    "categoryOTHER": "Altro"
   }
 }

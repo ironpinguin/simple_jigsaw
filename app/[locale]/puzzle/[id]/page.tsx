@@ -31,5 +31,5 @@ export default async function PuzzlePage({
     seed: puzzle.seed,
   };
 
-  return <PuzzleSolver puzzle={data} title={puzzle.title} />;
+  return <PuzzleSolver puzzle={data} title={puzzle.title} isPublic={puzzle.isPublic} />;
 }

@@ -6,6 +6,7 @@ const {
   updateMany,
   deleteMany,
   deleteObjectMock,
+  copyObjectMock,
   getSessionViewerMock,
   getSessionUserMock,
 } = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const {
   updateMany: vi.fn(),
   deleteMany: vi.fn(),
   deleteObjectMock: vi.fn(),
+  copyObjectMock: vi.fn(),
   getSessionViewerMock: vi.fn(),
   getSessionUserMock: vi.fn(),
 }));
@@ -25,7 +27,7 @@ vi.mock("@/lib/auth", () => ({
   getSessionViewer: getSessionViewerMock,
   getSessionUser: getSessionUserMock,
 }));
-vi.mock("@/lib/storage", () => ({ deleteObject: deleteObjectMock }));
+vi.mock("@/lib/storage", () => ({ deleteObject: deleteObjectMock, copyObject: copyObjectMock }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
 }));
@@ -77,6 +79,7 @@ beforeEach(() => {
   updateMany.mockResolvedValue({ count: 1 });
   deleteMany.mockResolvedValue({ count: 1 });
   deleteObjectMock.mockResolvedValue(undefined);
+  copyObjectMock.mockResolvedValue(undefined);
 });
 
 describe("GET /api/puzzles/[id]", () => {
@@ -239,6 +242,99 @@ describe("DELETE /api/puzzles/[id]", () => {
     getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
     deleteObjectMock.mockRejectedValue(new Error("AccessDenied"));
     const res = await callDelete();
+    expect(res.status).toBe(200);
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+});
+
+describe("PATCH /api/puzzles/[id] — imageKey rotation", () => {
+  function flipPrivate() {
+    return callPatch({ isPublic: false });
+  }
+
+  beforeEach(() => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true });
+  });
+
+  it("rotates the imageKey when the owner flips a public puzzle to private", async () => {
+    const res = await flipPrivate();
+    expect(res.status).toBe(200);
+    expect(copyObjectMock).toHaveBeenCalledTimes(1);
+    const [src, dest] = copyObjectMock.mock.calls[0];
+    expect(src).toBe(PUZZLE.imageKey);
+    expect(dest).toMatch(/^puzzles\/.+\.webp$/);
+    expect(dest).not.toBe(PUZZLE.imageKey);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "p1", ownerId: "owner-1", imageKey: PUZZLE.imageKey },
+      data: { isPublic: false, imageKey: dest },
+    });
+    expect(deleteObjectMock).toHaveBeenCalledWith(PUZZLE.imageKey);
+    // The client renders thumbnails from imageKey — without the new key in
+    // the response, the list keeps pointing at the rotated-away (404) key.
+    expect(await res.json()).toEqual({ puzzle: { id: "p1", isPublic: false, imageKey: dest } });
+  });
+
+  it("copies before the row update, deletes the old object after it", async () => {
+    await flipPrivate();
+    expect(copyObjectMock.mock.invocationCallOrder[0]).toBeLessThan(
+      updateMany.mock.invocationCallOrder[0],
+    );
+    expect(updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteObjectMock.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("fails the flip with 502 when the copy fails, leaving the puzzle public", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    copyObjectMock.mockRejectedValue(new Error("NoSuchKey"));
+    const res = await flipPrivate();
+    expect(res.status).toBe(502);
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it("keeps the old object when another puzzle still references the key", async () => {
+    findFirst.mockResolvedValue({ id: "other-puzzle" });
+    const res = await flipPrivate();
+    expect(res.status).toBe(200);
+    expect(deleteObjectMock).not.toHaveBeenCalled();
+  });
+
+  it("does not rotate a puzzle that is already private", async () => {
+    findUnique.mockResolvedValue({ ...PUZZLE, isPublic: false });
+    const res = await flipPrivate();
+    expect(res.status).toBe(200);
+    expect(copyObjectMock).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+    expect(await res.json()).toEqual({
+      puzzle: { id: "p1", isPublic: false, imageKey: PUZZLE.imageKey },
+    });
+  });
+
+  it("answers 404 to a non-owner without touching storage", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
+    const res = await flipPrivate();
+    expect(res.status).toBe(404);
+    expect(copyObjectMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans up the copied object and answers 404 when the row update raced to zero", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    updateMany.mockResolvedValue({ count: 0 });
+    const res = await flipPrivate();
+    expect(res.status).toBe(404);
+    const dest = copyObjectMock.mock.calls[0][1];
+    expect(deleteObjectMock).toHaveBeenCalledWith(dest);
+    errorSpy.mockRestore();
+  });
+
+  it("still flips to private when only the old-object cleanup fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    deleteObjectMock.mockRejectedValue(new Error("AccessDenied"));
+    const res = await flipPrivate();
     expect(res.status).toBe(200);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
