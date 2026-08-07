@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Anyone can report a puzzle (category + description, no account needed); admins
   are notified by email and review reports in a new admin queue, where they can
   delete a single puzzle including its image or dismiss the report. The owner
-  is notified when their puzzle is removed. (#22)
+  is notified when their puzzle is removed; when that notification cannot be
+  sent, the queue tells the admin to contact them another way. (#22)
 - Puzzle visibility can be chosen at creation (public remains the default) and
   toggled at any time on the my-puzzles page; the toggle reports a failure
   instead of flipping the badge silently, and an expired session redirects to
@@ -64,7 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Switching a puzzle to private now rotates its image key, so previously shared
-  image URLs (and their year-long browser caches) stop resolving. (#21, #22)
+  image URLs stop resolving for anyone who has not already cached them —
+  rotation cannot evict a copy a browser already holds under the old year-long
+  cache header. (#21, #22)
+- Report rate limiting derives its per-reporter bucket from `x-forwarded-for`
+  only when `TRUSTED_PROXY_HOPS` declares the deployment's own reverse proxy —
+  the header is client-forgeable, so without one all reports share a single
+  hourly bucket instead of trusting it. Reporter-IP hashing also refuses to run
+  without `AUTH_SECRET` rather than silently producing unkeyed, reversible
+  hashes. (#22)
 
 ## [0.5.0] - 2026-08-03
 
