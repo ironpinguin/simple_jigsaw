@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { hashReporterIp, REPORT_CATEGORIES, REPORT_STATUSES } from "./reports";
+import {
+  hashReporterIp,
+  REPORT_CATEGORIES,
+  REPORT_STATUSES,
+  REPORT_RATE_LIMIT,
+  REPORT_RATE_WINDOW_MS,
+} from "./reports";
 
 describe("report enums", () => {
   it("defines the four categories and three statuses", () => {
     expect(REPORT_CATEGORIES).toEqual(["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"]);
     expect(REPORT_STATUSES).toEqual(["OPEN", "TAKEDOWN", "DISMISSED"]);
+  });
+
+  it("pins the rate limit to 5 per hour", () => {
+    expect(REPORT_RATE_LIMIT).toBe(5);
+    expect(REPORT_RATE_WINDOW_MS).toBe(3_600_000);
   });
 });
 
