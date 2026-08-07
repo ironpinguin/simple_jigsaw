@@ -266,7 +266,8 @@
     "lastAdminDelete": "L'ultimo admin non può essere eliminato.",
     "alreadyBanned": "Già bloccato.",
     "invalidRole": "Ruolo non valido.",
-    "invalidDomain": "Dominio non valido."
+    "invalidDomain": "Dominio non valido.",
+    "tooManyReports": "Troppe segnalazioni dalla tua connessione. Riprova più tardi."
   },
   "email": {
     "verifySubject": "Conferma la tua e-mail — Jigsaw",
