@@ -268,7 +268,7 @@
     "invalidRole": "Ruolo non valido.",
     "invalidDomain": "Dominio non valido.",
     "tooManyReports": "Troppe segnalazioni dalla tua connessione. Riprova più tardi.",
-    "storageFailed": "L'archivio immagini non è al momento raggiungibile. Riprova."
+    "storageFailed": "L’archivio immagini non è al momento raggiungibile. Riprova."
   },
   "email": {
     "verifySubject": "Conferma la tua e-mail — Jigsaw",
