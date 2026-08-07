@@ -3,16 +3,17 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { isReportCategory } from "@/lib/reports";
+import { isReportCategory, type ReportDecision, type ReportStatus } from "@/lib/reports";
 
 export interface ReportRow {
   id: string;
   puzzleId: string;
   puzzleTitle: string;
+  /** Raw DB string: an unknown value renders as itself rather than crashing. */
   category: string;
   message: string;
   reporterEmail: string | null;
-  status: string;
+  status: ReportStatus;
   createdAt: string;
   resolvedAt: string | null;
   puzzleExists: boolean;
@@ -43,7 +44,7 @@ export default function ReportsAdmin({
 
   // Mirrors what the server did: move the reports out of the open list,
   // stamp decision + timestamp, drop the reporter contact (anonymized).
-  function resolveLocally(ids: Set<string>, status: "TAKEDOWN" | "DISMISSED") {
+  function resolveLocally(ids: Set<string>, status: ReportDecision) {
     const now = new Date().toISOString();
     const affected = openReports
       .filter((r) => ids.has(r.id))
@@ -66,8 +67,13 @@ export default function ReportsAdmin({
       if (res?.ok) {
         // The takedown succeeded, but the owner may not know: tell the admin
         // to contact them manually instead of pretending everything worked.
-        const data = await res.json().catch(() => null);
-        if (data?.ownerNotified === false) {
+        // Anything other than an explicit true counts as "not notified" — an
+        // unreadable body must not silently pass as a delivered notice.
+        const data = await res.json().catch((err) => {
+          console.error("[admin] takedown response could not be parsed:", err);
+          return null;
+        });
+        if (data?.ownerNotified !== true) {
           alert(t("ownerNotifyFailed"));
         }
         // One takedown resolves every open report of the same puzzle.

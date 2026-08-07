@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// The write statements are spied twice: once on the transaction client the
+// callback receives (tx*), once on the bare prisma client (unscoped*). Sharing
+// one spy would let a refactor move the delete or the report resolution out of
+// the transaction without any test noticing — atomicity is the whole point of
+// this route.
 const {
   requireAdminMock,
   puzzleFindUnique,
   puzzleFindFirst,
-  puzzleDeleteMany,
-  reportFindFirst,
-  reportUpdateMany,
+  unscopedPuzzleDeleteMany,
+  unscopedReportUpdateMany,
+  txPuzzleDeleteMany,
+  txReportFindFirst,
+  txReportUpdateMany,
   transactionMock,
   deleteObjectMock,
   sendTakedownNoticeMock,
@@ -14,9 +21,11 @@ const {
   requireAdminMock: vi.fn(),
   puzzleFindUnique: vi.fn(),
   puzzleFindFirst: vi.fn(),
-  puzzleDeleteMany: vi.fn(),
-  reportFindFirst: vi.fn(),
-  reportUpdateMany: vi.fn(),
+  unscopedPuzzleDeleteMany: vi.fn(),
+  unscopedReportUpdateMany: vi.fn(),
+  txPuzzleDeleteMany: vi.fn(),
+  txReportFindFirst: vi.fn(),
+  txReportUpdateMany: vi.fn(),
   transactionMock: vi.fn(),
   deleteObjectMock: vi.fn(),
   sendTakedownNoticeMock: vi.fn(),
@@ -25,8 +34,12 @@ const {
 vi.mock("@/lib/auth", () => ({ requireAdmin: requireAdminMock }));
 vi.mock("@/lib/db", () => ({
   prisma: {
-    puzzle: { findUnique: puzzleFindUnique, findFirst: puzzleFindFirst, deleteMany: puzzleDeleteMany },
-    report: { findFirst: reportFindFirst, updateMany: reportUpdateMany },
+    puzzle: {
+      findUnique: puzzleFindUnique,
+      findFirst: puzzleFindFirst,
+      deleteMany: unscopedPuzzleDeleteMany,
+    },
+    report: { findFirst: vi.fn(), updateMany: unscopedReportUpdateMany },
     $transaction: transactionMock,
   },
 }));
@@ -55,15 +68,13 @@ beforeEach(() => {
   requireAdminMock.mockResolvedValue({ id: "admin-1", email: "a@example.com", role: "ADMIN" });
   puzzleFindUnique.mockResolvedValue(PUZZLE);
   puzzleFindFirst.mockResolvedValue(null);
-  puzzleDeleteMany.mockResolvedValue({ count: 1 });
-  reportFindFirst.mockResolvedValue({ category: "NSFW" });
-  reportUpdateMany.mockResolvedValue({ count: 1 });
-  // Interactive transaction: hand the callback the same mocks, so the
-  // existing per-statement assertions keep working.
+  txPuzzleDeleteMany.mockResolvedValue({ count: 1 });
+  txReportFindFirst.mockResolvedValue({ category: "NSFW" });
+  txReportUpdateMany.mockResolvedValue({ count: 1 });
   transactionMock.mockImplementation(async (fn) =>
     fn({
-      puzzle: { deleteMany: puzzleDeleteMany },
-      report: { findFirst: reportFindFirst, updateMany: reportUpdateMany },
+      puzzle: { deleteMany: txPuzzleDeleteMany },
+      report: { findFirst: txReportFindFirst, updateMany: txReportUpdateMany },
     }),
   );
   deleteObjectMock.mockResolvedValue(undefined);
@@ -76,7 +87,7 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
     const res = await callDelete();
     expect(res.status).toBe(403);
     expect(deleteObjectMock).not.toHaveBeenCalled();
-    expect(puzzleDeleteMany).not.toHaveBeenCalled();
+    expect(txPuzzleDeleteMany).not.toHaveBeenCalled();
   });
 
   it("answers 404 for a missing puzzle", async () => {
@@ -91,7 +102,7 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
     expect(res.status).toBe(200);
     expect(deleteObjectMock).toHaveBeenCalledWith(PUZZLE.imageKey);
     expect(deleteObjectMock.mock.invocationCallOrder[0]).toBeLessThan(
-      puzzleDeleteMany.mock.invocationCallOrder[0],
+      txPuzzleDeleteMany.mock.invocationCallOrder[0],
     );
   });
 
@@ -100,8 +111,8 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
     deleteObjectMock.mockRejectedValue(new Error("AccessDenied"));
     const res = await callDelete();
     expect(res.status).toBe(502);
-    expect(puzzleDeleteMany).not.toHaveBeenCalled();
-    expect(reportUpdateMany).not.toHaveBeenCalled();
+    expect(txPuzzleDeleteMany).not.toHaveBeenCalled();
+    expect(txReportUpdateMany).not.toHaveBeenCalled();
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
   });
@@ -111,12 +122,12 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
     const res = await callDelete();
     expect(res.status).toBe(200);
     expect(deleteObjectMock).not.toHaveBeenCalled();
-    expect(puzzleDeleteMany).toHaveBeenCalledWith({ where: { id: "p1" } });
+    expect(txPuzzleDeleteMany).toHaveBeenCalledWith({ where: { id: "p1" } });
   });
 
   it("resolves and anonymizes every open report of the puzzle", async () => {
     await callDelete();
-    expect(reportUpdateMany).toHaveBeenCalledWith({
+    expect(txReportUpdateMany).toHaveBeenCalledWith({
       where: { puzzleId: "p1", status: "OPEN" },
       data: expect.objectContaining({
         status: "TAKEDOWN",
@@ -130,8 +141,13 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
   it("runs the row delete and the report resolution in one transaction", async () => {
     await callDelete();
     expect(transactionMock).toHaveBeenCalledTimes(1);
-    expect(puzzleDeleteMany).toHaveBeenCalledWith({ where: { id: "p1" } });
-    expect(reportUpdateMany).toHaveBeenCalled();
+    // Both writes went through the transaction client, not the bare one: a
+    // puzzle deleted outside the transaction could leave its reports open and
+    // still carrying reporter PII.
+    expect(txPuzzleDeleteMany).toHaveBeenCalledWith({ where: { id: "p1" } });
+    expect(txReportUpdateMany).toHaveBeenCalled();
+    expect(unscopedPuzzleDeleteMany).not.toHaveBeenCalled();
+    expect(unscopedReportUpdateMany).not.toHaveBeenCalled();
   });
 
   it("notifies the owner with title and reported category and reports it in the body", async () => {
@@ -141,13 +157,13 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
   });
 
   it("sends a category-less notice when no open report exists — nothing gets invented", async () => {
-    reportFindFirst.mockResolvedValue(null);
+    txReportFindFirst.mockResolvedValue(null);
     await callDelete();
     expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null);
   });
 
   it("sends a category-less notice when the stored category is not canonical", async () => {
-    reportFindFirst.mockResolvedValue({ category: "LEGACY" });
+    txReportFindFirst.mockResolvedValue({ category: "LEGACY" });
     await callDelete();
     expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null);
   });
@@ -163,9 +179,9 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
   });
 
   it("answers 404 when a concurrent delete raced ahead", async () => {
-    puzzleDeleteMany.mockResolvedValue({ count: 0 });
+    txPuzzleDeleteMany.mockResolvedValue({ count: 0 });
     const res = await callDelete();
     expect(res.status).toBe(404);
-    expect(reportUpdateMany).not.toHaveBeenCalled();
+    expect(txReportUpdateMany).not.toHaveBeenCalled();
   });
 });

@@ -65,8 +65,8 @@ export async function PATCH(
   const { id } = await params;
 
   if (parsed.data.isPublic) {
-    // Making a puzzle public needs no rotation; keep the single atomic
-    // statement (lookup, ownership check and write in one) from before.
+    // Making a puzzle public needs no rotation: one atomic statement does the
+    // lookup, the ownership check and the write.
     const updated = await prisma.puzzle.updateMany({
       where: { id, ownerId: user.id },
       data: { isPublic: true },

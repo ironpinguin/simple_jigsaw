@@ -124,8 +124,9 @@ async function s3Delete(key: string): Promise<void> {
 async function s3Copy(srcKey: string, destKey: string): Promise<void> {
   const { CopyObjectCommand } = await import("@aws-sdk/client-s3");
   const client = await s3Client();
-  // Keys are app-generated (`puzzles/<uuid>.<ext>`), so the CopySource needs
-  // no URL-encoding beyond joining bucket and key.
+  // Objects only ever exist under app-minted keys (upload and rotation both
+  // write `puzzles/<uuid>.<ext>`), and a copy can only name a key that has an
+  // object — so CopySource needs no URL-encoding beyond joining bucket and key.
   await client.send(
     new CopyObjectCommand({
       Bucket: bucket(),

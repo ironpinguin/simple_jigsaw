@@ -63,9 +63,12 @@ function storedSolves(store: Storage): Array<{ key: string; raw: string | null }
 export default function PuzzleSolver({
   puzzle,
   title,
+  isPublic,
 }: {
   puzzle: PuzzleData;
   title: string;
+  /** Only public puzzles can be reported — /api/report answers 404 otherwise. */
+  isPublic: boolean;
 }) {
   const t = useTranslations("solve");
   const storageKey = `pc:${puzzle.id}`;
@@ -258,7 +261,10 @@ export default function PuzzleSolver({
         <button className="button secondary" type="button" onClick={startOver}>
           {t("reset")}
         </button>
-        <ReportDialog puzzleId={puzzle.id} />
+        {/* A private puzzle is only visible to its owner and admins, and the
+            report endpoint rejects it — offering the button would lead them to
+            "puzzle not found" for a puzzle they are looking at. */}
+        {isPublic && <ReportDialog puzzleId={puzzle.id} />}
       </div>
 
       <p className="muted" style={{ marginTop: -4 }}>

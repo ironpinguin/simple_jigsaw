@@ -132,7 +132,7 @@
     "doneText": "Thank you — we received your report and will review it.",
     "close": "Close",
     "failed": "Sending the report failed. Please try again later.",
-    "tooMany": "Too many reports from your connection. Please try again later."
+    "tooMany": "Too many reports in a short time. Please try again later."
   },
   "admin": {
     "title": "Administration",
@@ -304,7 +304,7 @@
     "alreadyBanned": "Already banned.",
     "invalidRole": "Invalid role.",
     "invalidDomain": "Invalid domain.",
-    "tooManyReports": "Too many reports from your connection. Please try again later.",
+    "tooManyReports": "Too many reports in a short time. Please try again later.",
     "storageFailed": "The image storage is currently unavailable. Please try again.",
     "reportNotFound": "Report not found."
   },

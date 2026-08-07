@@ -130,4 +130,52 @@ describe("ReportDialog", () => {
     await act(async () => buttonByText(messages.report.submit)!.click());
     expect(container.textContent).toContain(messages.report.tooMany);
   });
+
+  it("sends the trimmed reporter email when one was entered", async () => {
+    // The only channel back to a reporter — if it silently stopped being sent,
+    // every follow-up question would be impossible and nothing would fail.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+    openAndFill("This image is sexually explicit.");
+    act(() => setValue(container.querySelector('input[type="email"]')!, "  me@example.com  "));
+    await act(async () => buttonByText(messages.report.submit)!.click());
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).email).toBe("me@example.com");
+  });
+
+  describe("accessibility", () => {
+    function dialog() {
+      return container.querySelector('[role="dialog"]');
+    }
+
+    it("names the dialog with its own heading", () => {
+      mount();
+      act(() => buttonByText(messages.report.reportLink)!.click());
+      const labelledBy = dialog()!.getAttribute("aria-labelledby");
+      expect(labelledBy).toBeTruthy();
+      expect(document.getElementById(labelledBy!)?.textContent).toBe(messages.report.title);
+    });
+
+    it("moves focus into the dialog on open so a keyboard user is not left on the page behind", () => {
+      mount();
+      act(() => buttonByText(messages.report.reportLink)!.click());
+      expect(dialog()!.contains(document.activeElement)).toBe(true);
+    });
+
+    it("closes on Escape and returns focus to the trigger", () => {
+      mount();
+      const trigger = buttonByText(messages.report.reportLink)!;
+      act(() => trigger.click());
+      act(() => {
+        dialog()!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+      });
+      expect(dialog()).toBeNull();
+      expect(document.activeElement).toBe(buttonByText(messages.report.reportLink));
+    });
+  });
 });

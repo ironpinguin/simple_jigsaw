@@ -26,7 +26,7 @@ vi.mock("next-intl/server", () => ({
 import { sendReportNotification, sendTakedownNotice } from "./mail";
 
 // Puzzle titles are user input interpolated into mail bodies — the escaping
-// asserted here is the only thing between a reporter-visible title like
+// asserted here is the only thing between an owner-authored title like
 // "<a href=…>click to review</a>" and phishing-shaped HTML in admin inboxes.
 const HOSTILE_TITLE = `<img src=x onerror="alert(1)"> & "quotes"`;
 const ESCAPED_TITLE = `&lt;img src=x onerror=&quot;alert(1)&quot;&gt; &amp; &quot;quotes&quot;`;

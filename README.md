@@ -117,6 +117,12 @@ auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
   `LEGAL_MAIL_PROCESSOR` bzw. `LEGAL_STORAGE_PROCESSOR` ihn benennen, sonst
   behauptet die Datenschutzerklärung Eigenbetrieb. `.env.example` erklärt alle
   `LEGAL_*`-Variablen im Detail.
+- **Reverse Proxy**: Läuft die App hinter nginx/traefik/Caddy, muss
+  `TRUSTED_PROXY_HOPS` die Anzahl der eigenen Proxys angeben (1 = ein Proxy,
+  2 = zusätzlich ein Load Balancer davor). Beim Standardwert `0` gilt
+  `x-forwarded-for` als fälschbar und wird ignoriert: Meldungen teilen sich
+  dann ein gemeinsames Stundenkontingent, und doppelte Meldungen zum selben
+  Puzzle werden nicht mehr herausgefiltert.
 
 ## Tests
 

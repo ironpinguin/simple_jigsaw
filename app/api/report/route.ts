@@ -10,7 +10,7 @@ import {
   REPORT_RATE_LIMIT,
   REPORT_RATE_WINDOW_MS,
 } from "@/lib/reports";
-import { hashReporterIp } from "@/lib/report-ip";
+import { hasTrustedProxy, hashReporterIp } from "@/lib/report-ip";
 
 const ReportSchema = z.object({
   puzzleId: z.string().min(1),
@@ -50,10 +50,18 @@ export async function POST(request: Request) {
   // Dedup: one open report per puzzle per IP hash. The duplicate case answers
   // exactly like the created case so the endpoint cannot be used to probe
   // "has this IP already reported this puzzle".
-  const duplicate = await prisma.report.findFirst({
-    where: { puzzleId: parsed.data.puzzleId, reporterIpHash: ipHash, status: "OPEN" },
-    select: { id: true },
-  });
+  //
+  // Only when the hash actually identifies a client, though. Without a trusted
+  // proxy every visitor shares one hash, and deduping on that constant would
+  // mean the first open report of a puzzle silently swallows everyone else's —
+  // an uploader could self-report their own abusive puzzle to mute it. A
+  // duplicate row is a far smaller price than a lost report.
+  const duplicate = hasTrustedProxy()
+    ? await prisma.report.findFirst({
+        where: { puzzleId: parsed.data.puzzleId, reporterIpHash: ipHash, status: "OPEN" },
+        select: { id: true },
+      })
+    : null;
   if (!duplicate) {
     await prisma.report.create({
       data: {

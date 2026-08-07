@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   REPORT_CATEGORIES,
@@ -22,6 +22,16 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // aria-modal tells assistive tech the page behind is inert, so focus has to
+  // actually be in here — and has to come back to the trigger on close, or a
+  // keyboard user restarts at the top of the page.
+  useEffect(() => {
+    if (open) dialogRef.current?.focus();
+  }, [open]);
 
   function close() {
     setOpen(false);
@@ -30,6 +40,7 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
     setMessage("");
     setEmail("");
     setCategory("NSFW");
+    triggerRef.current?.focus();
   }
 
   async function submit(e: React.FormEvent) {
@@ -57,8 +68,8 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
       setState("idle");
       // The API answers with a localized, specific message (e.g. "puzzle not
       // found") — show it rather than a generic "try again later" that a
-      // retry can never fix. 429 keeps the client wording, matched to the
-      // page locale.
+      // retry can never fix. 429 is the exception: the client's own phrasing
+      // of the rate limit is friendlier than the API's.
       const data = res ? await res.json().catch(() => null) : null;
       setError(res?.status === 429 ? t("tooMany") : (data?.error ?? t("failed")));
     }
@@ -66,13 +77,24 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
 
   return (
     <>
-      <button className="button secondary" type="button" onClick={() => setOpen(true)}>
+      <button
+        ref={triggerRef}
+        className="button secondary"
+        type="button"
+        onClick={() => setOpen(true)}
+      >
         {t("reportLink")}
       </button>
       {open && (
         <div
           role="dialog"
           aria-modal="true"
+          aria-labelledby={titleId}
+          ref={dialogRef}
+          tabIndex={-1}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") close();
+          }}
           style={{
             position: "fixed",
             inset: 0,
@@ -95,7 +117,9 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
               overflowY: "auto",
             }}
           >
-            <h2 style={{ marginTop: 0 }}>{t("title")}</h2>
+            <h2 id={titleId} style={{ marginTop: 0 }}>
+              {t("title")}
+            </h2>
             {state === "done" ? (
               <>
                 <p>{t("doneText")}</p>

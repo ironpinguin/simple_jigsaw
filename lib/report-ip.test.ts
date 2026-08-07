@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { hashReporterIp } from "./report-ip";
+import { hashReporterIp, hasTrustedProxy } from "./report-ip";
 
 describe("hashReporterIp", () => {
   beforeEach(() => {
@@ -45,16 +45,21 @@ describe("hashReporterIp", () => {
     expect(hashReporterIp("203.0.113.7")).toBe(hashReporterIp(null));
   });
 
-  it("treats TRUSTED_PROXY_HOPS=0 and an unparsable value like no proxy", () => {
-    const unset = () => {
-      vi.stubEnv("TRUSTED_PROXY_HOPS", undefined);
-      return hashReporterIp(null);
-    };
-    const shared = unset();
+  it("treats TRUSTED_PROXY_HOPS=0 like no proxy", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", undefined);
+    const shared = hashReporterIp(null);
     vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
     expect(hashReporterIp("203.0.113.7")).toBe(shared);
+  });
+
+  it("throws on a malformed TRUSTED_PROXY_HOPS instead of silently degrading", () => {
+    // A deployment that IS behind a proxy but typos the value would otherwise
+    // fall into the shared bucket with zero log output — per-IP rate limiting
+    // and dedup disabled invisibly. Fail closed, like the AUTH_SECRET check.
     vi.stubEnv("TRUSTED_PROXY_HOPS", "not-a-number");
-    expect(hashReporterIp("203.0.113.7")).toBe(shared);
+    expect(() => hashReporterIp("203.0.113.7")).toThrow(/TRUSTED_PROXY_HOPS/);
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "-1");
+    expect(() => hashReporterIp("203.0.113.7")).toThrow(/TRUSTED_PROXY_HOPS/);
   });
 
   it("uses the last x-forwarded-for entry behind one proxy — earlier ones are client-spoofable", () => {
@@ -78,5 +83,34 @@ describe("hashReporterIp", () => {
 
   it("falls back to a stable bucket when the header is missing", () => {
     expect(hashReporterIp(null)).toBe(hashReporterIp(""));
+  });
+});
+
+describe("hasTrustedProxy", () => {
+  beforeEach(() => {
+    vi.stubEnv("AUTH_SECRET", "test-secret");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is false without a declared proxy — the hash is then a shared bucket, not a client identity", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", undefined);
+    expect(hasTrustedProxy()).toBe(false);
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
+    expect(hasTrustedProxy()).toBe(false);
+  });
+
+  it("is true behind a declared proxy", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "1");
+    expect(hasTrustedProxy()).toBe(true);
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "2");
+    expect(hasTrustedProxy()).toBe(true);
+  });
+
+  it("throws on a malformed value, same as hashReporterIp", () => {
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "yes");
+    expect(() => hasTrustedProxy()).toThrow(/TRUSTED_PROXY_HOPS/);
   });
 });

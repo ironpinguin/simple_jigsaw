@@ -62,6 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with an error message instead of hanging on the loading state, and a
   registration whose verification mail could not be sent now says so instead
   of reporting a generic failure.
+- The report dialog is usable with a keyboard: it takes focus when it opens,
+  closes on Escape, hands focus back to the button that opened it, and
+  announces itself by its heading to screen readers. (#22)
+- The report button no longer appears on a private puzzle, where submitting
+  could only ever answer "puzzle not found" — reporting is for public
+  puzzles. (#22)
+- The admin queue tells the admin to contact the owner whenever it cannot
+  confirm the takedown notice went out, instead of only when the server said
+  so explicitly — an unreadable response no longer passes as a delivered
+  notification. (#22)
 
 ### Security
 - Switching a puzzle to private now rotates its image key, so previously shared
@@ -71,9 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Report rate limiting derives its per-reporter bucket from `x-forwarded-for`
   only when `TRUSTED_PROXY_HOPS` declares the deployment's own reverse proxy —
   the header is client-forgeable, so without one all reports share a single
-  hourly bucket instead of trusting it. Reporter-IP hashing also refuses to run
-  without `AUTH_SECRET` rather than silently producing unkeyed, reversible
-  hashes. (#22)
+  hourly bucket instead of trusting it. That shared bucket is used for the rate
+  limit only: the "one open report per puzzle per reporter" check is skipped
+  entirely when no proxy is declared, because deduplicating on a bucket every
+  visitor shares would let one report — including an uploader's self-report —
+  silently swallow every later report of the same puzzle. A malformed
+  `TRUSTED_PROXY_HOPS` is now rejected at startup of the request instead of
+  quietly degrading a proxied deployment to the shared bucket. Reporter-IP
+  hashing also refuses to run without `AUTH_SECRET` rather than silently
+  producing unkeyed, reversible hashes. (#22)
 
 ## [0.5.0] - 2026-08-03
 

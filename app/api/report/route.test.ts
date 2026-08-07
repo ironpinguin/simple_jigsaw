@@ -160,6 +160,30 @@ describe("POST /api/report", () => {
     });
   });
 
+  it("skips dedup entirely when no trusted proxy is configured — a shared bucket must not silence reports", async () => {
+    // With TRUSTED_PROXY_HOPS=0 every visitor hashes to the same bucket. If
+    // dedup ran on that constant, the first report of a puzzle (e.g. an
+    // uploader's innocuous self-report) would silently swallow every later
+    // report from anyone, site-wide.
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
+    reportFindFirst.mockResolvedValue({ id: "r0" });
+    const res = await callPost(VALID);
+    expect(res.status).toBe(200);
+    expect(reportFindFirst).not.toHaveBeenCalled();
+    expect(reportCreate).toHaveBeenCalledTimes(1);
+    expect(sendReportNotificationMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still enforces the (collective) rate limit when no trusted proxy is configured", async () => {
+    // Skipping dedup must not also skip the limiter, or the default config
+    // would accept unlimited report spam.
+    vi.stubEnv("TRUSTED_PROXY_HOPS", "0");
+    reportCount.mockResolvedValue(5);
+    const res = await callPost(VALID);
+    expect(res.status).toBe(429);
+    expect(reportCreate).not.toHaveBeenCalled();
+  });
+
   it("answers a silent 200 without a new row for a duplicate open report", async () => {
     reportFindFirst.mockResolvedValue({ id: "r0" });
     const res = await callPost(VALID);

@@ -16,6 +16,14 @@ export function isReportCategory(value: string): value is ReportCategory {
 export const REPORT_STATUSES = ["OPEN", "TAKEDOWN", "DISMISSED"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
+/** Same DB → typed-value boundary as isReportCategory, for the status column. */
+export function isReportStatus(value: string): value is ReportStatus {
+  return (REPORT_STATUSES as readonly string[]).includes(value);
+}
+
+/** The decisions a report can be resolved with — everything except OPEN. */
+export type ReportDecision = Exclude<ReportStatus, "OPEN">;
+
 /** Reports allowed per IP hash per window before the endpoint answers 429. */
 export const REPORT_RATE_LIMIT = 5;
 export const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000;

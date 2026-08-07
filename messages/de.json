@@ -132,7 +132,7 @@
     "doneText": "Danke — wir haben deine Meldung erhalten und prüfen sie.",
     "close": "Schließen",
     "failed": "Das Senden der Meldung ist fehlgeschlagen. Bitte versuche es später erneut.",
-    "tooMany": "Zu viele Meldungen von deinem Anschluss. Bitte versuche es später erneut."
+    "tooMany": "Zu viele Meldungen in kurzer Zeit. Bitte versuche es später erneut."
   },
   "admin": {
     "title": "Administration",
@@ -304,7 +304,7 @@
     "alreadyBanned": "Bereits gebannt.",
     "invalidRole": "Ungültige Rolle.",
     "invalidDomain": "Ungültige Domain.",
-    "tooManyReports": "Zu viele Meldungen von deinem Anschluss. Bitte versuche es später erneut.",
+    "tooManyReports": "Zu viele Meldungen in kurzer Zeit. Bitte versuche es später erneut.",
     "storageFailed": "Der Bildspeicher ist derzeit nicht erreichbar. Bitte versuche es erneut.",
     "reportNotFound": "Meldung nicht gefunden."
   },

@@ -5,6 +5,7 @@ import { deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
 import { sendTakedownNotice } from "@/lib/mail";
 import { isReportCategory } from "@/lib/reports";
+import { resolveOpenReports } from "@/lib/reports-server";
 
 export async function DELETE(
   _request: Request,
@@ -57,15 +58,7 @@ export async function DELETE(
       where: { puzzleId: id, status: "OPEN" },
       select: { category: true },
     });
-    await tx.report.updateMany({
-      where: { puzzleId: id, status: "OPEN" },
-      data: {
-        status: "TAKEDOWN",
-        resolvedAt: new Date(),
-        reporterEmail: null,
-        reporterIpHash: null,
-      },
-    });
+    await resolveOpenReports(tx, { puzzleId: id }, "TAKEDOWN");
     return { reportedCategory: openReport?.category ?? null };
   });
   if (!result) {

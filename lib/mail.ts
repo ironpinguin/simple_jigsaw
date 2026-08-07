@@ -83,6 +83,11 @@ export async function sendInviteEmail(
   });
 }
 
+// Known gap: both report mails go out in the default locale. Their recipients
+// (an admin, the reported puzzle's owner) are not the person making the
+// request, so the acting user's locale would be the wrong one to use — the
+// recipient's own language needs a `locale` column on User, populated at
+// signup. Until then the `locale` parameter is only reachable from tests.
 export async function sendReportNotification(
   to: string,
   puzzleTitle: string,

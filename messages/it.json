@@ -132,7 +132,7 @@
     "doneText": "Grazie — abbiamo ricevuto la tua segnalazione e la esamineremo.",
     "close": "Chiudi",
     "failed": "Invio della segnalazione non riuscito. Riprova più tardi.",
-    "tooMany": "Troppe segnalazioni dalla tua connessione. Riprova più tardi."
+    "tooMany": "Troppe segnalazioni in poco tempo. Riprova più tardi."
   },
   "admin": {
     "title": "Amministrazione",
@@ -304,7 +304,7 @@
     "alreadyBanned": "Già bloccato.",
     "invalidRole": "Ruolo non valido.",
     "invalidDomain": "Dominio non valido.",
-    "tooManyReports": "Troppe segnalazioni dalla tua connessione. Riprova più tardi.",
+    "tooManyReports": "Troppe segnalazioni in poco tempo. Riprova più tardi.",
     "storageFailed": "L’archivio immagini non è al momento raggiungibile. Riprova.",
     "reportNotFound": "Segnalazione non trovata."
   },

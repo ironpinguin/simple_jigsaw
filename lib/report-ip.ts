@@ -3,6 +3,29 @@
 
 import { createHmac } from "crypto";
 
+// A malformed value must not quietly behave like "no proxy": a deployment that
+// does sit behind nginx would lose per-client hashing with no sign of it.
+function trustedProxyHops(): number {
+  const raw = process.env.TRUSTED_PROXY_HOPS?.trim();
+  if (!raw) return 0;
+  const hops = Number(raw);
+  if (!Number.isInteger(hops) || hops < 0) {
+    throw new Error(`TRUSTED_PROXY_HOPS must be a non-negative integer, got ${JSON.stringify(raw)}`);
+  }
+  return hops;
+}
+
+/**
+ * Whether x-forwarded-for can be trusted to identify a single client. When it
+ * cannot, hashReporterIp returns one bucket shared by every visitor, so the
+ * hash may only be used for collective rate limiting — never to decide that
+ * two reports came from the same person (see the dedup check in
+ * app/api/report/route.ts).
+ */
+export function hasTrustedProxy(): boolean {
+  return trustedProxyHops() >= 1;
+}
+
 /**
  * HMAC of the reporter's IP so rate limiting and dedup work without ever
  * storing the plain address. x-forwarded-for is client-forgeable, so it is
@@ -22,7 +45,7 @@ export function hashReporterIp(forwardedFor: string | null): string {
   if (!secret) {
     throw new Error("AUTH_SECRET must be set — reporter IP hashes would be unkeyed and reversible");
   }
-  const hops = Number.parseInt(process.env.TRUSTED_PROXY_HOPS ?? "", 10);
+  const hops = trustedProxyHops();
   const entries = (forwardedFor ?? "")
     .split(",")
     .map((e) => e.trim())

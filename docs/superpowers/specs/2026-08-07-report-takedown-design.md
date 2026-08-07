@@ -48,6 +48,7 @@ model Report {
 
   @@index([status])
   @@index([reporterIpHash])
+  @@index([puzzleId])
 }
 ```
 
@@ -63,15 +64,27 @@ Postgres and SQLite, `npm run db:push`.
 2. The puzzle must exist **and be public**. Unknown and private both answer
    **404** — same no-existence-oracle line as PR #29; a stranger cannot see a
    private puzzle, so they cannot report it either.
-3. Client IP from the last `x-forwarded-for` entry — the one appended by the
-   deployment's own trusted reverse proxy, since earlier entries are
-   client-supplied and spoofable — hashed as `HMAC-SHA256(AUTH_SECRET, ip)`.
-   The plain IP is never stored or logged.
+3. Client IP hashed as `HMAC-SHA256(AUTH_SECRET, ip)`; the plain IP is never
+   stored or logged, and a missing `AUTH_SECRET` throws rather than producing
+   unkeyed hashes that are reversible over the IPv4 space. `x-forwarded-for`
+   is client-forgeable, so it is consulted only when `TRUSTED_PROXY_HOPS`
+   declares how many trailing entries the deployment's own proxies append
+   (1 → last entry, 2 → second-to-last). At the default `0` — Next.js exposed
+   directly, as in the shipped docker-compose — the header is ignored and
+   every visitor hashes into one shared `"unknown"` bucket. A malformed value
+   throws instead of silently degrading a proxied deployment to that bucket.
 4. **Rate limit:** more than 5 reports from the same IP hash in the last hour
-   → 429 (translated error).
+   → 429 (translated error). Without a trusted proxy this bucket is shared, so
+   the limit is collective; the message says "too many reports in a short
+   time" rather than blaming the reporter's own connection.
 5. **Dedup:** an existing `OPEN` report with the same IP hash for the same
    puzzle → respond 200 as if created, but create nothing. The reporter
    cannot tell they were deduplicated, so the endpoint is not an oracle.
+   **Skipped entirely without a trusted proxy**: a bucket every visitor shares
+   cannot tell two reporters apart, so deduplicating on it would let the first
+   open report of a puzzle — including an uploader's own innocuous
+   self-report — silently swallow every later report of it. A duplicate row
+   costs an admin one click; a swallowed report costs the report.
 6. Create the report; send the admin notification email to every user with
    role `ADMIN`. Mail failure is logged but never fails the request — the
    queue is the source of truth, the mail is only a ping.
@@ -88,11 +101,21 @@ Postgres and SQLite, `npm run db:push`.
    translated error and do **not** delete the DB row. No state where the
    image lives on orphaned while the row is gone. The admin sees the failure
    and retries. This is the pattern #18 will adopt.
-4. Delete the DB row. Mark every `OPEN` report for this `puzzleId` as
-   `TAKEDOWN`, set `resolvedAt`, null `reporterEmail`/`reporterIpHash` —
-   one takedown resolves all reports of the same puzzle.
-5. Send the owner notice email (title + category). Mail failure is logged;
-   the takedown stands.
+4. Delete the DB row and resolve the reports **in one transaction**: every
+   `OPEN` report for this `puzzleId` becomes `TAKEDOWN` with `resolvedAt` set
+   and `reporterEmail`/`reporterIpHash` nulled (one takedown resolves all
+   reports of the same puzzle). A failure between the two would otherwise
+   leave the puzzle gone but its reports open and still holding reporter PII,
+   and the admin's retry would hit a misleading 404. Both writes go through
+   `resolveOpenReports` in `lib/reports-server.ts`, the single owner of
+   "resolved implies anonymized".
+5. Send the owner notice email. It names the title, and the category only when
+   an open report actually carried a canonical one — otherwise it says the
+   puzzle was removed after a review rather than inventing a reason nobody
+   filed. Mail failure is logged and the takedown stands, but the response
+   carries `ownerNotified: false` and the queue tells the admin to contact the
+   owner another way; the takedown must not look complete when nobody was
+   informed.
 
 ### `PATCH /api/admin/reports/[id]`
 
@@ -151,7 +174,12 @@ bodies in the `email` namespace (DE/EN/IT):
 - `sendTakedownNotice(to, puzzleTitle, category, locale)` — to the owner
   after a takedown.
 
-We store no per-user locale, so both default to the default locale (DE).
+We store no per-user locale, so both default to the default locale (DE) and
+their EN/IT translations are currently unreachable in production. The acting
+user's locale is not a substitute: the recipient is an admin or the puzzle's
+owner, not the person who made the request. Sending in the recipient's own
+language needs a `locale` column on `User`, populated at signup — a follow-up
+`db-change`, not part of this PR.
 
 ## Error handling summary
 

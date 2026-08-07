@@ -3,6 +3,7 @@ import { setRequestLocale } from "next-intl/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import ReportsAdmin, { type ReportRow } from "@/components/admin/ReportsAdmin";
+import { isReportStatus } from "@/lib/reports";
 
 // Per-request page (auth + DB); never prerender/query the DB at build time.
 export const dynamic = "force-dynamic";
@@ -44,7 +45,11 @@ export default async function AdminReportsPage({
     category: r.category,
     message: r.message,
     reporterEmail: r.reporterEmail,
-    status: r.status,
+    // The status column is a plain string (SQLite has no enums). Narrow it
+    // here so the queue's decision rendering is checked against the union;
+    // a value outside it can only have come from a hand-edited row, and
+    // showing it as still open is the safe reading.
+    status: isReportStatus(r.status) ? r.status : "OPEN",
     createdAt: r.createdAt.toISOString(),
     resolvedAt: r.resolvedAt?.toISOString() ?? null,
     puzzleExists: existing.has(r.puzzleId),

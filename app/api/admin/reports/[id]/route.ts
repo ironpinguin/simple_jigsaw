@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getErrorT } from "@/lib/i18n-server";
+import { resolveOpenReports } from "@/lib/reports-server";
 
 const ActionSchema = z.object({ action: z.literal("dismiss") });
 
@@ -20,18 +21,10 @@ export async function PATCH(
   }
   const { id } = await params;
 
-  // Scoped to OPEN so dismissing twice (or a report already resolved by a
-  // takedown) is a 404 and anonymization happens exactly once.
-  const updated = await prisma.report.updateMany({
-    where: { id, status: "OPEN" },
-    data: {
-      status: "DISMISSED",
-      resolvedAt: new Date(),
-      reporterEmail: null,
-      reporterIpHash: null,
-    },
-  });
-  if (updated.count === 0) {
+  // Only OPEN reports resolve, so dismissing twice (or a report a takedown
+  // already resolved) is a 404 and anonymization happens exactly once.
+  const resolved = await resolveOpenReports(prisma, { id }, "DISMISSED");
+  if (resolved === 0) {
     return NextResponse.json({ error: t("reportNotFound") }, { status: 404 });
   }
 
