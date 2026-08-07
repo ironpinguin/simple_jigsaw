@@ -1,7 +1,9 @@
+import { randomUUID } from "crypto";
+import { extname } from "path";
 import { NextResponse } from "next/server";
 import { getSessionUser, getSessionViewer } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { deleteObject } from "@/lib/storage";
+import { copyObject, deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
 import { z } from "zod";
@@ -61,20 +63,74 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  // updateMany scoped to ownerId makes lookup, ownership check and write one
-  // atomic statement — a concurrently deleted puzzle just yields count 0
-  // instead of a P2025 500. Zero rows covers a missing puzzle and someone
-  // else's alike, answered 404 — visibility is the owner's call, and the
-  // route must not confirm a foreign puzzle exists (same policy as DELETE).
+
+  if (parsed.data.isPublic) {
+    // Making a puzzle public needs no rotation; keep the single atomic
+    // statement (lookup, ownership check and write in one) from before.
+    const updated = await prisma.puzzle.updateMany({
+      where: { id, ownerId: user.id },
+      data: { isPublic: true },
+    });
+    if (updated.count === 0) {
+      return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+    }
+    return NextResponse.json({ puzzle: { id, isPublic: true } });
+  }
+
+  // Making a puzzle private rotates its imageKey: browsers may hold the old
+  // public URL with a year-long immutable cache header, and a header change
+  // cannot purge those. A fresh key makes every previously shared URL stop
+  // resolving. 404 covers missing and foreign alike (no existence oracle).
+  const puzzle = await prisma.puzzle.findUnique({
+    where: { id },
+    select: { ownerId: true, imageKey: true, isPublic: true },
+  });
+  if (!puzzle || puzzle.ownerId !== user.id) {
+    return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+  }
+  if (!puzzle.isPublic) {
+    // Already private — nothing to change, nothing to rotate.
+    return NextResponse.json({ puzzle: { id, isPublic: false } });
+  }
+
+  const newKey = `puzzles/${randomUUID()}${extname(puzzle.imageKey) || ".webp"}`;
+  // Copy first: the flip only proceeds once the object exists under the new
+  // key, so there is never a DB row whose key has no object behind it.
+  try {
+    await copyObject(puzzle.imageKey, newKey);
+  } catch (err) {
+    console.error(`[puzzles] imageKey rotation copy for ${id} failed:`, err);
+    return NextResponse.json({ error: t("storageFailed") }, { status: 502 });
+  }
+
+  // imageKey in the filter: if a concurrent request already rotated or the
+  // puzzle vanished, this matches zero rows instead of double-rotating.
   const updated = await prisma.puzzle.updateMany({
-    where: { id, ownerId: user.id },
-    data: { isPublic: parsed.data.isPublic },
+    where: { id, ownerId: user.id, imageKey: puzzle.imageKey },
+    data: { isPublic: false, imageKey: newKey },
   });
   if (updated.count === 0) {
+    await deleteObject(newKey).catch((err) => {
+      console.error(`[puzzles] cleanup of rotated object ${newKey} failed:`, err);
+    });
     return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
   }
 
-  return NextResponse.json({ puzzle: { id, isPublic: parsed.data.isPublic } });
+  // Old object cleanup is reference-counted (the owner may reuse a key across
+  // puzzles) and best-effort: image delivery resolves keys via the puzzle
+  // table, so an unreferenced key already answers 404 — a leftover object is
+  // unreachable through the API, but a failure must stay observable.
+  const stillReferenced = await prisma.puzzle.findFirst({
+    where: { imageKey: puzzle.imageKey, id: { not: id } },
+    select: { id: true },
+  });
+  if (!stillReferenced) {
+    await deleteObject(puzzle.imageKey).catch((err) => {
+      console.error(`[puzzles] cleanup of old object ${puzzle.imageKey} failed:`, err);
+    });
+  }
+
+  return NextResponse.json({ puzzle: { id, isPublic: false } });
 }
 
 export async function DELETE(
