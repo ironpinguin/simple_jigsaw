@@ -268,7 +268,8 @@
     "invalidRole": "Invalid role.",
     "invalidDomain": "Invalid domain.",
     "tooManyReports": "Too many reports from your connection. Please try again later.",
-    "storageFailed": "The image storage is currently unavailable. Please try again."
+    "storageFailed": "The image storage is currently unavailable. Please try again.",
+    "reportNotFound": "Report not found."
   },
   "email": {
     "verifySubject": "Confirm your email — Jigsaw",
