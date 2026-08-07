@@ -1,11 +1,17 @@
 // Report "enum" values as string unions (same reasoning as lib/roles.ts: the
-// DB columns are plain strings so one schema runs on Postgres and SQLite),
-// plus the reporter-IP hashing used by the anonymous report endpoint.
-
-import { createHmac } from "crypto";
+// DB columns are plain strings so one schema runs on Postgres and SQLite).
+// Pure and dependency-free so client components can import the value sets;
+// the reporter-IP hashing lives in lib/report-ip.ts (node:crypto, server-only).
 
 export const REPORT_CATEGORIES = ["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"] as const;
 export type ReportCategory = (typeof REPORT_CATEGORIES)[number];
+
+// Guard for DB → typed-value boundaries: category columns are plain strings,
+// so anything read back must be narrowed before it reaches a translation
+// lookup like t(`category${category}`), which throws on an unknown key.
+export function isReportCategory(value: string): value is ReportCategory {
+  return (REPORT_CATEGORIES as readonly string[]).includes(value);
+}
 
 export const REPORT_STATUSES = ["OPEN", "TAKEDOWN", "DISMISSED"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
@@ -14,17 +20,6 @@ export type ReportStatus = (typeof REPORT_STATUSES)[number];
 export const REPORT_RATE_LIMIT = 5;
 export const REPORT_RATE_WINDOW_MS = 60 * 60 * 1000;
 
-/**
- * HMAC of the reporter's IP (last x-forwarded-for entry) so rate limiting
- * and dedup work without ever storing the plain address. The hash uses the
- * LAST x-forwarded-for entry because that is the one appended by the
- * deployment's own trusted reverse proxy — earlier entries are
- * client-supplied and spoofable. Keyed with AUTH_SECRET so the hashes are
- * useless outside this deployment. Without any proxy the header is absent
- * and every visitor shares one collectively rate-limited "unknown" bucket.
- */
-export function hashReporterIp(forwardedFor: string | null): string {
-  const entries = (forwardedFor ?? "").split(",");
-  const ip = entries[entries.length - 1].trim() || "unknown";
-  return createHmac("sha256", process.env.AUTH_SECRET ?? "").update(ip).digest("hex");
-}
+/** Message length bounds, shared by the API schema and the report form. */
+export const REPORT_MESSAGE_MIN = 10;
+export const REPORT_MESSAGE_MAX = 2000;

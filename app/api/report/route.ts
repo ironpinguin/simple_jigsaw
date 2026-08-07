@@ -5,15 +5,17 @@ import { getErrorT } from "@/lib/i18n-server";
 import { sendReportNotification } from "@/lib/mail";
 import {
   REPORT_CATEGORIES,
+  REPORT_MESSAGE_MAX,
+  REPORT_MESSAGE_MIN,
   REPORT_RATE_LIMIT,
   REPORT_RATE_WINDOW_MS,
-  hashReporterIp,
 } from "@/lib/reports";
+import { hashReporterIp } from "@/lib/report-ip";
 
 const ReportSchema = z.object({
   puzzleId: z.string().min(1),
   category: z.enum(REPORT_CATEGORIES),
-  message: z.string().trim().min(10).max(2000),
+  message: z.string().trim().min(REPORT_MESSAGE_MIN).max(REPORT_MESSAGE_MAX),
   email: z.string().email().optional(),
 });
 
@@ -70,6 +72,11 @@ export async function POST(request: Request) {
       where: { role: "ADMIN" },
       select: { email: true },
     });
+    if (admins.length === 0) {
+      // Without this line the no-admins case is indistinguishable from
+      // success, and reports queue up unseen indefinitely.
+      console.error("[report] no ADMIN users to notify — the report will sit unseen in the queue");
+    }
     await Promise.all(
       admins.map((a) =>
         sendReportNotification(a.email, puzzle.title, parsed.data.category).catch((err) => {
