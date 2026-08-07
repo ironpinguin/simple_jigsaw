@@ -278,13 +278,13 @@
     "inviteAction": "Imposta la tua password e attiva il tuo account:",
     "inviteExpiry": "Il link è valido per 7 giorni.",
     "reportSubject": "Un puzzle è stato segnalato",
-    "reportIntro": "Il puzzle \u201C{title}\u201D è stato segnalato ({category}).",
-    "reportAction": "Esamina la segnalazione nell'area admin:",
+    "reportIntro": "Il puzzle “{title}” è stato segnalato ({category}).",
+    "reportAction": "Esamina la segnalazione nell’area admin:",
     "takedownSubject": "Il tuo puzzle è stato rimosso",
-    "takedownIntro": "Il tuo puzzle \u201C{title}\u201D è stato rimosso da un amministratore in seguito a una segnalazione ({category}).",
+    "takedownIntro": "Il tuo puzzle “{title}” è stato rimosso da un amministratore in seguito a una segnalazione ({category}).",
     "categoryNSFW": "Contenuto esplicito",
     "categoryILLEGAL": "Violenza o contenuto illegale",
-    "categoryCOPYRIGHT": "Violazione del diritto d'autore",
+    "categoryCOPYRIGHT": "Violazione del diritto d’autore",
     "categoryOTHER": "Altro"
   }
 }
