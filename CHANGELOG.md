@@ -61,10 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and leaving the image behind in storage — where it is no longer reachable
   through the app, but also no longer recorded anywhere, so nothing says it
   still needs erasing. Reports are cleaned up at both ends in the same step:
-  open reports about the deleted puzzles are resolved instead of being left
-  pointing at rows that no longer exist, and reports the account itself filed
-  against other people's puzzles lose the reporter's address and IP hash while
-  staying open for review. (#18)
+  open reports about the deleted puzzles leave the queue with a status of
+  their own — *Account deleted*, not *Removed*, because nobody reviewed them
+  and a user can delete their own account — and reports the account itself
+  filed against other people's puzzles lose the reporter's address and IP hash
+  while staying open for review. How many pending reports a deletion closed is
+  logged. (#18)
 - Puzzle visibility is now enforced: a non-public puzzle's image and metadata
   answer 404 to anyone but the owner or an admin, and private images are never
   cached. Public images are cached for a day instead of a year, so making a

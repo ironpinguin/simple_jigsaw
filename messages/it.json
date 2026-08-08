@@ -206,6 +206,7 @@
     "dismissFailed": "Respingimento della segnalazione non riuscito.",
     "decisionTakedown": "Rimosso",
     "decisionDismissed": "Respinta",
+    "decisionAccountDeleted": "Account eliminato",
     "categoryNSFW": "Contenuto esplicito",
     "categoryILLEGAL": "Violenza o contenuto illegale",
     "categoryCOPYRIGHT": "Violazione del diritto d’autore",

@@ -100,7 +100,23 @@ export async function deleteAccount(userId: string): Promise<boolean> {
   // in the open queue as manual work until an admin dismisses them.
   return prisma.$transaction(async (tx) => {
     if (puzzles.length > 0) {
-      await resolveOpenReports(tx, { puzzleId: { in: puzzles.map((p) => p.id) } }, "TAKEDOWN");
+      // ACCOUNT_DELETED, not TAKEDOWN: nobody reviewed these. A user can
+      // delete their own account, so booking it as a removal would let the
+      // subject of an abuse report close it and leave an admin decision in
+      // the audit list that no admin made.
+      const closed = await resolveOpenReports(
+        tx,
+        { puzzleId: { in: puzzles.map((p) => p.id) } },
+        "ACCOUNT_DELETED",
+      );
+      // Pending abuse cases disappearing from the queue is worth a trace:
+      // the puzzle is gone, but an operator may still want to know it was
+      // reported before its owner left.
+      if (closed > 0) {
+        console.warn(
+          `[account] deleting ${userId} closed ${closed} open report(s) as ACCOUNT_DELETED`,
+        );
+      }
     }
     // The other end: reports this account filed against other people's
     // puzzles. Scoping by puzzle above never reaches them, so without this

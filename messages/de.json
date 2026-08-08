@@ -206,6 +206,7 @@
     "dismissFailed": "Das Abweisen der Meldung ist fehlgeschlagen.",
     "decisionTakedown": "Entfernt",
     "decisionDismissed": "Abgewiesen",
+    "decisionAccountDeleted": "Konto gelöscht",
     "categoryNSFW": "Expliziter Inhalt",
     "categoryILLEGAL": "Gewalt oder illegaler Inhalt",
     "categoryCOPYRIGHT": "Urheberrechtsverletzung",

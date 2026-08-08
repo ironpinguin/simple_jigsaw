@@ -200,9 +200,9 @@ describe("deleteAccount", () => {
   });
 
   it("resolves and anonymizes the open reports of the deleted puzzles", async () => {
-    // Report has no foreign key to Puzzle, so nothing else would ever resolve
-    // them — they would stay OPEN, pointing at rows that no longer exist, with
-    // the reporter's email and IP hash retained.
+    // Report has no foreign key to Puzzle, so nothing resolves them
+    // automatically — they would sit in the open queue pointing at rows that
+    // no longer exist, with the reporter's email and IP hash retained.
     withPuzzles([
       { id: "p1", imageKey: "puzzles/a.webp" },
       { id: "p2", imageKey: "puzzles/b.webp" },
@@ -213,7 +213,9 @@ describe("deleteAccount", () => {
     expect(txReportUpdateMany).toHaveBeenCalledWith({
       where: { puzzleId: { in: ["p1", "p2"] }, status: "OPEN" },
       data: expect.objectContaining({
-        status: "TAKEDOWN",
+        // Not TAKEDOWN: nobody reviewed these, and a self-deleting user must
+        // not be able to book a removal an admin never made.
+        status: "ACCOUNT_DELETED",
         reporterEmail: null,
         reporterIpHash: null,
       }),
@@ -233,6 +235,28 @@ describe("deleteAccount", () => {
   it("reports a concurrent delete instead of throwing", async () => {
     txUserDeleteMany.mockResolvedValue({ count: 0 });
     await expect(deleteAccount("u1")).resolves.toBe(false);
+  });
+
+  it("leaves a trace when pending reports vanish with the account", async () => {
+    // An abuse case leaving the queue without an admin ever seeing it must not
+    // be silent, even though there is nothing left to act on.
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    withPuzzles([{ id: "p1", imageKey: "puzzles/a.webp" }]);
+    txReportUpdateMany.mockResolvedValue({ count: 2 });
+
+    await deleteAccount("u1");
+
+    expect(warned).toHaveBeenCalledWith(expect.stringContaining("2 open report(s)"));
+  });
+
+  it("says nothing when the account had no reported puzzles", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    withPuzzles([{ id: "p1", imageKey: "puzzles/a.webp" }]);
+    txReportUpdateMany.mockResolvedValue({ count: 0 });
+
+    await deleteAccount("u1");
+
+    expect(warned).not.toHaveBeenCalled();
   });
 
   it("strips the reporter contact from the reports the account filed", async () => {

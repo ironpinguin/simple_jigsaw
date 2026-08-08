@@ -13,7 +13,12 @@ export function isReportCategory(value: string): value is ReportCategory {
   return (REPORT_CATEGORIES as readonly string[]).includes(value);
 }
 
-export const REPORT_STATUSES = ["OPEN", "TAKEDOWN", "DISMISSED"] as const;
+// ACCOUNT_DELETED is not a moderation decision an admin makes: it records that
+// the reported puzzle went away with its owner's account, so the report left
+// the queue without anyone reviewing it. Recording that as TAKEDOWN would put
+// a removal in the audit list that no admin performed — and since a user can
+// delete their own account, it would let the subject of a report close it.
+export const REPORT_STATUSES = ["OPEN", "TAKEDOWN", "DISMISSED", "ACCOUNT_DELETED"] as const;
 export type ReportStatus = (typeof REPORT_STATUSES)[number];
 
 /** Same DB → typed-value boundary as isReportCategory, for the status column. */
