@@ -288,6 +288,7 @@
     "registrationDisabled": "Registration is disabled.",
     "termsNotAccepted": "The terms of use must be accepted. If the form shows no checkbox for this, please reload the page.",
     "verificationEmailFailed": "The account was created, but the verification email could not be sent. Please contact the operator.",
+    "inviteEmailFailed": "The account was created, but the invitation email could not be sent. Please check the mail configuration and the server log.",
     "passwordMin": "Password must be at least 8 characters.",
     "invalidEmail": "Invalid email.",
     "noFile": "No file submitted.",

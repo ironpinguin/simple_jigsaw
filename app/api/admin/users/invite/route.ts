@@ -36,8 +36,17 @@ export async function POST(request: Request) {
     select: { id: true },
   });
 
-  const token = await createToken(user.id, "INVITE");
-  await sendInviteEmail(email, token, await localeFromCookie());
+  try {
+    const token = await createToken(user.id, "INVITE");
+    await sendInviteEmail(email, token, await localeFromCookie());
+  } catch (error) {
+    // The password-less row already exists here, so a retry only yields the 409
+    // above — the account can neither log in nor be re-invited from the UI. Say
+    // that instead of an opaque 500, and leave a trace with the user id so an
+    // operator can find the row a "the invite never arrived" report is about.
+    console.error(`[admin invite] invite email for user ${user.id} failed:`, error);
+    return NextResponse.json({ error: t("inviteEmailFailed") }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true }, { status: 201 });
 }

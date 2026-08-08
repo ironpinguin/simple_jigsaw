@@ -288,6 +288,7 @@
     "registrationDisabled": "La registrazione è disattivata.",
     "termsNotAccepted": "Le condizioni d'uso devono essere accettate. Se il modulo non mostra la casella, ricarica la pagina.",
     "verificationEmailFailed": "L'account è stato creato, ma non è stato possibile inviare l'e-mail di conferma. Contatta il gestore dell'istanza.",
+    "inviteEmailFailed": "L'account è stato creato, ma non è stato possibile inviare l'e-mail di invito. Controlla la configurazione della posta e il log del server.",
     "passwordMin": "La password deve avere almeno 8 caratteri.",
     "invalidEmail": "E-mail non valida.",
     "noFile": "Nessun file inviato.",

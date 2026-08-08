@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pages, which affects every page, not just the legal ones.
 
 ### Fixed
+- An admin invite whose email cannot be sent now answers with a translated
+  message saying the account was created but the mail failed, and logs the
+  affected user id server-side, instead of an opaque 500 with no trace (#28).
 - Puzzle visibility is now enforced: a non-public puzzle's image and metadata
   answer 404 to anyone but the owner or an admin, and private images are never
   cached. Public images are cached for a day instead of a year, so making a
