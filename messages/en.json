@@ -113,7 +113,16 @@
     "copied": "Copied!",
     "delete": "Delete",
     "confirmDelete": "Really delete this puzzle?",
-    "deleteFailed": "Delete failed."
+    "deleteFailed": "Delete failed.",
+    "dangerTitle": "Delete account",
+    "dangerIntro": "Your account and all your puzzles will be deleted for good — including the images you uploaded. This cannot be undone.",
+    "deleteAccount": "Delete account",
+    "confirmPassword": "Enter your password to confirm",
+    "confirmDeleteAccount": "Yes, delete my account for good",
+    "cancel": "Cancel",
+    "deleting": "Deleting account…",
+    "deleteAccountFailed": "The account could not be deleted.",
+    "deletedButSignOutFailed": "Your account was deleted, but signing out failed. Please close the browser or sign out manually."
   },
   "report": {
     "reportLink": "Report",
@@ -197,6 +206,7 @@
     "dismissFailed": "Dismissing the report failed.",
     "decisionTakedown": "Removed",
     "decisionDismissed": "Dismissed",
+    "decisionAccountDeleted": "Account deleted",
     "categoryNSFW": "Explicit content",
     "categoryILLEGAL": "Violence or illegal content",
     "categoryCOPYRIGHT": "Copyright infringement",
@@ -302,6 +312,7 @@
     "accountNotFound": "Account not found.",
     "lastAdminDemote": "The last admin cannot be demoted.",
     "lastAdminDelete": "The last admin cannot be deleted.",
+    "wrongPassword": "That password is not correct.",
     "alreadyBanned": "Already banned.",
     "invalidRole": "Invalid role.",
     "invalidDomain": "Invalid domain.",

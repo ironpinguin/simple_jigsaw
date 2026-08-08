@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Users can delete their own account from the my-puzzles page (GDPR Art. 17).
+  The step asks for the password before it runs, removes the account, its
+  puzzles and every image behind them, and signs the browser out afterwards.
+  The last remaining admin is refused, so an instance cannot be left without
+  one. (#18)
 - Anyone can report a puzzle (category + description, no account needed); admins
   are notified by email and review reports in a new admin queue, where they can
   delete a single puzzle including its image or dismiss the report. The owner
@@ -57,6 +62,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper read when the chosen locale deviates from the browser's. An explicit
   choice still wins; `Accept-Language` is used when there is nothing stored
   (#35).
+- Deleting an account no longer swallows a failed image deletion. Both the
+  self-service and the admin path remove every image first and abort with a
+  translated error if the storage refuses, instead of dropping the account row
+  and leaving the image behind in storage — where it is no longer reachable
+  through the app, but also no longer recorded anywhere, so nothing says it
+  still needs erasing. Reports are cleaned up at both ends in the same step:
+  open reports about the deleted puzzles leave the queue with a status of
+  their own — *Account deleted*, not *Removed*, because nobody reviewed them
+  and a user can delete their own account — and reports the account itself
+  filed against other people's puzzles lose the reporter's address and IP hash
+  while staying open for review. How many pending reports a deletion closed is
+  logged. (#18)
 - An admin invite that cannot be delivered now answers with a translated
   message saying the account was created but the invitation did not go out, and
   pointing at the recovery: delete the stranded account and invite again. The

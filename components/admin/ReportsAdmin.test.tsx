@@ -202,4 +202,25 @@ describe("ReportsAdmin", () => {
     expect(buttonByText(messages.admin.dismiss)).toBeDefined();
     expect(container.textContent).toContain(messages.admin.reportPuzzleDeleted);
   });
+
+  it("labels a report closed by an account deletion as its own outcome", () => {
+    // The audit list used to read "takedown or else dismissed", so this would
+    // have appeared as a decision an admin made — about a report nobody saw.
+    mount(
+      [],
+      [
+        {
+          ...OPEN,
+          status: "ACCOUNT_DELETED",
+          reporterEmail: null,
+          resolvedAt: "2026-08-08T10:00:00.000Z",
+          puzzleExists: false,
+        },
+      ],
+    );
+
+    expect(container.textContent).toContain(messages.admin.decisionAccountDeleted);
+    expect(container.textContent).not.toContain(messages.admin.decisionDismissed);
+    expect(container.textContent).not.toContain(messages.admin.decisionTakedown);
+  });
 });

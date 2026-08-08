@@ -95,7 +95,8 @@ model Report {
   // Both nulled when the report is resolved (anonymization).
   reporterEmail  String?
   reporterIpHash String?
-  // "OPEN" | "TAKEDOWN" | "DISMISSED" (see lib/reports.ts)
+  // "OPEN" | "TAKEDOWN" | "DISMISSED" | "ACCOUNT_DELETED" (see lib/reports.ts).
+  // A plain string, so a new value is a code change and needs no migration.
   status         String    @default("OPEN")
   createdAt      DateTime  @default(now())
   resolvedAt     DateTime?
