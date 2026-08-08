@@ -20,8 +20,9 @@ language. Every string change touches all three files.
 Catalogs: `messages/de.json`, `messages/en.json`, `messages/it.json`. Locales and
 the URL prefix routing are declared in `i18n/routing.ts`.
 
-API routes are **not** locale-prefixed — `lib/i18n-server.ts` reads the caller's
-language from the `NEXT_LOCALE` cookie that the next-intl middleware sets. So an
+API routes are **not** locale-prefixed — `resolveRequestLocale()` in
+`lib/i18n-server.ts` recovers the caller's language from the `NEXT_LOCALE`
+cookie, falling back to the `Accept-Language` header and then to `de`. So an
 API error message needs a key in `errors`, not a hard-coded German string.
 
 ## The recipe

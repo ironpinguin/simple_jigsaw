@@ -6,7 +6,7 @@ import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
 import { createToken } from "@/lib/tokens";
 import { sendInviteEmail } from "@/lib/mail";
-import { getErrorT, localeFromCookie } from "@/lib/i18n-server";
+import { getErrorT, resolveRequestLocale } from "@/lib/i18n-server";
 
 const Schema = z.object({ email: z.string().email() });
 
@@ -36,9 +36,9 @@ export async function POST(request: Request) {
     select: { id: true },
   });
 
-  // Reading the cookie is unrelated to delivery — keep it out of the catch below
-  // so it cannot be reported as a failed invite.
-  const locale = await localeFromCookie();
+  // Resolving the locale is unrelated to delivery — keep it out of the catch
+  // below so it cannot be reported as a failed invite.
+  const locale = await resolveRequestLocale();
 
   try {
     const token = await createToken(user.id, "INVITE");

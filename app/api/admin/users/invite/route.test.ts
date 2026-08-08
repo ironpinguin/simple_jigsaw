@@ -19,9 +19,10 @@ vi.mock("@/lib/tokens", () => ({ createToken: createTokenMock }));
 vi.mock("@/lib/mail", () => ({ sendInviteEmail: sendInviteEmailMock }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
-  // Deliberately not "de": that is both the default locale and the fallback
-  // inside resolveLocale, so it would still pass if the cookie were ignored.
-  localeFromCookie: async () => "it",
+  // Deliberately not "de": that is the default locale and the fallback in both
+  // resolveRequestLocale and mail.ts's resolveLocale, so the assertion would
+  // still pass if the route dropped the locale on the floor.
+  resolveRequestLocale: async () => "it",
 }));
 
 import { POST } from "./route";

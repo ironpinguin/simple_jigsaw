@@ -9,7 +9,7 @@ import { sendVerificationEmail } from "@/lib/mail";
 import { isRegistrationEnabled } from "@/lib/registration";
 import { TERMS_VERSION } from "@/lib/legal";
 import { RegisterSchema, signupErrorKey } from "@/lib/signup";
-import { getErrorT, localeFromCookie } from "@/lib/i18n-server";
+import { getErrorT, resolveRequestLocale } from "@/lib/i18n-server";
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -55,9 +55,13 @@ export async function POST(request: Request) {
     select: { id: true },
   });
 
+  // Resolving the locale is unrelated to delivery — keep it out of the catch
+  // below so it cannot be reported as a failed verification mail.
+  const locale = await resolveRequestLocale();
+
   try {
     const token = await createToken(user.id, "EMAIL_VERIFY");
-    await sendVerificationEmail(email, token, await localeFromCookie());
+    await sendVerificationEmail(email, token, locale);
   } catch (error) {
     // The account already exists here — a retry only yields the 409. Say what
     // actually happened instead of an opaque 500, and leave a server-side
