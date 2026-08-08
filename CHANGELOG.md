@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pages, which affects every page, not just the legal ones.
 
 ### Fixed
+- API error messages and transactional mails now follow the visitor's browser
+  language instead of falling back to German. They were German for exactly the
+  visitors browsing in their own language — an English browser on `/en`, an
+  Italian one on `/it` — because next-intl only stores the locale cookie the
+  helper read when the chosen locale deviates from the browser's. An explicit
+  choice still wins; `Accept-Language` is used when there is nothing stored
+  (#35).
 - An admin invite that cannot be delivered now answers with a translated
   message saying the account was created but the invitation did not go out, and
   pointing at the recovery: delete the stranded account and invite again. The
