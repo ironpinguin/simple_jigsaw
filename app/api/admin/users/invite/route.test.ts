@@ -19,7 +19,9 @@ vi.mock("@/lib/tokens", () => ({ createToken: createTokenMock }));
 vi.mock("@/lib/mail", () => ({ sendInviteEmail: sendInviteEmailMock }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
-  localeFromCookie: async () => "de",
+  // Deliberately not "de": that is both the default locale and the fallback
+  // inside resolveLocale, so it would still pass if the cookie were ignored.
+  localeFromCookie: async () => "it",
 }));
 
 import { POST } from "./route";
@@ -66,7 +68,23 @@ describe("POST /api/admin/users/invite", () => {
   it("creates the row and sends the invite", async () => {
     const res = await callPost({ email: "New@Example.com" });
     expect(res.status).toBe(201);
-    expect(sendInviteEmailMock).toHaveBeenCalledWith("new@example.com", "tok", "de");
+    expect(sendInviteEmailMock).toHaveBeenCalledWith("new@example.com", "tok", "it");
+  });
+
+  it("creates a password-less, unverified USER row", async () => {
+    // What makes this an invite rather than an account: without these three the
+    // form would mint a usable — possibly pre-verified or privileged — login.
+    await callPost({ email: "new@example.com" });
+    expect(userCreate.mock.calls[0][0]).toMatchObject({
+      data: { email: "new@example.com", passwordHash: null, role: "USER", emailVerified: null },
+    });
+  });
+
+  it("mints an INVITE token for the new row", async () => {
+    // A wrong kind still sends a mail, but consumeToken rejects the link on
+    // arrival and the invitee is stuck with no visible cause.
+    await callPost({ email: "new@example.com" });
+    expect(createTokenMock).toHaveBeenCalledWith("user-1", "INVITE");
   });
 
   it("reports a failed invite mail as a translated error, not an opaque 500", async () => {
