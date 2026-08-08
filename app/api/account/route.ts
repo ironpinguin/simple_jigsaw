@@ -33,14 +33,15 @@ export async function DELETE(request: Request) {
 
   // Re-authenticate: the session cookie alone must not be enough to erase an
   // account. A password-less row cannot hold a session at all (lib/auth.ts
-  // rejects it at login), so there is no branch for it — bcrypt.compare
-  // against a null hash would throw.
+  // rejects it at login), so it gets no error of its own — but the null check
+  // stays in the condition, because bcrypt.compare against a null hash throws.
   if (!user.passwordHash || !(await bcrypt.compare(parsed.data.password, user.passwordHash))) {
     return NextResponse.json({ error: t("wrongPassword") }, { status: 401 });
   }
 
-  // Same guard as the admin path: an instance without an admin cannot be
-  // administered back into one.
+  // Same guard as the admin path. Recovering an admin-less instance takes
+  // shell or env access (ADMIN_EMAILS, npm run make-admin), so the guard keeps
+  // a self-service click from making that necessary.
   if (user.role === "ADMIN" && (await prisma.user.count({ where: { role: "ADMIN" } })) <= 1) {
     return NextResponse.json({ error: t("lastAdminDelete") }, { status: 400 });
   }
@@ -51,11 +52,18 @@ export async function DELETE(request: Request) {
     }
   } catch (err) {
     if (err instanceof StorageCleanupError) {
-      console.error(`[account] erasure of ${session.id} stopped at ${err.key}:`, err.cause);
-      // 502, and nothing deleted: reporting success here would tell the user
-      // their image is gone while it is still being served.
+      // Every row is still in place, but earlier objects may already be gone —
+      // name them, or a puzzle left pointing at a missing object has nothing
+      // tying it back to this attempt. A retry finishes the job.
+      console.error(
+        `[account] erasure of ${session.id} stopped at ${err.key} after deleting ${err.deleted.length} object(s):`,
+        err,
+      );
       return NextResponse.json({ error: t("storageFailed") }, { status: 502 });
     }
+    // Every image is already gone by the time the transaction runs, so a
+    // failure here is not merely "nothing happened".
+    console.error(`[account] erasure of ${session.id} failed after its images were deleted:`, err);
     throw err;
   }
 

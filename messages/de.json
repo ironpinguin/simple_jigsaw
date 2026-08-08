@@ -121,7 +121,8 @@
     "confirmDeleteAccount": "Ja, Konto endgültig löschen",
     "cancel": "Abbrechen",
     "deleting": "Konto wird gelöscht…",
-    "deleteAccountFailed": "Konto konnte nicht gelöscht werden."
+    "deleteAccountFailed": "Konto konnte nicht gelöscht werden.",
+    "deletedButSignOutFailed": "Dein Konto wurde gelöscht, aber die Abmeldung ist fehlgeschlagen. Bitte schließe den Browser oder melde dich manuell ab."
   },
   "report": {
     "reportLink": "Melden",

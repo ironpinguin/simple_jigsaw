@@ -57,15 +57,22 @@ export async function DELETE(
     return NextResponse.json({ error: t("lastAdminDelete") }, { status: 400 });
   }
 
+  // Storage goes first and a storage failure aborts with every row intact, so
+  // the admin sees the failure and retries — same policy as the puzzle
+  // takedown; lib/account-deletion.ts owns it.
   try {
     if (!(await deleteAccount(id))) {
       return NextResponse.json({ error: t("userNotFound") }, { status: 404 });
     }
   } catch (err) {
     if (err instanceof StorageCleanupError) {
-      console.error(`[admin] deleting user ${id} stopped at ${err.key}:`, err.cause);
+      console.error(
+        `[admin] deleting user ${id} stopped at ${err.key} after deleting ${err.deleted.length} object(s):`,
+        err,
+      );
       return NextResponse.json({ error: t("storageFailed") }, { status: 502 });
     }
+    console.error(`[admin] deleting user ${id} failed after its images were deleted:`, err);
     throw err;
   }
 

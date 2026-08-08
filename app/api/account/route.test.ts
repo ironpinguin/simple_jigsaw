@@ -9,8 +9,12 @@ const {
   StorageCleanupError,
 } = vi.hoisted(() => {
   class StorageCleanupError extends Error {
-    constructor(readonly key: string) {
+    constructor(
+      readonly key: string,
+      readonly deleted: readonly string[] = [],
+    ) {
       super(`storage delete of ${key} failed`);
+      this.name = "StorageCleanupError";
     }
   }
   return {
@@ -107,19 +111,58 @@ describe("DELETE /api/account", () => {
   });
 
   it("answers 502 when an image could not be deleted", async () => {
-    // Reporting success here would tell the user their image is gone while it
-    // is still being served by app/api/image.
+    // The rows are all still there, so the images they point at are still
+    // being served — reporting success would claim an erasure that did not
+    // happen.
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    deleteAccountMock.mockRejectedValue(new StorageCleanupError("puzzles/a.webp"));
+    const err = new StorageCleanupError("puzzles/b.webp", ["puzzles/a.webp"]);
+    deleteAccountMock.mockRejectedValue(err);
 
     const res = await callDelete();
 
     expect(res.status).toBe(502);
     await expect(res.json()).resolves.toEqual({ error: "storageFailed" });
-    expect(logged).toHaveBeenCalledWith(
-      expect.stringContaining("puzzles/a.webp"),
-      undefined,
+    // The log has to carry the error itself — logging only err.cause drops the
+    // stack when deleteObject rejects with a non-Error.
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("puzzles/b.webp"), err);
+  });
+
+  it("logs how many objects were already gone when the run stopped", async () => {
+    // Without the count, a puzzle left pointing at a deleted object has
+    // nothing tying it back to this attempt.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    deleteAccountMock.mockRejectedValue(
+      new StorageCleanupError("puzzles/c.webp", ["puzzles/a.webp", "puzzles/b.webp"]),
     );
+
+    await callDelete();
+
+    expect(logged.mock.calls[0][0]).toContain("2 object(s)");
+  });
+
+  it("rejects an account that has no password hash without calling bcrypt", async () => {
+    // Such a row cannot hold a session today, but the guard is what keeps
+    // bcrypt.compare from throwing on a null hash if one ever does.
+    userFindUnique.mockResolvedValue({ id: "u1", role: "USER", passwordHash: null });
+
+    const res = await callDelete();
+
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({ error: "wrongPassword" });
+    expect(compareMock).not.toHaveBeenCalled();
+    expect(deleteAccountMock).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 when the session outlives its row", async () => {
+    // A JWT stays valid after an admin deletes the user; nothing may be
+    // deleted on its behalf.
+    userFindUnique.mockResolvedValue(null);
+
+    const res = await callDelete();
+
+    expect(res.status).toBe(404);
+    expect(compareMock).not.toHaveBeenCalled();
+    expect(deleteAccountMock).not.toHaveBeenCalled();
   });
 
   it("answers 404 when the row is already gone", async () => {
@@ -131,7 +174,13 @@ describe("DELETE /api/account", () => {
   it("does not swallow an unexpected failure as a storage error", async () => {
     // A bug in the deletion path must surface, not be reported as "retry, the
     // object store is down".
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     deleteAccountMock.mockRejectedValue(new Error("boom"));
+
     await expect(callDelete()).rejects.toThrow("boom");
+
+    // Rethrowing is right; rethrowing silently is not — every image is gone
+    // by the time the transaction runs, so this is not "nothing happened".
+    expect(logged).toHaveBeenCalled();
   });
 });

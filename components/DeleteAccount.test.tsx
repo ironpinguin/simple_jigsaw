@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
+import itMessages from "@/messages/it.json";
 import DeleteAccount from "./DeleteAccount";
 
 const { signOutMock } = vi.hoisted(() => ({ signOutMock: vi.fn() }));
@@ -28,14 +29,18 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount() {
+function mountWith(locale: "en" | "it") {
   act(() => {
     root.render(
-      <NextIntlClientProvider locale="en" messages={messages}>
+      <NextIntlClientProvider locale={locale} messages={locale === "it" ? itMessages : messages}>
         <DeleteAccount />
       </NextIntlClientProvider>,
     );
   });
+}
+
+function mount() {
+  mountWith("en");
 }
 
 function buttonByText(text: string) {
@@ -117,16 +122,66 @@ describe("DeleteAccount", () => {
     expect(signOutMock).not.toHaveBeenCalled();
   });
 
-  it("does not sign out when the response body is unreadable but the status is ok", async () => {
-    // A 200 is the server's confirmation; a broken body must not undo that.
+  it("falls back to a generic message when the error body is unreadable", async () => {
+    // A proxy answering 502 with an HTML page leaves `error` undefined; the
+    // form must not un-busy with no explanation at all.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({ ok: true, json: async () => { throw new Error("bad json"); } }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: async () => {
+          throw new Error("bad json");
+        },
+      }),
     );
     openForm();
 
     await submitWith("secret123");
 
-    expect(signOutMock).toHaveBeenCalled();
+    expect(container.textContent).toContain("The account could not be deleted.");
+    expect(signOutMock).not.toHaveBeenCalled();
+  });
+
+  it("disables the submit button while the request is in flight", async () => {
+    // submit() has no re-entrancy guard, so the disabled state is the only
+    // thing stopping a second DELETE whose 404 would paint an error over a
+    // deletion that actually succeeded.
+    let release: (v: unknown) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockReturnValue(new Promise((resolve) => (release = resolve))),
+    );
+    openForm();
+
+    await submitWith("secret123");
+    expect(buttonByText("Deleting account…")?.hasAttribute("disabled")).toBe(true);
+    expect(buttonByText("Cancel")?.hasAttribute("disabled")).toBe(true);
+
+    await act(async () => release({ ok: true, json: async () => ({ ok: true }) }));
+  });
+
+  it("tells the user the account is gone when signing out fails", async () => {
+    // The server already confirmed the deletion. Leaving the form spinning
+    // with no message would strand the user looking signed in.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+    signOutMock.mockRejectedValue(new Error("offline"));
+    openForm();
+
+    await submitWith("secret123");
+
+    expect(container.textContent).toContain("Your account was deleted, but signing out failed.");
+    expect(buttonByText("Yes, delete my account for good")).toBeTruthy();
+  });
+
+  it("returns an Italian user to the Italian home page", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+    mountWith("it");
+    act(() => buttonByText("Elimina account")!.click());
+
+    await submitWith("secret123");
+
+    expect(signOutMock).toHaveBeenCalledWith({ callbackUrl: "/it" });
   });
 });

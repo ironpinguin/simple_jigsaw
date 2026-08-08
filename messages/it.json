@@ -115,13 +115,14 @@
     "confirmDelete": "Eliminare davvero questo puzzle?",
     "deleteFailed": "Eliminazione non riuscita.",
     "dangerTitle": "Elimina account",
-    "dangerIntro": "Il tuo account e tutti i tuoi puzzle verranno eliminati definitivamente, comprese le immagini che hai caricato. Loperazione è irreversibile.",
+    "dangerIntro": "Il tuo account e tutti i tuoi puzzle verranno eliminati definitivamente, comprese le immagini che hai caricato. L''operazione è irreversibile.",
     "deleteAccount": "Elimina account",
     "confirmPassword": "Inserisci la tua password per confermare",
     "confirmDeleteAccount": "Sì, elimina definitivamente il mio account",
     "cancel": "Annulla",
     "deleting": "Eliminazione account…",
-    "deleteAccountFailed": "Impossibile eliminare l''account."
+    "deleteAccountFailed": "Impossibile eliminare l''account.",
+    "deletedButSignOutFailed": "Il tuo account è stato eliminato, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente."
   },
   "report": {
     "reportLink": "Segnala",

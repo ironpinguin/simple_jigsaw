@@ -3,8 +3,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { requireAdminMock, userFindUnique, userCount, userUpdate, deleteAccountMock, StorageCleanupError } =
   vi.hoisted(() => {
     class StorageCleanupError extends Error {
-      constructor(readonly key: string) {
+      constructor(
+        readonly key: string,
+        readonly deleted: readonly string[] = [],
+      ) {
         super(`storage delete of ${key} failed`);
+        this.name = "StorageCleanupError";
       }
     }
     return {
@@ -74,8 +78,9 @@ describe("DELETE /api/admin/users/[id]", () => {
   });
 
   it("reports a failed image cleanup instead of swallowing it", async () => {
-    // Was `deleteObject(...).catch(() => {})`: the row went away and the image
-    // stayed behind, orphaned and still retrievable through app/api/image.
+    // A storage failure must never be answered as a successful deletion: the
+    // row would be gone and nothing would record that the object still needs
+    // erasing.
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     deleteAccountMock.mockRejectedValue(new StorageCleanupError("puzzles/a.webp"));
 
@@ -83,6 +88,17 @@ describe("DELETE /api/admin/users/[id]", () => {
 
     expect(res.status).toBe(502);
     await expect(res.json()).resolves.toEqual({ error: "storageFailed" });
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it("does not swallow an unexpected failure as a storage error", async () => {
+    // Widening the catch would make a real bug read to the operator as a
+    // transient outage they should retry.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    deleteAccountMock.mockRejectedValue(new Error("boom"));
+
+    await expect(callDelete()).rejects.toThrow("boom");
+
     expect(logged).toHaveBeenCalled();
   });
 

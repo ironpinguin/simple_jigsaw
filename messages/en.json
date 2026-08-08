@@ -121,7 +121,8 @@
     "confirmDeleteAccount": "Yes, delete my account for good",
     "cancel": "Cancel",
     "deleting": "Deleting account…",
-    "deleteAccountFailed": "The account could not be deleted."
+    "deleteAccountFailed": "The account could not be deleted.",
+    "deletedButSignOutFailed": "Your account was deleted, but signing out failed. Please close the browser or sign out manually."
   },
   "report": {
     "reportLink": "Report",

@@ -42,10 +42,20 @@ export default function DeleteAccount() {
     }
 
     // The session is a JWT and stays valid until it expires, so it has to be
-    // dropped explicitly — otherwise the next request carries a token whose
-    // user no longer exists. Stays busy: the page is about to navigate away.
+    // dropped explicitly — otherwise the browser keeps looking signed in while
+    // every protected route answers 401. On success the page navigates away,
+    // which is why nothing resets `busy` on the happy path.
     setPassword("");
-    await signOut({ callbackUrl: `/${locale}` });
+    try {
+      await signOut({ callbackUrl: `/${locale}` });
+    } catch (err) {
+      // The account is gone at this point — the server said so. Failing to
+      // sign out must not leave the form spinning with no explanation, or the
+      // user is stuck looking signed in with no idea what happened.
+      console.error("[my] sign-out after account deletion failed:", err);
+      setError(t("deletedButSignOutFailed"));
+      setBusy(false);
+    }
   }
 
   if (!open) {

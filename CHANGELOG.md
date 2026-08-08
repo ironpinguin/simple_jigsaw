@@ -58,8 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deleting an account no longer swallows a failed image deletion. Both the
   self-service and the admin path remove every image first and abort with a
   translated error if the storage refuses, instead of dropping the account row
-  and leaving the image behind — orphaned, and still retrievable by anyone
-  holding its URL. Open reports about the deleted puzzles are resolved and
+  and leaving the image behind in storage — where it is no longer reachable
+  through the app, but also no longer recorded anywhere, so nothing says it
+  still needs erasing. Open reports about the deleted puzzles are resolved and
   their reporter contact anonymized in the same step, rather than being left
   pointing at rows that no longer exist. (#18)
 - Puzzle visibility is now enforced: a non-public puzzle's image and metadata
