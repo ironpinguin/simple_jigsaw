@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { deleteObject } from "@/lib/storage";
+import { deleteAccount, StorageCleanupError } from "@/lib/account-deletion";
 import { getErrorT } from "@/lib/i18n-server";
 
 const PatchSchema = z.object({ role: z.enum(["USER", "ADMIN"]) });
@@ -49,10 +49,7 @@ export async function DELETE(
   }
   const { id } = await params;
 
-  const target = await prisma.user.findUnique({
-    where: { id },
-    include: { puzzles: { select: { imageKey: true } } },
-  });
+  const target = await prisma.user.findUnique({ where: { id }, select: { role: true } });
   if (!target) {
     return NextResponse.json({ error: t("userNotFound") }, { status: 404 });
   }
@@ -60,11 +57,17 @@ export async function DELETE(
     return NextResponse.json({ error: t("lastAdminDelete") }, { status: 400 });
   }
 
-  // Best-effort cleanup of the user's images (DB rows cascade automatically).
-  await Promise.all(
-    target.puzzles.map((p) => deleteObject(p.imageKey).catch(() => {})),
-  );
-  await prisma.user.delete({ where: { id } });
+  try {
+    if (!(await deleteAccount(id))) {
+      return NextResponse.json({ error: t("userNotFound") }, { status: 404 });
+    }
+  } catch (err) {
+    if (err instanceof StorageCleanupError) {
+      console.error(`[admin] deleting user ${id} stopped at ${err.key}:`, err.cause);
+      return NextResponse.json({ error: t("storageFailed") }, { status: 502 });
+    }
+    throw err;
+  }
 
   return NextResponse.json({ ok: true });
 }

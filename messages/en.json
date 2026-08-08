@@ -113,7 +113,15 @@
     "copied": "Copied!",
     "delete": "Delete",
     "confirmDelete": "Really delete this puzzle?",
-    "deleteFailed": "Delete failed."
+    "deleteFailed": "Delete failed.",
+    "dangerTitle": "Delete account",
+    "dangerIntro": "Your account and all your puzzles will be deleted for good — including the images you uploaded. This cannot be undone.",
+    "deleteAccount": "Delete account",
+    "confirmPassword": "Enter your password to confirm",
+    "confirmDeleteAccount": "Yes, delete my account for good",
+    "cancel": "Cancel",
+    "deleting": "Deleting account…",
+    "deleteAccountFailed": "The account could not be deleted."
   },
   "report": {
     "reportLink": "Report",
@@ -301,6 +309,7 @@
     "accountNotFound": "Account not found.",
     "lastAdminDemote": "The last admin cannot be demoted.",
     "lastAdminDelete": "The last admin cannot be deleted.",
+    "wrongPassword": "That password is not correct.",
     "alreadyBanned": "Already banned.",
     "invalidRole": "Invalid role.",
     "invalidDomain": "Invalid domain.",

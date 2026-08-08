@@ -21,7 +21,7 @@ interface ReportUpdater {
  */
 export function resolveOpenReports(
   db: ReportUpdater,
-  where: { id: string } | { puzzleId: string },
+  where: { id: string } | { puzzleId: string } | { puzzleId: { in: string[] } },
   status: ReportDecision,
 ): Promise<number> {
   return db.report

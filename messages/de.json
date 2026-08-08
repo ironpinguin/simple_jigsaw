@@ -113,7 +113,15 @@
     "copied": "Kopiert!",
     "delete": "Löschen",
     "confirmDelete": "Dieses Puzzle wirklich löschen?",
-    "deleteFailed": "Löschen fehlgeschlagen."
+    "deleteFailed": "Löschen fehlgeschlagen.",
+    "dangerTitle": "Konto löschen",
+    "dangerIntro": "Dein Konto und alle deine Puzzles werden endgültig gelöscht — samt der hochgeladenen Bilder. Das lässt sich nicht rückgängig machen.",
+    "deleteAccount": "Konto löschen",
+    "confirmPassword": "Gib zur Bestätigung dein Passwort ein",
+    "confirmDeleteAccount": "Ja, Konto endgültig löschen",
+    "cancel": "Abbrechen",
+    "deleting": "Konto wird gelöscht…",
+    "deleteAccountFailed": "Konto konnte nicht gelöscht werden."
   },
   "report": {
     "reportLink": "Melden",
@@ -301,6 +309,7 @@
     "accountNotFound": "Konto nicht gefunden.",
     "lastAdminDemote": "Der letzte Admin kann nicht herabgestuft werden.",
     "lastAdminDelete": "Der letzte Admin kann nicht gelöscht werden.",
+    "wrongPassword": "Passwort ist falsch.",
     "alreadyBanned": "Bereits gebannt.",
     "invalidRole": "Ungültige Rolle.",
     "invalidDomain": "Ungültige Domain.",

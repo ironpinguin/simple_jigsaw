@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Users can delete their own account from the my-puzzles page (GDPR Art. 17).
+  The step asks for the password before it runs, removes the account, its
+  puzzles and every image behind them, and signs the browser out afterwards.
+  The last remaining admin is refused, so an instance cannot be left without
+  one. (#18)
 - Anyone can report a puzzle (category + description, no account needed); admins
   are notified by email and review reports in a new admin queue, where they can
   delete a single puzzle including its image or dismiss the report. The owner
@@ -50,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pages, which affects every page, not just the legal ones.
 
 ### Fixed
+- Deleting an account no longer swallows a failed image deletion. Both the
+  self-service and the admin path remove every image first and abort with a
+  translated error if the storage refuses, instead of dropping the account row
+  and leaving the image behind — orphaned, and still retrievable by anyone
+  holding its URL. Open reports about the deleted puzzles are resolved and
+  their reporter contact anonymized in the same step, rather than being left
+  pointing at rows that no longer exist. (#18)
 - Puzzle visibility is now enforced: a non-public puzzle's image and metadata
   answer 404 to anyone but the owner or an admin, and private images are never
   cached. Public images are cached for a day instead of a year, so making a
