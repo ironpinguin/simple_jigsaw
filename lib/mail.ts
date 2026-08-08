@@ -1,10 +1,11 @@
 // Transactional email via SMTP (nodemailer). In dev this points at the Mailpit
 // container (which captures everything); in prod set the SMTP_* env to a real
 // server. Links are built from APP_URL. Subject/body are localized via the
-// `email` message namespace; the locale is passed in by the API route (read
-// from the caller's NEXT_LOCALE cookie).
+// `email` message namespace; the locale is passed in by the API route (see
+// resolveRequestLocale in lib/i18n-server.ts).
 
 import nodemailer from "nodemailer";
+import { hasLocale } from "next-intl";
 import { getTranslations } from "next-intl/server";
 import { routing, type Locale } from "@/i18n/routing";
 import type { ReportCategory } from "./reports";
@@ -27,7 +28,7 @@ function appUrl(): string {
 }
 
 function resolveLocale(locale?: string): Locale {
-  return routing.locales.includes(locale as Locale) ? (locale as Locale) : routing.defaultLocale;
+  return hasLocale(routing.locales, locale) ? locale : routing.defaultLocale;
 }
 
 // Links are locale-prefixed so the confirmation/invite page opens in the same
