@@ -36,8 +36,23 @@ export async function POST(request: Request) {
     select: { id: true },
   });
 
-  const token = await createToken(user.id, "INVITE");
-  await sendInviteEmail(email, token, await localeFromCookie());
+  // Reading the cookie is unrelated to delivery — keep it out of the catch below
+  // so it cannot be reported as a failed invite.
+  const locale = await localeFromCookie();
+
+  try {
+    const token = await createToken(user.id, "INVITE");
+    await sendInviteEmail(email, token, locale);
+  } catch (error) {
+    // The password-less row already exists here, so a plain retry only yields
+    // the 409 above and the row cannot log in (auth rejects a null hash). There
+    // is no resend action in the admin UI, so the message points at the only
+    // recovery there is — delete the row and invite again — instead of letting
+    // the throw escape as a bare 500. Either the token write or the send lands
+    // here, so the log names the invite, not the mail; the error says which.
+    console.error(`[admin-invite] invite for user ${user.id} failed:`, error);
+    return NextResponse.json({ error: t("inviteEmailFailed") }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true }, { status: 201 });
 }
