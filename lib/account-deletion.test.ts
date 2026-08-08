@@ -6,18 +6,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // transaction, and every assertion would still pass.
 const {
   puzzleFindMany,
+  userFindUnique,
   userDeleteMany,
   reportUpdateMany,
   txUserDeleteMany,
   txReportUpdateMany,
+  txReportFindMany,
   transaction,
   deleteObjectMock,
 } = vi.hoisted(() => ({
   puzzleFindMany: vi.fn(),
+  userFindUnique: vi.fn(),
   userDeleteMany: vi.fn(),
   reportUpdateMany: vi.fn(),
   txUserDeleteMany: vi.fn(),
   txReportUpdateMany: vi.fn(),
+  txReportFindMany: vi.fn(),
   transaction: vi.fn(),
   deleteObjectMock: vi.fn(),
 }));
@@ -25,7 +29,7 @@ const {
 vi.mock("./db", () => ({
   prisma: {
     puzzle: { findMany: puzzleFindMany },
-    user: { deleteMany: userDeleteMany },
+    user: { findUnique: userFindUnique, deleteMany: userDeleteMany },
     report: { updateMany: reportUpdateMany },
     $transaction: transaction,
   },
@@ -52,11 +56,16 @@ function withPuzzles(own: { id: string; imageKey: string }[], foreignKeys: strin
 beforeEach(() => {
   vi.clearAllMocks();
   deleteObjectMock.mockResolvedValue(undefined);
+  userFindUnique.mockResolvedValue({ email: "gone@example.com" });
   txUserDeleteMany.mockResolvedValue({ count: 1 });
   txReportUpdateMany.mockResolvedValue({ count: 0 });
+  txReportFindMany.mockResolvedValue([]);
   transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
     Promise.resolve(
-      fn({ user: { deleteMany: txUserDeleteMany }, report: { updateMany: txReportUpdateMany } }),
+      fn({
+        user: { deleteMany: txUserDeleteMany },
+        report: { updateMany: txReportUpdateMany, findMany: txReportFindMany },
+      }),
     ),
   );
   withPuzzles([]);
@@ -224,6 +233,32 @@ describe("deleteAccount", () => {
   it("reports a concurrent delete instead of throwing", async () => {
     txUserDeleteMany.mockResolvedValue({ count: 0 });
     await expect(deleteAccount("u1")).resolves.toBe(false);
+  });
+
+  it("strips the reporter contact from the reports the account filed", async () => {
+    // Reports *about* this account's puzzles are covered by the scope above;
+    // these are the ones it filed against other people, which carry the
+    // address only as hand-typed text and would otherwise survive the erasure.
+    txReportFindMany.mockResolvedValue([
+      { id: "r1", reporterEmail: "Gone@Example.com" },
+      { id: "r2", reporterEmail: "someone@example.com" },
+    ]);
+
+    await deleteAccount("u1");
+
+    expect(txReportUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["r1"] } },
+      data: { reporterEmail: null, reporterIpHash: null },
+    });
+  });
+
+  it("returns false without touching storage when the account is already gone", async () => {
+    userFindUnique.mockResolvedValue(null);
+
+    await expect(deleteAccount("u1")).resolves.toBe(false);
+
+    expect(deleteObjectMock).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("still reports a concurrent delete when the images were already removed", async () => {

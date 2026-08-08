@@ -10,7 +10,7 @@
 
 import { prisma } from "./db";
 import { deleteObject } from "./storage";
-import { resolveOpenReports } from "./reports-server";
+import { anonymizeReportsBy, resolveOpenReports } from "./reports-server";
 
 /**
  * Keys the account owns exclusively. An owner may reuse one key across their
@@ -55,9 +55,10 @@ export class StorageCleanupError extends Error {
 }
 
 /**
- * Delete a user, their images and their puzzles' open reports. Puzzles and
- * verification tokens go with the user row via onDelete: Cascade — which is
- * why the transaction below only has to name the reports.
+ * Delete a user, their images, and the reporter contact held in reports at
+ * both ends: the ones about their puzzles and the ones they filed themselves.
+ * Puzzles and verification tokens go with the user row via onDelete: Cascade —
+ * which is why the transaction below only has to name the reports.
  *
  * Images first (see the file comment). Sequentially, not with Promise.all: on
  * a failing storage backend the first error should stop the run rather than
@@ -68,6 +69,14 @@ export class StorageCleanupError extends Error {
  * already gone (a concurrent delete), so the caller can answer 404.
  */
 export async function deleteAccount(userId: string): Promise<boolean> {
+  // The address is needed to find the reports this account filed; those rows
+  // carry no user id, only a hand-typed email.
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  if (!user) return false;
+
   const puzzles = await prisma.puzzle.findMany({
     where: { ownerId: userId },
     select: { id: true },
@@ -93,6 +102,12 @@ export async function deleteAccount(userId: string): Promise<boolean> {
     if (puzzles.length > 0) {
       await resolveOpenReports(tx, { puzzleId: { in: puzzles.map((p) => p.id) } }, "TAKEDOWN");
     }
+    // The other end: reports this account filed against other people's
+    // puzzles. Scoping by puzzle above never reaches them, so without this
+    // the erasure would leave the person's address and IP hash sitting in
+    // the admin queue. Those reports stay open — the content they are about
+    // is not going anywhere.
+    await anonymizeReportsBy(tx, user.email);
     // deleteMany, not delete: a concurrent delete of the same user answers
     // count 0 instead of throwing a Prisma "record not found".
     const deleted = await tx.user.deleteMany({ where: { id: userId } });

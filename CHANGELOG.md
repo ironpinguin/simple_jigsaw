@@ -60,9 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   translated error if the storage refuses, instead of dropping the account row
   and leaving the image behind in storage — where it is no longer reachable
   through the app, but also no longer recorded anywhere, so nothing says it
-  still needs erasing. Open reports about the deleted puzzles are resolved and
-  their reporter contact anonymized in the same step, rather than being left
-  pointing at rows that no longer exist. (#18)
+  still needs erasing. Reports are cleaned up at both ends in the same step:
+  open reports about the deleted puzzles are resolved instead of being left
+  pointing at rows that no longer exist, and reports the account itself filed
+  against other people's puzzles lose the reporter's address and IP hash while
+  staying open for review. (#18)
 - Puzzle visibility is now enforced: a non-public puzzle's image and metadata
   answer 404 to anyone but the owner or an admin, and private images are never
   cached. Public images are cached for a day instead of a year, so making a
