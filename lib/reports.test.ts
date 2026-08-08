@@ -7,9 +7,11 @@ import {
 } from "./reports";
 
 describe("report enums", () => {
-  it("defines the four categories and three statuses", () => {
+  it("defines the four categories and four statuses", () => {
     expect(REPORT_CATEGORIES).toEqual(["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"]);
-    expect(REPORT_STATUSES).toEqual(["OPEN", "TAKEDOWN", "DISMISSED"]);
+    // ACCOUNT_DELETED is not an admin decision: it records that the reported
+    // puzzle left with its owner's account, unreviewed.
+    expect(REPORT_STATUSES).toEqual(["OPEN", "TAKEDOWN", "DISMISSED", "ACCOUNT_DELETED"]);
   });
 });
 

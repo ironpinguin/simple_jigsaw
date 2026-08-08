@@ -116,6 +116,20 @@ export default function ReportsAdmin({
     return isReportCategory(category) ? t(`category${category}`) : category;
   }
 
+  // Explicit per status rather than "takedown or else dismissed": a report
+  // closed because its owner's account went away was never reviewed, and
+  // labelling it as an admin decision would misreport the audit list.
+  function decisionLabel(status: ReportStatus) {
+    switch (status) {
+      case "TAKEDOWN":
+        return t("decisionTakedown");
+      case "ACCOUNT_DELETED":
+        return t("decisionAccountDeleted");
+      default:
+        return t("decisionDismissed");
+    }
+  }
+
   return (
     <div>
       <h2>{t("reportsOpenTitle")}</h2>
@@ -168,7 +182,7 @@ export default function ReportsAdmin({
       <ul style={{ listStyle: "none", padding: 0, display: "grid", gap: 8, opacity: 0.7 }}>
         {resolved.map((r) => (
           <li key={r.id}>
-            <strong>{r.status === "TAKEDOWN" ? t("decisionTakedown") : t("decisionDismissed")}</strong>{" "}
+            <strong>{decisionLabel(r.status)}</strong>{" "}
             — {categoryLabel(r.category)} — {r.puzzleTitle}
             {r.resolvedAt && (
               <span className="muted"> ({new Date(r.resolvedAt).toLocaleString()})</span>
