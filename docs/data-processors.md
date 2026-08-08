@@ -126,6 +126,37 @@ the environment (`lib/legal.ts`, `app/[locale]/legal/privacy/page.tsx`):
 So the table above is the source and these three variables are its published
 form. They must agree.
 
+### What this means for installing
+
+Nothing here is a build input, and the table is not an installation step. The
+published images work as they are:
+
+- **The three variables are read per request**, not baked in. `lib/legal.ts`
+  reads `process.env` on every call and both legal pages are `force-dynamic`,
+  so changing a value takes a container restart — `docker compose up -d` after
+  editing `.env` — and never a rebuild. Verified by running one build twice
+  with different values: the named provider, the storage provider and the
+  hosting region all changed with the same `.next` artifacts. (The `●` marker
+  `next build` prints for the legal routes is about `generateStaticParams` for
+  the locale segment; the pages still render per request.)
+- **Nothing legal is inside the image.** The Dockerfile declares no `LEGAL_*`
+  build argument, and `.env` is in `.dockerignore`, so it is never copied in.
+- **The table lives outside the deployment entirely.** No code reads it. It is
+  your Art. 30 paperwork, not configuration, and can be written after the
+  containers are up.
+
+What *cannot* wait is knowing the answers. From the first minute the instance
+is publicly reachable, `/legal/privacy` states either self-operation or a named
+processor — so pointing `SMTP_HOST` or `S3_ENDPOINT` at an external service
+while the matching `LEGAL_*` variable is empty publishes a false claim
+immediately. Nothing cross-checks the two; that is on the operator.
+
+**One exception to "everything is environment":** the database provider is
+baked. `Dockerfile` takes `ARG DATABASE_PROVIDER=postgresql` and the generated
+Prisma client must match it at runtime, so switching between PostgreSQL and
+SQLite needs a differently built image, not a different variable —
+`docker-compose.sqlite.yml` builds its own for that reason.
+
 The policy's recipients section names all four message types and says that the
 two notice mails also carry a puzzle title, so it matches the flows above
 without an operator having to edit anything. Keep it that way: a new kind of
