@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The privacy policy's recipients section now names all four transactional
+  mails — confirmation, invitation, notice of a report, notice of a removed
+  puzzle — instead of only the first two, and states that the two notice mails
+  additionally carry the puzzle's title. With an external mail provider that
+  paragraph is what discloses what the processor receives, so it was
+  under-describing it. (#24)
 - `docs/data-processors.md` for operators: which personal data can leave an
   instance (the four transactional mails and what each carries, uploaded images
   when S3 storage is on, hosting metadata), what is deliberately kept in — no

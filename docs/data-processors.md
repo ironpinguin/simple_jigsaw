@@ -90,10 +90,13 @@ For every external service in the table below:
 4. **Check the sub-processor list.** Your provider's own processors become yours;
    most publish a page and a change-notification policy.
 
-### This instance
+### Template
 
-Fill in and keep current. An empty row is not "nothing to do" — it means nobody
-has checked yet.
+This table stays empty in the repository, and that is not an oversight. Which
+SMTP provider, which S3-compatible store and which hosting location an instance
+uses is a deployment decision — two installations of this app can answer every
+row differently, and the repo has no way to know. It is a template: copy it into
+wherever you keep your own processing records, and fill it in there.
 
 | Component | Self-hosted or provider | What they receive | DPA | Location / transfer basis |
 | --- | --- | --- | --- | --- |
@@ -101,6 +104,10 @@ has checked yet.
 | Object storage (`S3_ENDPOINT`) | | | | |
 | Hosting / server | | | | |
 | Reverse proxy or CDN, if any | | | | |
+
+What the deployment *does* declare in the repo's own terms are the three
+environment variables below — they are the published summary of the filled-in
+table, not a substitute for it.
 
 ## How this reaches the privacy policy
 
@@ -119,10 +126,11 @@ the environment (`lib/legal.ts`, `app/[locale]/legal/privacy/page.tsx`):
 So the table above is the source and these three variables are its published
 form. They must agree.
 
-**Known gap:** the policy's recipients section describes mail as *confirmation
-and invitation* messages only. Report notifications and takedown notices also go
-through the same SMTP server and carry a puzzle title. An operator using an
-external provider should make sure their published text covers all four.
+The policy's recipients section names all four message types and says that the
+two notice mails also carry a puzzle title, so it matches the flows above
+without an operator having to edit anything. Keep it that way: a new kind of
+transactional mail, or an existing one that starts carrying more, needs that
+paragraph updated in all three catalogs — nothing enforces the match.
 
 ## When adding a service
 
