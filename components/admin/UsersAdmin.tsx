@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 
-interface UserRow {
+export interface UserRow {
   id: string;
   email: string;
   name: string | null;
@@ -57,10 +57,13 @@ export default function UsersAdmin({
     });
     setBusy(false);
     const data = await res.json().catch(() => ({}));
+    // The invite route creates the row before it sends, so a failure can still
+    // leave one behind — refresh either way, or the account the error message
+    // tells the admin to delete is not on screen.
+    refresh();
     if (res.ok) {
       flash(t("inviteSent", { email: inviteEmail }), null);
       setInviteEmail("");
-      refresh();
     } else {
       flash(null, data.error || t("inviteFailed"));
     }
