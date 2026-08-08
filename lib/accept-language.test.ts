@@ -90,41 +90,6 @@ describe("matchAcceptLanguage", () => {
   });
 });
 
-// The fix in lib/i18n-server.ts infers "no cookie ⇒ the browser language is the
-// locale being browsed" from next-intl's middleware. That inference only holds
-// while this matcher answers the same as next-intl's own negotiation
-// (Negotiator + @formatjs/intl-localematcher). Both were run over this corpus
-// and agree on every entry; if a next-intl upgrade changes its negotiation,
-// these are the cases to re-check.
-describe("agreement with next-intl's negotiation", () => {
-  const REAL_BROWSER_HEADERS: ReadonlyArray<[string, string | null]> = [
-    ["en-US,en;q=0.9", "en"],
-    ["en-GB,en;q=0.9", "en"],
-    ["de-DE,de;q=0.9", "de"],
-    ["de-AT,de;q=0.9,en-US;q=0.8,en;q=0.7", "de"],
-    ["de-CH", "de"],
-    ["it-IT,it;q=0.9,en;q=0.8", "it"],
-    ["it-CH", "it"],
-    ["fr-FR,fr;q=0.9", null],
-    ["zh-CN,zh;q=0.9,en;q=0.8", "en"],
-    ["nl,de;q=0.7,en;q=0.3", "de"],
-    ["en-Latn-US", "en"],
-  ];
-
-  it.each(REAL_BROWSER_HEADERS)("resolves %s the way next-intl does", (header, expected) => {
-    expect(match(header)).toBe(expected);
-  });
-
-  // Known, deliberate divergences. None are reachable through a browser: for
-  // each of these next-intl either negotiates the same locale anyway or writes
-  // NEXT_LOCALE (it writes the cookie whenever its own matcher yields no
-  // locale), which takes precedence and never reaches this matcher.
-  it("differs from next-intl only on tags no browser emits", () => {
-    // ISO 639-2 three-letter codes: intl-localematcher canonicalises "ita" to
-    // "it", this matcher does not.
-    expect(match("ita,de")).toBe("de");
-    // Negotiator drops a tag with an unparseable q; this matcher keeps it at the
-    // default weight of 1.
-    expect(match("en;q=hello,de;q=0.9")).toBe("en");
-  });
-});
+// Agreement with next-intl's own negotiation — the precondition the whole fix
+// rests on — is asserted separately in accept-language.negotiation.test.ts,
+// which runs both implementations against each other.
