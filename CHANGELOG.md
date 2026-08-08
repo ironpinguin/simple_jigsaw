@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `docs/data-processors.md` for operators: which personal data can leave an
+  instance (the four transactional mails and what each carries, uploaded images
+  when S3 storage is on, hosting metadata), what is deliberately kept in — no
+  analytics or external assets, Next.js telemetry off, reporter IPs hashed
+  locally, solve progress only in the browser — and what to settle per external
+  service under GDPR Art. 28, with a table to fill in for the instance. (#24)
 - Users can delete their own account from the my-puzzles page (GDPR Art. 17).
   The step asks for the password before it runs, removes the account, its
   puzzles and every image behind them, and signs the browser out afterwards.
