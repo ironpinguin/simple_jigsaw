@@ -5,6 +5,8 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import { getErrorT } from "@/lib/i18n-server";
+import { requiresReview, toVerdictLabel } from "@/lib/nsfw";
+import { AUTO_REPORT_CATEGORIES } from "@/lib/reports";
 
 const CreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
@@ -67,6 +69,17 @@ export async function POST(request: Request) {
   const { cols, rows } = computeGrid(pieceCount, imageWidth / imageHeight);
   const seed = randomInt(0, 2 ** 31 - 1);
 
+  // What the classifier decided at upload time. A missing row means the image
+  // predates this feature or was uploaded with NSFW_MODE=off, both of which
+  // are clean. An unreadable label is not: a column we cannot narrow is held
+  // for review rather than published.
+  const stored = await prisma.imageVerdict.findUnique({
+    where: { imageKey },
+    select: { label: true, score: true, model: true },
+  });
+  const label = stored ? (toVerdictLabel(stored.label) ?? "UNKNOWN") : "CLEAN";
+  const pendingReview = requiresReview(label);
+
   const puzzle = await prisma.puzzle.create({
     data: {
       title,
@@ -77,11 +90,28 @@ export async function POST(request: Request) {
       cols,
       rows,
       seed,
-      isPublic,
+      isPublic: isPublic && !pendingReview,
       ownerId: user.id,
     },
     select: { id: true },
   });
 
-  return NextResponse.json({ id: puzzle.id }, { status: 201 });
+  if (pendingReview) {
+    // Into the moderation queue, with no reporter: this is the server's own
+    // finding, and inventing a reporter identity would put a person's name on
+    // a judgement nobody made.
+    await prisma.report.create({
+      data: {
+        puzzleId: puzzle.id,
+        puzzleTitle: title,
+        category: AUTO_REPORT_CATEGORIES[0],
+        message: `Automatic classification: ${label}, score ${stored?.score ?? 0}, model ${stored?.model ?? "unknown"}.`,
+        reporterEmail: null,
+        reporterIpHash: null,
+        status: "OPEN",
+      },
+    });
+  }
+
+  return NextResponse.json({ id: puzzle.id, pendingReview }, { status: 201 });
 }
