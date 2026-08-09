@@ -24,6 +24,18 @@ describe("labelFor", () => {
     expect(labelFor(42, 0.85)).toBe("UNKNOWN");
     expect(labelFor(Number.NaN, 0.85)).toBe("UNKNOWN");
   });
+
+  it("accepts zero as a valid clean score, not an error", () => {
+    // Zero is a legitimate classifier output meaning "certainly clean", not an
+    // invalid value. A guard using <= instead of < would incorrectly reject it.
+    expect(labelFor(0, 0.85)).toBe("CLEAN");
+  });
+
+  it("accepts one as a valid flagged score, not an error", () => {
+    // One is a legitimate classifier output meaning "certainly flagged", not an
+    // invalid value. A guard using >= instead of > would incorrectly reject it.
+    expect(labelFor(1, 0.85)).toBe("FLAGGED");
+  });
 });
 
 describe("toVerdictLabel", () => {
