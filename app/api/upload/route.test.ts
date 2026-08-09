@@ -119,7 +119,7 @@ describe("classification", () => {
 
     expect(verdictCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ imageKey, label: "CLEAN", model: "fake" }),
+        data: expect.objectContaining({ imageKey, label: "CLEAN", score: 0.02, model: "fake" }),
       }),
     );
   });
