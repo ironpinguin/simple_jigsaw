@@ -83,9 +83,15 @@ when the sweep failed. Nothing distinguishes those two cases, and nothing needs
 to: the return value exists for the tests and for a future log line, and no
 caller branches on it.
 
-Wraps `purgeExpiredTokens` from `lib/tokens.ts`, owns the catch-and-log, and
-never throws — every caller is either a probe that must not fail for
-housekeeping or a registration that must not fail for it either.
+`purgeExpiredTokens` **moves here** from `lib/tokens.ts`. Leaving it there
+would make the two modules import each other — retention needs the sweep,
+tokens needs the throttle — so retention owns the sweep and tokens consumes it.
+`scripts/purge-expired.mjs` is unaffected: it never imported the function, it
+repeats the `deleteMany` because it runs under plain `node`.
+
+`maybePurgeExpiredTokens` owns the catch-and-log and never throws — every
+caller is either a probe that must not fail for housekeeping or a registration
+that must not fail for it either.
 
 `lastSweepAt` is stamped **before** awaiting the delete. Two probes arriving
 together would otherwise both find the sweep due and both run it.
@@ -121,8 +127,8 @@ in place the per-issuance sweep is redundant, and routing it through the
 throttle gives one code path, one place that logs, at most one sweep per hour
 across all triggers, and no full-table `DELETE` on every registration.
 
-`purgeExpiredTokens` stays exported and unthrottled for
-`scripts/purge-expired.mjs` and for tests.
+`purgeExpiredTokens` stays exported and unthrottled from its new home, for the
+tests and for any caller that wants the sweep itself rather than the budget.
 
 ## Deployment
 
@@ -173,7 +179,8 @@ keeps small, but it should not be a surprise.
 
 - `lib/retention.test.ts` — sweeps on the first call; no-ops inside the hour;
   sweeps again after it; concurrent callers sweep once; a failure is logged and
-  swallowed.
+  swallowed, and is not retried until the interval is up. The existing
+  `purgeExpiredTokens` tests move here with the function.
 - `app/api/health/route.test.ts` — status and shape, and that it reaches no
   database.
 - `app/api/health/ready/route.test.ts` — 200 and a sweep when the database
