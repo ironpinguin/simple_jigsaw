@@ -116,6 +116,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notification. (#22)
 
 ### Security
+- Three high-severity advisories in transitive dependencies are cleared by
+  patch bumps of `brace-expansion`, `js-yaml` and `nanoid`. Only `nanoid` is in
+  runtime scope and so actually ships in the image; the other two stay in the
+  lint and build toolchain. None was reachable from untrusted input — the
+  `nanoid` loop needs a size of zero, which the app never asks for — so this is
+  hygiene rather than an exposure that was open. (#39)
 - Switching a puzzle to private now rotates its image key, so previously shared
   image URLs stop resolving for anyone who has not already cached them —
   rotation cannot evict a copy a browser already holds under the old year-long
