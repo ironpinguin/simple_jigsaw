@@ -10,10 +10,14 @@ vi.mock("./db", () => ({
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
 
 /**
- * The throttle keeps its state in module scope, which is what makes it a
- * throttle. Each test therefore needs a fresh copy of the module rather than a
- * reset hook that exists only for the tests.
+ * The throttle keeps its state on globalThis rather than in module scope —
+ * Next emits lib/retention once per webpack layer, so module scope would give
+ * each layer its own throttle instead of one shared per process. That means
+ * `vi.resetModules()` no longer clears it: the global key has to be cleared
+ * by hand so every test starts from a known, unthrottled state.
  */
+const globalForRetention = globalThis as unknown as { lastSweepAt?: number | null };
+
 async function freshRetention() {
   vi.resetModules();
   return import("./retention");
@@ -21,6 +25,7 @@ async function freshRetention() {
 
 beforeEach(() => {
   deleteMany.mockResolvedValue({ count: 0 });
+  delete globalForRetention.lastSweepAt;
 });
 
 afterEach(() => {

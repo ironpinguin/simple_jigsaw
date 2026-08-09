@@ -12,7 +12,12 @@ import { expiredTokenFilter } from "./token-ttl";
 
 export const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 
-let lastSweepAt: number | null = null;
+// Next compiles instrumentation.ts and the route handlers into different
+// webpack layers, so this module is emitted once per layer with a distinct
+// module id — a module-level `let` would give each layer its own throttle,
+// not one shared per process. globalThis is the one thing every layer shares,
+// the same reason lib/db.ts caches the Prisma client there.
+const globalForRetention = globalThis as unknown as { lastSweepAt?: number | null };
 
 /**
  * Delete every token past its expiry and report how many went. An expired row
@@ -45,12 +50,13 @@ export async function purgeExpiredTokens(now: number = Date.now()): Promise<numb
 export async function maybePurgeExpiredTokens(
   now: number = Date.now(),
 ): Promise<number | null> {
-  if (lastSweepAt !== null && now - lastSweepAt < SWEEP_INTERVAL_MS) return null;
+  const last = globalForRetention.lastSweepAt;
+  if (last !== null && last !== undefined && now - last < SWEEP_INTERVAL_MS) return null;
 
   // Stamped before the await, not after: two probes arriving in the same tick
   // would otherwise both find the sweep due and both run it. It also means a
   // failed sweep waits out the interval rather than retrying on every probe.
-  lastSweepAt = now;
+  globalForRetention.lastSweepAt = now;
 
   try {
     return await purgeExpiredTokens(now);

@@ -1,5 +1,12 @@
-// Prisma client singleton. Next.js dev mode re-evaluates modules on every
-// change, so we cache the client on globalThis to avoid exhausting connections.
+// Prisma client singleton, cached on globalThis.
+//
+// In dev, Next.js re-evaluates modules on every change, so caching avoids
+// exhausting connections across reloads. In production, this module is also
+// emitted once per webpack layer — instrumentation.ts and the route handlers
+// each get their own copy with a distinct module id — so without the cache
+// they would each construct their own PrismaClient: two connection pools per
+// process, and on the SQLite stack two writers against one file. Caching on
+// globalThis, which every layer shares, is what keeps it to one client.
 
 import { PrismaClient } from "./generated/prisma";
 
@@ -11,6 +18,4 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;
