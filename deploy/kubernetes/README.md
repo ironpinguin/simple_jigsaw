@@ -23,6 +23,14 @@ instead, if you would rather not put an address in the configmap.
 - **startup → `/api/health`** covers `prisma db push`, which the container runs
   before starting the server.
 
+## Legal pages
+
+`configmap.yaml` ships `LEGAL_NAME`, `LEGAL_ADDRESS` and `LEGAL_EMAIL` empty, so
+a deployment can look healthy — both probes green — while `/legal/imprint`
+names the missing variables and `/legal/privacy` says no controller is
+configured. All three are required before the instance is publicly reachable;
+see `.env.example` for what each one says on the page.
+
 ## Retention and replicas
 
 Expired confirmation and invitation links are deleted at startup, hourly, and
