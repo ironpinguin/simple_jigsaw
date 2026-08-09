@@ -1182,16 +1182,22 @@ git commit -m "feat(nsfw): tell the uploader their puzzle is awaiting review (#2
 
 ### Task 9: The local classifier — `lib/nsfw/local.ts`
 
-**Skip this task if Task 1's spike failed.** In that case remove `"local"` from `NSFW_MODES` in `lib/nsfw/config.ts`, update the config test that asserts `NSFW_MODE=local`, and open a follow-up issue.
+**The spike passed, so this task ships.** It settled three things that override this task's original wording — the design doc's "The local model: spike result" section is authoritative and must be read before starting:
+
+- The package is **`onnxruntime-web@1.27.0`**, not `onnxruntime-node`. The latter's prebuilt native binary does not load on the project's `node:22-alpine` base image (musl/glibc ABI mismatch); `onnxruntime-web` is pure WASM and runs there.
+- The import form is **`import * as ort from "onnxruntime-web"`**.
+- **`next.config.ts` must gain `"onnxruntime-web"` in `serverExternalPackages`, alongside `"sharp"`.** This was reproduced, not reasoned: without it `npm run build` passes and the route fails at *runtime* with `ERR_MODULE_NOT_FOUND` on the WASM loader's companion file.
+
+Model: `OwenElliott/image-safety-classifier-xs`, MIT, 13.1 MB. Input tensor `"image"`, float32, `[1, 3, 224, 224]` NCHW, raw 0–255 values — normalisation is baked into the graph, so do **not** apply mean/std or a /255 scale. Output tensor `"probabilities"`, `[1, 3]`, already soft-maxed, class order `["NSFL", "NSFW", "SFW"]` — the explicit-content score this task returns is index **1**. (The `mean`/`std` in the model's `config.json` belong to the original timm recipe, not the exported graph; ignore them.)
 
 **Files:**
 - Create: `lib/nsfw/local.ts`
 - Test: `lib/nsfw/local.test.ts`
-- Modify: `package.json` (the dependency the spike chose), `Dockerfile` (the model file)
+- Modify: `package.json` (`onnxruntime-web`), `next.config.ts` (`serverExternalPackages`), `Dockerfile` (the model file)
 
 **Interfaces:**
 - Consumes: `NsfwConfig` (Task 3), `labelFor` (Task 2)
-- Produces: `createLocalClassifier(config: NsfwConfig): Classifier`
+- Produces: `createLocalClassifier(config: NsfwConfig, run?: Score): Classifier`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1265,7 +1271,7 @@ type Score = (bytes: Buffer) => Promise<number>;
 let session: unknown;
 
 const defaultRun: Score = async (bytes) => {
-  const ort = await import("onnxruntime-node");
+  const ort = await import("onnxruntime-web");
   // Loaded once per process: the first upload after a start pays for it, the
   // rest do not.
   session ??= await ort.InferenceSession.create(process.env.NSFW_MODEL_PATH ?? "./models/nsfw.onnx");
@@ -1285,9 +1291,13 @@ export function createLocalClassifier(config: NsfwConfig, run: Score = defaultRu
 }
 ```
 
-- [ ] **Step 4: Wire the model into the image**
+- [ ] **Step 4: Wire the package and the model into the build**
 
-Add the model file to the Docker image (`COPY` in `Dockerfile`, next to the other assets) and the dependency to `package.json`. Set `NSFW_MODEL_PATH` in `docker-compose.yml` alongside the other NSFW variables from Task 12.
+Three separate things, all required:
+
+1. `npm install onnxruntime-web@1.27.0` — this task is the one that adds it to `package.json` and the lockfile.
+2. `next.config.ts`: add `"onnxruntime-web"` to `serverExternalPackages`, so the list reads `["sharp", "onnxruntime-web"]`. Without this the build succeeds and the route fails at runtime — verify by running `npm run build` and actually exercising the classifier, not by reading the config.
+3. `Dockerfile`: `COPY` the model file next to the other assets, and set `NSFW_MODEL_PATH` in `docker-compose.yml` alongside the other NSFW variables from Task 12.
 
 - [ ] **Step 5: Verify against a real image, outside the test suite**
 
