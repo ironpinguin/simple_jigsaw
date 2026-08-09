@@ -42,8 +42,8 @@ Verified, not assumed:
   `libc6-compat` and `openssl` — so a healthcheck may rely on the base image and
   on `node`, nothing else.
 - `docker-compose.yml` defines a healthcheck for `postgres` and none for `app`.
-- There is no `instrumentation.ts`; Next is 15.1.4, where `register()` is
-  stable.
+- There is no `instrumentation.ts`; `package.json` declares Next `^15.1.4`,
+  the installed version is 15.5.21, and `register()` is stable there too.
 - `createToken` sweeps unthrottled on every token issued (`lib/tokens.ts`).
 
 ## Reconciling #20
@@ -63,6 +63,15 @@ The concern behind the constraint is met instead by construction:
   the same load as one probe.
 - **Not a new surface.** The sweep runs on a timer regardless; the endpoint only
   brings it forward within the same hourly budget.
+
+The throttle bounds the `DELETE`, but the readiness handler's `SELECT 1` runs
+on every request, unthrottled — an unauthenticated caller can make the
+instance query its database as often as it likes. This is not a new exposure
+class: `app/api/report/route.ts` already reaches the database on
+unauthenticated requests. The real mitigation for a database slow enough for
+that to matter is not authenticating the probe but bounding how long any one
+caller can wait on it — `deploy/kubernetes/deployment.yaml`'s readiness probe
+sets `timeoutSeconds: 5` and `failureThreshold: 5` for that reason.
 
 A comment on #20 records this so the constraint reads as satisfied rather than
 ignored.
@@ -132,7 +141,11 @@ tests and for any caller that wants the sweep itself rather than the budget.
 
 ## Deployment
 
-### `docker-compose.yml`
+### `docker-compose.yml` and `docker-compose.sqlite.yml`
+
+The same healthcheck goes on the `app` service in both compose files — the
+sqlite stack is its own Compose project, not an override of the Postgres one,
+so it needs the block too.
 
 ```yaml
 healthcheck:

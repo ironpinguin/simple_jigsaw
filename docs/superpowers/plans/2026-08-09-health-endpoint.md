@@ -911,6 +911,13 @@ git add deploy/kubernetes
 git commit -m "docs(deploy): Kubernetes example with both probes"
 ```
 
+**Landed beyond this task's original scope:** `configmap.yaml` also ships an
+empty `ADMIN_EMAILS`, and `README.md` gained a *Legal pages* section — both
+follow-ups once the manifest was checked against `.env.example`, covered in
+later commits (`feat(deploy): document ADMIN_EMAILS in the Kubernetes
+configmap`, `docs(deploy): warn that empty legal vars ship an incomplete
+imprint`). Recorded here so the plan matches what shipped.
+
 ---
 
 ### Task 7: Changelog, issue note, final gates
