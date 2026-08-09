@@ -77,41 +77,60 @@ export async function POST(request: Request) {
     where: { imageKey },
     select: { label: true, score: true, model: true },
   });
-  const label = stored ? (toVerdictLabel(stored.label) ?? "UNKNOWN") : "CLEAN";
+  const narrowedLabel = stored ? toVerdictLabel(stored.label) : null;
+  const label = stored ? (narrowedLabel ?? "UNKNOWN") : "CLEAN";
   const pendingReview = requiresReview(label);
 
-  const puzzle = await prisma.puzzle.create({
-    data: {
-      title,
-      imageKey,
-      imageWidth,
-      imageHeight,
-      pieceCount,
-      cols,
-      rows,
-      seed,
-      isPublic: isPublic && !pendingReview,
-      ownerId: user.id,
-    },
-    select: { id: true },
-  });
-
-  if (pendingReview) {
-    // Into the moderation queue, with no reporter: this is the server's own
-    // finding, and inventing a reporter identity would put a person's name on
-    // a judgement nobody made.
-    await prisma.report.create({
+  // One transaction: a report-write failure after a bare puzzle.create would
+  // leave that puzzle row behind anyway — private, and invisible to every
+  // admin, because the moderation queue is the only surface a machine
+  // finding ever appears on. The client would then see a 500, retry, and
+  // produce a *second* private puzzle instead of losing the first one to a
+  // clean rollback. Mirrors the puzzle-plus-report shape in
+  // app/api/admin/puzzles/[id]/route.ts and lib/account-deletion.ts.
+  const puzzle = await prisma.$transaction(async (tx) => {
+    const created = await tx.puzzle.create({
       data: {
-        puzzleId: puzzle.id,
-        puzzleTitle: title,
-        category: AUTO_REPORT_CATEGORIES[0],
-        message: `Automatic classification: ${label}, score ${stored?.score ?? 0}, model ${stored?.model ?? "unknown"}.`,
-        reporterEmail: null,
-        reporterIpHash: null,
-        status: "OPEN",
+        title,
+        imageKey,
+        imageWidth,
+        imageHeight,
+        pieceCount,
+        cols,
+        rows,
+        seed,
+        isPublic: isPublic && !pendingReview,
+        ownerId: user.id,
       },
+      select: { id: true },
     });
-  }
+
+    if (pendingReview) {
+      // A label we can't narrow is not the classifier guard's own UNKNOWN (a
+      // genuine failure, score meaninglessly 0 — an operationally ordinary
+      // event). It means a stored value this code has never heard of, which
+      // is version skew or corruption, not a normal miss. The raw stored
+      // string goes in the message so an admin can tell the two apart
+      // instead of seeing "UNKNOWN" for both.
+      const reportedLabel = stored && narrowedLabel === null ? stored.label : label;
+      // Into the moderation queue, with no reporter: this is the server's own
+      // finding, and inventing a reporter identity would put a person's name
+      // on a judgement nobody made.
+      await tx.report.create({
+        data: {
+          puzzleId: created.id,
+          puzzleTitle: title,
+          category: AUTO_REPORT_CATEGORIES[0],
+          message: `Automatic classification: ${reportedLabel}, score ${stored?.score ?? 0}, model ${stored?.model ?? "unknown"}.`,
+          reporterEmail: null,
+          reporterIpHash: null,
+          status: "OPEN",
+        },
+      });
+    }
+
+    return created;
+  });
 
   return NextResponse.json({ id: puzzle.id, pendingReview }, { status: 201 });
 }
