@@ -30,7 +30,8 @@ spec:
           readinessProbe:
             httpGet: { path: /api/health/ready, port: 3000 }
             periodSeconds: 10
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 5
           # The container runs `prisma db push` before `next start`.
           startupProbe:
             httpGet: { path: /api/health, port: 3000 }

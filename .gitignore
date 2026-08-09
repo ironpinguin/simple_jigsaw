@@ -48,3 +48,6 @@ next-env.d.ts
 /junit.xml
 /gl-sast-report.json
 /.npm/
+
+# Kubernetes example — filled-in secrets, never committed
+/deploy/kubernetes/secret.yaml
