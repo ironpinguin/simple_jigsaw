@@ -97,6 +97,14 @@ im Code, siehe `lib/roles.ts`).
 - **Konten per CLI anlegen** (aktiv & bestätigt, umgeht die Bann-Liste):
   - `docker compose exec app npm run create-user -- user@example.com 'passwort'`
   - `docker compose exec app npm run create-user -- boss@example.com 'passwort' --admin`
+- **Abgelaufene Links aufräumen**: Bestätigungs- und Einladungs-Tokens werden
+  beim Einlösen gelöscht, abgelaufene beim nächsten Ausstellen eines Tokens
+  (Art. 5 Abs. 1 lit. e DSGVO, Speicherbegrenzung). Eine Instanz, die Tokens
+  ausgibt, hält sich damit selbst sauber; für einen einmaligen Nachlauf oder
+  einen festen Zeitplan gibt es zusätzlich:
+  - `docker compose exec app npm run purge-expired`
+  - Als Cron auf dem Host, z. B. täglich um 4 Uhr:
+    `0 4 * * * cd /pfad/zum/projekt && docker compose exec -T app npm run purge-expired`
 - **Registrierung abschalten**: `REGISTRATION_ENABLED=false` setzen — die
   öffentliche Selbst-Registrierung ist dann deaktiviert (die Registrierungsseite
   zeigt einen Hinweis, die Links verschwinden). Einladungen, Admin-Anlage und die
