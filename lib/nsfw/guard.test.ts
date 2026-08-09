@@ -46,4 +46,34 @@ describe("guard", () => {
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });
+
+  it("leaves no pending timer after a successful classification", async () => {
+    // A fast upload must not leave a 5s handle sitting on the event loop.
+    vi.useFakeTimers();
+    const inner: Classifier = {
+      classify: async () => ({ label: "CLEAN", score: 0.1, model: "fake" }),
+    };
+
+    await guard(inner, 50).classify(bytes);
+
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("turns a synchronous throw into UNKNOWN and logs it", async () => {
+    // A classifier whose body throws before ever returning a promise is a
+    // different failure path than a rejected promise; both must be caught.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const inner = {
+      classify: () => {
+        throw new Error("sync boom");
+      },
+    } as unknown as Classifier;
+
+    const verdict = await guard(inner, 50).classify(bytes);
+
+    expect(verdict.label).toBe("UNKNOWN");
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
 });
