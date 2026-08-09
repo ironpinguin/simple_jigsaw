@@ -127,28 +127,59 @@ sibling (`image-safety-classifier-s`, 23.7 MB) exists but is too close to the
 **Inference contract for Task 9** (`createLocalClassifier(config, run)`, where
 `run: (bytes: Buffer) => Promise<number>`):
 
-- Import: `const ort = require('onnxruntime-web');` — the bare specifier, not
-  the `/wasm` subpath. Node's `exports` map in this package resolves the bare
-  import to `dist/ort.node.min.js` for a `require()` caller, a build with no
-  native addon (verified: no `onnxruntime-node` reference, no `require(*.node)`
-  anywhere in that bundle — WASM only). This bundle also accepts a filesystem
-  path directly, so a model can be loaded with
-  `ort.InferenceSession.create(pathToModel)` — no manual buffer plumbing
-  needed, unlike the `/wasm` browser-oriented entry point, which insists on
-  `fetch()`-style URLs and needs the model bytes passed as a `Uint8Array`
-  instead.
+- Import: **`import * as ort from "onnxruntime-web";`** — this repo is
+  ESM/TypeScript (`tsconfig.json`: `"module": "esnext"`; `require()` appears
+  in no `.ts` file here), so this is the form Task 9 actually writes, and it
+  is the form that was verified against the real build — not `require()` in a
+  scratch `node -e`, which is a different resolution path and does not prove
+  anything about how Next bundles the route handler.
+- **Required `next.config.ts` change, to be made in Task 9, not here:**
+  add `"onnxruntime-web"` to the existing `serverExternalPackages` array, next
+  to `"sharp"`:
+
+  ```ts
+  serverExternalPackages: ["sharp", "onnxruntime-web"],
+  ```
+
+  Without it, `npm run build` succeeds and compiles cleanly with no warning —
+  the failure is silent until the route actually runs. Webpack resolves the
+  bare `import` correctly to the package's `dist/ort.node.min.mjs` bundle (the
+  `"node"` condition in its `exports` map is honoured for a server route), but
+  that bundle loads its WASM backend via a companion file
+  (`ort-wasm-simd-threaded.mjs`) at a path computed relative to itself at
+  runtime, and webpack's bundling moves/renames files so that relative lookup
+  breaks. Verified by building and running the actual production server
+  (`next build` + `next start`) against a route that does
+  `ort.InferenceSession.create(modelPath)`: it failed with
+  `Cannot find module '.../route/ort-wasm-simd-threaded.mjs'` without the
+  config change, and succeeded (`session ok, inputs=image
+  outputs=probabilities`) with it — same code, same build, only the
+  `next.config.ts` line changed. Full transcript in the fix-report addendum to
+  `task-1-report.md`. This is the same class of fix `serverExternalPackages:
+  ["sharp"]` already exists for, and for the same underlying reason: a
+  package that resolves its own assets by relative path at runtime cannot be
+  safely bundled.
+- Once external, `ort.InferenceSession.create(pathToModel)` — a plain
+  filesystem path, no manual buffer plumbing — works, confirmed by the same
+  test above.
 - Input tensor: name `"image"`, dtype `float32`, shape `[1, 3, 224, 224]`
   (NCHW). Decode with the project's existing `sharp` dependency: `.resize(224,
   224, { fit: "fill" }).removeAlpha().raw()` gives interleaved HWC `uint8`
   RGB; convert to planar CHW `Float32Array` with raw `0–255` values —
   **no mean/std normalisation, no /255 scaling**. The model card states
-  normalisation is baked into the ONNX graph itself.
+  normalisation is baked into the ONNX graph itself, and this was confirmed
+  empirically: raw 0–255 input through this exact pipeline produces a
+  correctly-behaved, already-soft-maxed output (see below).
 - Output tensor: name `"probabilities"`, shape `[1, 3]`, already
   soft-maxed (sums to 1.0). Class order is fixed: **index 0 = NSFL** (gore/
-  violent), **index 1 = NSFW** (pornographic/suggestive), **index 2 = SFW**.
-  `run()` returns `probabilities.data[1]` — the NSFW index — as the explicit
-  score `verdict.ts` thresholds against. NSFL is not surfaced; a future issue
-  could route it separately, but nothing here reads index 0.
+  violent), **index 1 = NSFW** (pornographic/suggestive), **index 2 = SFW** —
+  this is not read off the model's behaviour, it is stated directly by the
+  model's own `config.json` at the pinned commit
+  (`pretrained_cfg.label_names: ["NSFL", "NSFW", "SFW"]`; command and full
+  output in the fix-report addendum to `task-1-report.md`). `run()` returns
+  `probabilities.data[1]` — the NSFW index — as the explicit score
+  `verdict.ts` thresholds against. NSFL is not surfaced; a future issue could
+  route it separately, but nothing here reads index 0.
 - Verified end-to-end (decode → resize → tensor → inference) with a synthetic
   solid-colour JPEG through this exact pipeline; output summed to 1.0 and
   matched a plain `onnxruntime-node` run of the same model bit-for-bit at ~1e-7
