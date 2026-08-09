@@ -140,6 +140,35 @@ describe("GET /api/account/export", () => {
     expect(res.status).toBe(404);
   });
 
+  it("does not spend an export on a request the database failed to answer", async () => {
+    // Otherwise five blips cost the user their whole hourly allowance, and the
+    // sixth attempt tells them they asked too often — blaming them for a fault
+    // on this side.
+    const { EXPORT_RATE_LIMIT } = await import("@/lib/account-export");
+    puzzleFindMany.mockRejectedValue(new Error("connection lost"));
+    for (let i = 0; i < EXPORT_RATE_LIMIT + 1; i += 1) {
+      await expect(GET()).rejects.toThrow("connection lost");
+    }
+    puzzleFindMany.mockResolvedValue([puzzleRow]);
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+  });
+
+  it("does not spend an export when there is no account row to export", async () => {
+    const { EXPORT_RATE_LIMIT } = await import("@/lib/account-export");
+    userFindUnique.mockResolvedValue(null);
+    for (let i = 0; i < EXPORT_RATE_LIMIT + 1; i += 1) {
+      expect((await GET()).status).toBe(404);
+    }
+    userFindUnique.mockResolvedValue(row);
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+  });
+
   it("is never statically optimized", () => {
     expect(dynamic).toBe("force-dynamic");
   });

@@ -210,4 +210,34 @@ describe("takeExportSlot", () => {
       new Map([["user-1", [NOW + EXPORT_RATE_WINDOW_MS + 1]]]),
     );
   });
+
+  it("hands a slot back when the export never happened", async () => {
+    // A request that claimed a slot and then failed bought nothing, so it must
+    // not count against the hour.
+    const { takeExportSlot, releaseExportSlot, EXPORT_RATE_LIMIT } = await freshExport();
+    for (let i = 0; i < EXPORT_RATE_LIMIT; i += 1) takeExportSlot("user-1", NOW);
+
+    releaseExportSlot("user-1");
+
+    expect(takeExportSlot("user-1", NOW)).toBe(true);
+  });
+
+  it("drops the entry once a user holds nothing again", async () => {
+    const { takeExportSlot, releaseExportSlot } = await freshExport();
+    takeExportSlot("user-1", NOW);
+
+    releaseExportSlot("user-1");
+
+    expect(globalThis.__jigsawExportHits).toEqual(new Map());
+  });
+
+  it("shrugs off a release from a user that holds nothing", async () => {
+    const { takeExportSlot, releaseExportSlot, EXPORT_RATE_LIMIT } = await freshExport();
+
+    releaseExportSlot("user-1");
+
+    for (let i = 0; i < EXPORT_RATE_LIMIT; i += 1) {
+      expect(takeExportSlot("user-1", NOW)).toBe(true);
+    }
+  });
 });

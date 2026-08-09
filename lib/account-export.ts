@@ -152,3 +152,17 @@ export function takeExportSlot(userId: string, now: number = Date.now()): boolea
   hits.set(userId, recent);
   return true;
 }
+
+/**
+ * Hand back a slot claimed by `takeExportSlot` when the export did not happen
+ * after all. Slots are interchangeable — only how many of them fall inside the
+ * window matters — so this drops the most recent one rather than hunting for a
+ * particular timestamp.
+ */
+export function releaseExportSlot(userId: string): void {
+  const recent = hits.get(userId);
+  if (!recent?.length) return;
+
+  recent.pop();
+  if (recent.length === 0) hits.delete(userId);
+}

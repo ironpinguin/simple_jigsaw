@@ -159,6 +159,32 @@ describe("ExportAccount", () => {
     expect(logged).toHaveBeenCalled();
   });
 
+  it("recovers when the file arrives but cannot be saved", async () => {
+    // The request succeeded and the body then failed to read — an interrupted
+    // download of a large account. Without a handler the button stays disabled
+    // on "Collecting your data…" with no message, and only a reload clears it.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        blob: async () => {
+          throw new TypeError("network error");
+        },
+        json: async () => null,
+      })),
+    );
+    mount();
+
+    await clickExport();
+
+    expect(container.textContent).toContain("Download failed.");
+    expect(button().disabled).toBe(false);
+    expect(button().textContent).toContain("Download data");
+    expect(logged).toHaveBeenCalled();
+  });
+
   it("lets the user try again after a failure", async () => {
     respondWith({ ok: false, status: 500, body: null });
     mount();

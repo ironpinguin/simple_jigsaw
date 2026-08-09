@@ -15,41 +15,51 @@ export default function ExportAccount() {
     setBusy(true);
     setError(null);
 
-    let res: Response;
+    // Every path below releases the button, including the ones that throw:
+    // a stuck "collecting…" with no message reads as an instance refusing to
+    // hand over the data, and only a reload clears it.
     try {
-      res = await fetch("/api/account/export");
-    } catch (err) {
-      // Only the request is caught; a throw from the save below must not be
-      // reported as a failed request.
-      console.error("[my] data export request failed:", err);
-      setError(t("exportFailed"));
-      setBusy(false);
-      return;
-    }
+      let res: Response;
+      try {
+        res = await fetch("/api/account/export");
+      } catch (err) {
+        // Only the request is caught here; a throw from the save below is a
+        // different failure and gets its own handler.
+        console.error("[my] data export request failed:", err);
+        setError(t("exportFailed"));
+        return;
+      }
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      setError(data?.error ?? t("exportFailed"));
-      setBusy(false);
-      return;
-    }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error ?? t("exportFailed"));
+        return;
+      }
 
-    const url = URL.createObjectURL(await res.blob());
-    try {
-      const link = document.createElement("a");
-      link.href = url;
-      // The server names the file too, but a Content-Disposition filename is
-      // not visible to fetch, so it is repeated here.
-      link.download = `jigsaw-export-${new Date().toISOString().slice(0, 10)}.json`;
-      link.click();
+      try {
+        const url = URL.createObjectURL(await res.blob());
+        try {
+          const link = document.createElement("a");
+          link.href = url;
+          // The server names the file too, but a Content-Disposition filename is
+          // not applied to a blob saved through an anchor, so it is repeated here.
+          link.download = `jigsaw-export-${new Date().toISOString().slice(0, 10)}.json`;
+          link.click();
+        } finally {
+          // The click has already handed the blob to the browser, so nothing is
+          // lost by releasing it — and holding it would pin the whole export in
+          // memory for as long as the page lives.
+          URL.revokeObjectURL(url);
+        }
+      } catch (err) {
+        // The response arrived and reading or saving it failed — an interrupted
+        // body read on a large account, most likely.
+        console.error("[my] saving the data export failed:", err);
+        setError(t("exportFailed"));
+      }
     } finally {
-      // The click has already handed the blob to the browser, so nothing is
-      // lost by releasing it — and holding it would pin the whole export in
-      // memory for as long as the page lives.
-      URL.revokeObjectURL(url);
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   return (
