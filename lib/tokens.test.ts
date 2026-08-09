@@ -1,20 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { create, deleteMany, findUnique, deleteOne } = vi.hoisted(() => ({
+const { create, findUnique, deleteOne, maybePurge } = vi.hoisted(() => ({
   create: vi.fn(),
-  deleteMany: vi.fn(),
   findUnique: vi.fn(),
   deleteOne: vi.fn(),
+  maybePurge: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
   prisma: {
-    verificationToken: { create, deleteMany, delete: deleteOne, findUnique },
+    verificationToken: { create, delete: deleteOne, findUnique },
   },
 }));
+vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
 
-import { consumeToken, createToken, purgeExpiredTokens } from "./tokens";
-import { expiredTokenFilter, tokenExpiry } from "./token-ttl";
+import { consumeToken, createToken } from "./tokens";
+import { tokenExpiry } from "./token-ttl";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
 
@@ -22,22 +23,13 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   create.mockResolvedValue({});
-  deleteMany.mockResolvedValue({ count: 0 });
   deleteOne.mockResolvedValue({});
+  maybePurge.mockResolvedValue(null);
 });
 
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
-});
-
-describe("purgeExpiredTokens", () => {
-  it("deletes the expired rows and reports how many", async () => {
-    deleteMany.mockResolvedValue({ count: 7 });
-
-    await expect(purgeExpiredTokens(NOW)).resolves.toBe(7);
-    expect(deleteMany).toHaveBeenCalledWith({ where: expiredTokenFilter(NOW) });
-  });
 });
 
 describe("createToken", () => {
@@ -57,29 +49,13 @@ describe("createToken", () => {
     expect(first).not.toEqual(second);
   });
 
-  it("purges expired rows when it issues a token", async () => {
-    // Without an operator running `npm run purge-expired`, issuing a token is
-    // the only thing that ever cleans the table.
+  it("asks for a sweep when it issues a token", async () => {
+    // Without the timer or a probe — a bare `docker run` — issuing a token is
+    // the only thing that cleans the table. The throttle decides whether the
+    // sweep actually runs; this only pins that the ask happens.
     await createToken("user-1", "EMAIL_VERIFY");
 
-    expect(deleteMany).toHaveBeenCalledWith({ where: expiredTokenFilter(NOW) });
-  });
-
-  it("still issues the token when the purge fails, and says so", async () => {
-    // Retention housekeeping must not turn a registration or an invite into a
-    // 500 — the user cannot act on it and has no other way in. It must not be
-    // silent either: this is the sweep the privacy policy promises, and a
-    // permanently failing one is otherwise indistinguishable from a table that
-    // had nothing to clean.
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    deleteMany.mockRejectedValue(new Error("db is having a day"));
-
-    await expect(createToken("user-1", "EMAIL_VERIFY")).resolves.toMatch(/^[0-9a-f]{64}$/);
-    expect(create).toHaveBeenCalled();
-    expect(logged).toHaveBeenCalledWith(
-      expect.stringContaining("purge of expired tokens failed"),
-      expect.any(Error),
-    );
+    expect(maybePurge).toHaveBeenCalledWith(NOW);
   });
 });
 
