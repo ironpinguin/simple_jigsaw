@@ -22,6 +22,19 @@ COPY package.json package-lock.json ./
 COPY prisma ./prisma
 RUN npm ci
 
+# ---- NSFW model ----
+# Not committed to git (see lib/nsfw/local.ts) — fetched here and baked into
+# the runner image instead, pinned to the exact commit the design's spike
+# verified, with the sha256 checked so an upstream change to the file can't
+# silently change what ships. node:22-alpine already carries busybox wget
+# (the compose healthcheck uses it too), so no extra package is needed.
+FROM base AS model
+RUN wget -q -O /tmp/nsfw.onnx \
+      "https://huggingface.co/OwenElliott/image-safety-classifier-xs/resolve/54f4560bd9c5ee92d45dc30418a8f8680e80de6d/onnx/image-safety-classifier-xs.onnx" \
+    && echo "8c28c49d9075f3ad15ebdc2961f02d5b3f99be944815b848b49c9f0e6f3fb689  /tmp/nsfw.onnx" | sha256sum -c - \
+    && mkdir -p /app/models \
+    && mv /tmp/nsfw.onnx /app/models/nsfw.onnx
+
 # ---- development ----
 FROM base AS dev
 ENV NODE_ENV=development
@@ -56,6 +69,7 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/scripts ./scripts
+COPY --from=model /app/models ./models
 EXPOSE 3000
 # The client is already baked for the build-time provider; just sync the schema
 # to the database for the active provider, then start.

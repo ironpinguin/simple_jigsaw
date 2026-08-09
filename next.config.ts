@@ -4,8 +4,11 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./i18n/request.ts");
 
 const nextConfig: NextConfig = {
-  // sharp is used server-side only; keep it external to the server bundle.
-  serverExternalPackages: ["sharp"],
+  // sharp and onnxruntime-web are used server-side only; keep them external to
+  // the server bundle. onnxruntime-web's WASM backend loads a companion file
+  // by a path computed relative to itself at runtime, which webpack bundling
+  // breaks — see the design doc's spike section for the reproduction.
+  serverExternalPackages: ["sharp", "onnxruntime-web"],
   // This project has its own lockfile; pin the tracing root to silence the
   // "multiple lockfiles" workspace-root warning.
   outputFileTracingRoot: __dirname,
