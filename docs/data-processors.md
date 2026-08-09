@@ -13,7 +13,7 @@ ourselves" is exactly the claim the privacy policy makes on your behalf.
 
 ## What can leave the instance
 
-Three routes out, and no others. Everything else the app stores stays in its own
+Four routes out, and no others. Everything else the app stores stays in its own
 Postgres/SQLite database and its own object storage.
 
 ### 1. Outbound mail (`lib/mail.ts`)
@@ -59,6 +59,19 @@ anything.
 If you put a CDN or WAF in front of the app, it terminates TLS and sees every
 request and response — treat it as a processor too.
 
+### 4. Image classification (`lib/nsfw/`)
+
+Only when `NSFW_MODE=external`. The configured `NSFW_API_URL` receives the
+re-encoded WebP bytes of every upload — the same bytes object storage gets,
+never the original file — and `NSFW_API_KEY` authenticates the request. That
+makes the named service an Art. 28 processor, same as the SMTP or S3 case
+above: name it in `LEGAL_CLASSIFIER_PROCESSOR` before going live.
+
+`off` (the default) skips classification entirely, and `local` runs an ONNX
+model in the app process (`NSFW_MODEL_PATH`) — in both cases the image never
+leaves for this purpose, regardless of where object storage or mail happen to
+be.
+
 ## What deliberately does *not* leave the instance
 
 Worth writing down, because these are the ones an auditor asks about and a
@@ -102,10 +115,11 @@ wherever you keep your own processing records, and fill it in there.
 | --- | --- | --- | --- | --- |
 | SMTP (`SMTP_HOST`) | | | | |
 | Object storage (`S3_ENDPOINT`) | | | | |
+| Image classifier (`NSFW_API_URL`), only when `NSFW_MODE=external` | | the re-encoded WebP of every upload | | |
 | Hosting / server | | | | |
 | Reverse proxy or CDN, if any | | | | |
 
-What the deployment *does* declare in the repo's own terms are the three
+What the deployment *does* declare in the repo's own terms are the four
 environment variables below — they are the published summary of the filled-in
 table, not a substitute for it.
 
@@ -120,10 +134,15 @@ the environment (`lib/legal.ts`, `app/[locale]/legal/privacy/page.tsx`):
   third party.** That is a factual claim; leaving the variable empty while using
   an external provider publishes a false statement.
 - `LEGAL_STORAGE_PROCESSOR` — the same, for uploaded images.
+- `LEGAL_CLASSIFIER_PROCESSOR` — set it when `NSFW_MODE=external`: the policy
+  then adds a paragraph naming the classification service as a processor too.
+  Unlike the two above, leaving it empty makes no claim at all — `off` and
+  `local` never send the image anywhere, so there is no "self-hosted"
+  statement to get wrong, and the paragraph is simply not shown.
 - `LEGAL_HOSTING_REGION` — printed as-is ("Deutschland", "the EU"). Empty, the
   policy says the location is not stated rather than claiming the EU.
 
-So the table above is the source and these three variables are its published
+So the table above is the source and these four variables are its published
 form. They must agree.
 
 ### What this means for installing
@@ -131,7 +150,7 @@ form. They must agree.
 Nothing here is a build input, and the table is not an installation step. The
 published images work as they are:
 
-- **The three variables are read per request**, not baked in. `lib/legal.ts`
+- **The four variables are read per request**, not baked in. `lib/legal.ts`
   reads `process.env` on every call and both legal pages are `force-dynamic`,
   so changing a value takes a container restart — `docker compose up -d` after
   editing `.env` — and never a rebuild. Verified by running one build twice

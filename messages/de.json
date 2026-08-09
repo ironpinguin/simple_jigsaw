@@ -259,6 +259,7 @@
     "recipientsMailExternal": "Transaktions-E-Mails — Bestätigung, Einladung, Benachrichtigung über eine eingegangene Meldung und Hinweis auf ein entferntes Puzzle — versenden wir über {provider}. Dieser Dienst erhält dabei deine E-Mail-Adresse und, bei den beiden zuletzt genannten, den Titel des betroffenen Puzzles. Er verarbeitet diese Daten als Auftragsverarbeiter für uns (Art. 28 DSGVO).",
     "recipientsStorageSelf": "Hochgeladene Bilder liegen auf Speicher, den wir selbst betreiben, und werden an keinen Dritten übermittelt.",
     "recipientsStorageExternal": "Hochgeladene Bilder liegen bei {provider}, der sie als Auftragsverarbeiter für uns speichert (Art. 28 DSGVO).",
+    "recipientsClassifierExternal": "Hochgeladene Bilder werden außerdem zur Prüfung auf explizite Inhalte an {provider} übermittelt, der sie als Auftragsverarbeiter für uns verarbeitet (Art. 28 DSGVO).",
     "recipientsOther": "Darüber hinaus geben wir deine Daten nicht weiter, außer wir sind gesetzlich dazu verpflichtet.",
     "hostingTitle": "6. Hosting",
     "hostingTextRegion": "Der Dienst wird in {region} betrieben.",

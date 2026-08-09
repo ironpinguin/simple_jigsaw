@@ -259,6 +259,7 @@
     "recipientsMailExternal": "Transactional emails — confirmation, invitation, notice that a report came in, and notice that a puzzle was removed — are sent through {provider}. That service receives your email address and, for the latter two, the title of the puzzle concerned. It processes this data on our behalf as a processor (Art. 28 GDPR).",
     "recipientsStorageSelf": "Uploaded images are kept on storage we operate ourselves and are not transferred to any third party.",
     "recipientsStorageExternal": "Uploaded images are kept at {provider}, which stores them on our behalf as a processor (Art. 28 GDPR).",
+    "recipientsClassifierExternal": "Uploaded images are also sent to {provider} to check for explicit content; it processes them on our behalf as a processor (Art. 28 GDPR).",
     "recipientsOther": "Beyond that we do not share your data, unless we are legally obliged to.",
     "hostingTitle": "6. Hosting",
     "hostingTextRegion": "The service is operated in {region}.",

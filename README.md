@@ -122,13 +122,26 @@ im Code, siehe `lib/roles.ts`).
 Für Produktion echtes SMTP setzen (`SMTP_HOST/PORT/USER/PASS/FROM`), `APP_URL`
 auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
 
+- **Bildklassifizierung (NSFW)**: optional und standardmäßig aus
+  (`NSFW_MODE=off`). `local` prüft mit einem lokalen ONNX-Modell im Container
+  (`NSFW_MODEL_PATH`), `external` schickt jedes hochgeladene Bild an einen
+  Dienst unter `NSFW_API_URL`/`NSFW_API_KEY` — das macht ihn zu einem
+  Auftragsverarbeiter, siehe [docs/data-processors.md](docs/data-processors.md).
+  Ein als möglich explizit erkanntes oder nicht klassifizierbares Bild wird
+  trotzdem gespeichert, das Puzzle bleibt aber privat, landet in der
+  Admin-Warteschlange und kann von der hochladenden Person nicht selbst
+  veröffentlicht werden, bis ein Admin die Meldung entschieden hat; sie wird
+  darauf hingewiesen. `.env.example` dokumentiert alle `NSFW_*`-Variablen.
 - **Rechtliche Seiten**: `LEGAL_NAME`, `LEGAL_ADDRESS` und `LEGAL_EMAIL` sind
   Pflicht, bevor die Instanz öffentlich erreichbar ist — sonst zeigt
   `/legal/imprint` statt eines Impressums einen Hinweis auf die fehlenden
-  Variablen. Läuft Mail oder Bild-Speicher bei einem externen Anbieter, muss
-  `LEGAL_MAIL_PROCESSOR` bzw. `LEGAL_STORAGE_PROCESSOR` ihn benennen, sonst
-  behauptet die Datenschutzerklärung Eigenbetrieb. `.env.example` erklärt alle
-  `LEGAL_*`-Variablen im Detail.
+  Variablen. Läuft Mail, Bild-Speicher oder die Bildklassifizierung
+  (`NSFW_MODE=external`) bei einem externen Anbieter, muss
+  `LEGAL_MAIL_PROCESSOR`, `LEGAL_STORAGE_PROCESSOR` bzw.
+  `LEGAL_CLASSIFIER_PROCESSOR` ihn benennen, sonst behauptet die
+  Datenschutzerklärung Eigenbetrieb oder verschweigt einen echten
+  Auftragsverarbeiter. `.env.example` erklärt alle `LEGAL_*`-Variablen im
+  Detail.
 - **Auftragsverarbeitung**: Welche personenbezogenen Daten die Instanz überhaupt
   verlassen und was pro externem Dienst zu klären ist (AV-Vertrag, Drittland),
   steht in [docs/data-processors.md](docs/data-processors.md) — mit einer

@@ -88,6 +88,12 @@ export default async function PrivacyPage({
           ? t("recipientsStorageExternal", { provider: processors.storage })
           : t("recipientsStorageSelf")}
       </p>
+      {/* Unlike mail/storage there is no "self-hosted" half: off and local
+          never send the image anywhere, so an unset processor means nothing
+          to disclose rather than a claim to make. */}
+      {processors.classifier && (
+        <p>{t("recipientsClassifierExternal", { provider: processors.classifier })}</p>
+      )}
       <p>{t("recipientsOther")}</p>
 
       <h2>{t("hostingTitle")}</h2>

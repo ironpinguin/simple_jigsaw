@@ -1,6 +1,9 @@
-// Reading the five NSFW_* variables, in one place, with one rule: a
-// misconfiguration falls back to `off` and says so. This feature is optional,
-// so a typo must leave uploading exactly as it is today rather than break it.
+// Reading the NSFW_* variables that every mode shares, in one place, with one
+// rule: a misconfiguration falls back to `off` and says so. This feature is
+// optional, so a typo must leave uploading exactly as it is today rather than
+// break it. NSFW_MODEL_PATH is deliberately not read here: only the local
+// classifier (lib/nsfw/local.ts) needs it, so it reads process.env directly
+// instead of growing NsfwConfig with a field the other two modes ignore.
 
 export const NSFW_MODES = ["off", "local", "external"] as const;
 export type NsfwMode = (typeof NSFW_MODES)[number];

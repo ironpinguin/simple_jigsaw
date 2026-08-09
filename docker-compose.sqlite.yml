@@ -42,11 +42,21 @@ services:
       LEGAL_PHONE: ${LEGAL_PHONE:-}
       LEGAL_MAIL_PROCESSOR: ${LEGAL_MAIL_PROCESSOR:-}
       LEGAL_STORAGE_PROCESSOR: ${LEGAL_STORAGE_PROCESSOR:-}
+      LEGAL_CLASSIFIER_PROCESSOR: ${LEGAL_CLASSIFIER_PROCESSOR:-}
       LEGAL_HOSTING_REGION: ${LEGAL_HOSTING_REGION:-}
       LEGAL_PRIVATE_SERVICE: ${LEGAL_PRIVATE_SERVICE:-}
       # Local NSFW classification (NSFW_MODE=local): where the Dockerfile bakes
-      # the model. The other NSFW_* variables are documented separately.
+      # the model.
       NSFW_MODEL_PATH: /app/models/nsfw.onnx
+      # Image classification on upload — off (default) | local | external — and
+      # its remaining variables are commented out here so the default stays
+      # off; see .env.example for what each one does before uncommenting.
+      # NSFW_MODE: external
+      # NSFW_THRESHOLD: "0.85"
+      # NSFW_TIMEOUT_MS: "5000"
+      # external mode only — makes the service a processor, see docs/data-processors.md
+      # NSFW_API_URL: ""
+      # NSFW_API_KEY: ""
     volumes:
       - sqlitedata:/data
     # start_period covers `npm run db:push`, which the container's CMD runs

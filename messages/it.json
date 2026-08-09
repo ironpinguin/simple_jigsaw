@@ -259,6 +259,7 @@
     "recipientsMailExternal": "Le e-mail transazionali — conferma, invito, notifica di una segnalazione ricevuta e avviso di rimozione di un puzzle — vengono inviate tramite {provider}. Questo servizio riceve il tuo indirizzo e-mail e, per le ultime due, il titolo del puzzle interessato. Tratta questi dati per conto nostro in qualità di responsabile del trattamento (art. 28 del GDPR).",
     "recipientsStorageSelf": "Le immagini caricate risiedono su uno spazio di archiviazione gestito da noi e non vengono trasmesse a terzi.",
     "recipientsStorageExternal": "Le immagini caricate risiedono presso {provider}, che le conserva per conto nostro in qualità di responsabile del trattamento (art. 28 del GDPR).",
+    "recipientsClassifierExternal": "Le immagini caricate vengono inoltre inviate a {provider} per la verifica di contenuti espliciti; tratta questi dati per conto nostro in qualità di responsabile del trattamento (art. 28 del GDPR).",
     "recipientsOther": "Al di là di questo non comunichiamo i tuoi dati, salvo obbligo di legge.",
     "hostingTitle": "6. Hosting",
     "hostingTextRegion": "Il servizio è gestito in {region}.",

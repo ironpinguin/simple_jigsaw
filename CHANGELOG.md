@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Optional NSFW classification of uploaded images (`NSFW_MODE`, off by
+  default). A flagged image still uploads, but the puzzle is created private
+  and appears in the admin review queue instead of being published, and its
+  owner cannot publish it themselves until an admin has resolved the entry;
+  a classifier that fails or times out is treated the same way. The uploader
+  is told their puzzle is awaiting review. Operators can run a local model or
+  an external service — the latter is an Art. 28 processor, see
+  `docs/data-processors.md`. (#23)
 - Logged-in users can download their own data from *Meine Puzzles* (GDPR
   Art. 15, and Art. 20 portability): account fields and every puzzle's
   metadata as one JSON file. Images are referenced by URL rather than
