@@ -23,6 +23,21 @@ instead, if you would rather not put an address in the configmap.
 - **startup → `/api/health`** covers `prisma db push`, which the container runs
   before starting the server.
 
+## The database has to be up when a pod starts
+
+The container's command is `npm run db:push && exec npx next start`: it migrates
+before it serves. If the database is unreachable at that moment the process
+exits and the pod goes `CrashLoopBackOff`. No probe changes that, and the
+`startupProbe`'s budget never comes into it, because nothing is listening yet.
+
+This is worth knowing precisely because it looks like a probe problem and is
+not. A pod that was already running rides an outage out — liveness stays green,
+readiness turns `503`, the pod leaves the Service and rejoins it when the
+database returns, without ever restarting. A pod that has to *start* during the
+same outage cannot, and will keep restarting until the database is back. So a
+rollout begun while the database is down will not complete, even though the
+pods it is replacing were serving happily a moment earlier.
+
 ## Legal pages
 
 `configmap.yaml` ships `LEGAL_NAME`, `LEGAL_ADDRESS` and `LEGAL_EMAIL` empty, so
