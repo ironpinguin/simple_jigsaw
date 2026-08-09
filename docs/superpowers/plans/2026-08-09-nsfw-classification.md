@@ -508,7 +508,7 @@ git commit -m "feat(nsfw): mode configuration, the off classifier and the failur
 
 **Execution order:** dispatch this **after Tasks 9 and 10**, because it imports `./local` and `./external` statically. Everything from Task 4 onwards depends on it, so it runs before Task 4 even though it is numbered here.
 
-`require()` is not used anywhere in this repo's TypeScript — the house pattern is `await import()`. Static imports are correct here because the weight is not in these modules: `local.ts` only pulls `onnxruntime-node` inside `classify`, so importing it costs nothing in `off` mode.
+`require()` is not used anywhere in this repo's TypeScript — the house pattern is `await import()`. Static imports are correct here because the weight is not in these modules: `local.ts` only pulls `onnxruntime-web` inside `classify`, so importing it costs nothing in `off` mode.
 
 **Files:**
 - Create: `lib/nsfw/index.ts`
