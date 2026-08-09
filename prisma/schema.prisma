@@ -107,3 +107,23 @@ model Report {
   @@index([reporterIpHash])
   @@index([puzzleId])
 }
+
+// The classifier's judgement of one stored image, keyed by the object key so
+// it survives between the upload request and the puzzle that claims it. Never
+// sent to the client: a verdict that travelled through the browser could be
+// rewritten by the uploader.
+//
+// label is a plain string ("CLEAN" | "FLAGGED" | "UNKNOWN", see
+// lib/nsfw/verdict.ts) because SQLite has no enums — same as Role and
+// Report.status. Rows whose key no puzzle references are swept by
+// lib/retention.ts.
+model ImageVerdict {
+  imageKey  String   @id
+  label     String
+  score     Float
+  model     String
+  createdAt DateTime @default(now())
+
+  // The retention sweep selects by age.
+  @@index([createdAt])
+}
