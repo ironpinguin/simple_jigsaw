@@ -108,21 +108,82 @@ An unknown `NSFW_MODE`, or `external` without URL and key, is a startup
 misconfiguration: log once and fall back to `off`. An operator who mistypes the
 mode gets today's behaviour and a log line, not a broken upload path.
 
-### The local model
+### The local model: spike result
 
-The one thing brainstorming could not settle from the repo alone. It is
-resolved by a decision rule rather than left open:
+`local` ships. Package: **`onnxruntime-web@1.27.0`**, not `onnxruntime-node` —
+the spike's first candidate failed criterion 4 (below), and the fallback that
+passed all four is what `lib/nsfw/local.ts` (Task 9) is built on.
 
-Step one of the implementation plan is a spike against fixed criteria — pure
-npm install with no project-level build step (`onnxruntime-node` prebuilds
-qualify, `@tensorflow/tfjs-node` does not, because of its native build),
-model under ~25 MB, permissive licence, and it must run inside the existing
-Docker image without a new base layer.
+**Model:** `OwenElliott/image-safety-classifier-xs`, file
+`onnx/image-safety-classifier-xs.onnx`, downloaded from
+`https://huggingface.co/OwenElliott/image-safety-classifier-xs` at commit
+`54f4560bd9c5ee92d45dc30418a8f8680e80de6d`. MIT licence (HF `cardData.license:
+mit`, restated in the model card). 13,137,569 bytes (12.5 MiB, `du -h` reports
+`13M`) — sha256
+`8c28c49d9075f3ad15ebdc2961f02d5b3f99be944815b848b49c9f0e6f3fb689`. A larger
+sibling (`image-safety-classifier-s`, 23.7 MB) exists but is too close to the
+~25 MB bound to be the safe default.
 
-If nothing meets the criteria, `local` is dropped from this issue and shipped
-as its own ticket; `off` and `external` deliver on their own and the interface
-above is unchanged. This is a decision the spike makes on evidence, not a
-question deferred indefinitely.
+**Inference contract for Task 9** (`createLocalClassifier(config, run)`, where
+`run: (bytes: Buffer) => Promise<number>`):
+
+- Import: `const ort = require('onnxruntime-web');` — the bare specifier, not
+  the `/wasm` subpath. Node's `exports` map in this package resolves the bare
+  import to `dist/ort.node.min.js` for a `require()` caller, a build with no
+  native addon (verified: no `onnxruntime-node` reference, no `require(*.node)`
+  anywhere in that bundle — WASM only). This bundle also accepts a filesystem
+  path directly, so a model can be loaded with
+  `ort.InferenceSession.create(pathToModel)` — no manual buffer plumbing
+  needed, unlike the `/wasm` browser-oriented entry point, which insists on
+  `fetch()`-style URLs and needs the model bytes passed as a `Uint8Array`
+  instead.
+- Input tensor: name `"image"`, dtype `float32`, shape `[1, 3, 224, 224]`
+  (NCHW). Decode with the project's existing `sharp` dependency: `.resize(224,
+  224, { fit: "fill" }).removeAlpha().raw()` gives interleaved HWC `uint8`
+  RGB; convert to planar CHW `Float32Array` with raw `0–255` values —
+  **no mean/std normalisation, no /255 scaling**. The model card states
+  normalisation is baked into the ONNX graph itself.
+- Output tensor: name `"probabilities"`, shape `[1, 3]`, already
+  soft-maxed (sums to 1.0). Class order is fixed: **index 0 = NSFL** (gore/
+  violent), **index 1 = NSFW** (pornographic/suggestive), **index 2 = SFW**.
+  `run()` returns `probabilities.data[1]` — the NSFW index — as the explicit
+  score `verdict.ts` thresholds against. NSFL is not surfaced; a future issue
+  could route it separately, but nothing here reads index 0.
+- Verified end-to-end (decode → resize → tensor → inference) with a synthetic
+  solid-colour JPEG through this exact pipeline; output summed to 1.0 and
+  matched a plain `onnxruntime-node` run of the same model bit-for-bit at ~1e-7
+  float precision, so the WASM backend is not a numerical downgrade.
+
+**How the file reaches the image:** not committed to git. `node:22-alpine`
+already carries busybox `wget` (used today by the compose healthcheck), so a
+`RUN wget -O` step in the `deps` or `build` stage of the Dockerfile can fetch
+the pinned HF commit URL at build time and `COPY --from=build` it forward to
+`runner`, the same pattern already used for `node_modules` and `.next`. Task 9
+should pin the exact commit above and verify the sha256 after download, so a
+model swap upstream can't silently change what ships. This wiring itself is
+Task 9's job, not this spike's.
+
+**Acceptance criteria — evidence (full commands and output in
+`.superpowers/sdd/2026-08-09-nsfw-classification/task-1-report.md`):**
+
+1. **PASS.** `onnxruntime-web` installs via plain `npm install` with zero
+   lifecycle scripts run and zero native `.node` addons anywhere in its
+   dependency tree (`flatbuffers`, `guid-typescript`, `long`,
+   `onnxruntime-common`, `platform`, `protobufjs` — all pure JS). `npm audit`:
+   0 vulnerabilities.
+2. **PASS.** Model file is 13,137,569 bytes, well under 25 MB.
+3. **PASS.** MIT for both the npm package and the model.
+4. **PASS, but not with the obvious candidate.** `onnxruntime-node`'s prebuilt
+   Linux x64 binary fails to load on the project's actual base image
+   (`node:22-alpine`): `Error relocating
+   .../libonnxruntime.so.1: __vsnprintf_chk: symbol not found` — a musl/glibc
+   ABI mismatch that persists even with `gcompat` installed (tested and still
+   fails; not that it would count anyway, since installing it would itself add
+   a system package). `onnxruntime-web`'s WASM backend has no such dependency:
+   built and ran, both `require("onnxruntime-web")` and a full decode-through-
+   inference pass, inside a container built from the project's exact base
+   layer (`node:22-alpine` + `apk add libc6-compat openssl`, nothing more) —
+   no new base image, no new system package.
 
 ### Data model
 
