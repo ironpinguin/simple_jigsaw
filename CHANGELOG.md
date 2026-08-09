@@ -74,10 +74,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Expired confirmation and invitation links are now deleted whenever the
-  container runs — at startup, hourly, and on every readiness check — instead
+  container runs — at startup and hourly after that, with a readiness check
+  able to bring the next sweep forward inside the same hourly budget — instead
   of only when a token happens to be issued. An instance with registration
   disabled therefore keeps its promise from the privacy policy too, and issuing
-  a token no longer means a table-wide delete. (#44)
+  a token no longer means a table-wide delete. `/api/health/ready` reports
+  `"retention": "stale"` if several sweeps in a row fail, so a sweep that has
+  quietly stopped working is visible without reading the log. (#44)
 - The privacy policy no longer says that an expired, never-redeemed link is
   kept until the account is deleted — it is now removed automatically, and the
   two paragraphs that described the old behaviour say so. (#20)

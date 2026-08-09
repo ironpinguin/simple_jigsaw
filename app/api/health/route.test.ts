@@ -9,7 +9,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-import { GET } from "./route";
+import { GET, dynamic } from "./route";
 
 describe("GET /api/health", () => {
   it("answers 200 without touching the database", async () => {
@@ -25,5 +25,11 @@ describe("GET /api/health", () => {
     const res = await GET();
 
     expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("is never statically optimized", async () => {
+    // The handler takes no Request and touches no dynamic API, which is
+    // exactly the shape Next will happily answer from a build-time render.
+    expect(dynamic).toBe("force-dynamic");
   });
 });

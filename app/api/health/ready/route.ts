@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { maybePurgeExpiredTokens } from "@/lib/retention";
+import { maybePurgeExpiredTokens, retentionStatus } from "@/lib/retention";
 
 // Readiness: can this instance actually serve requests? Kubernetes takes a
 // failing pod out of the Service on this, and compose reports the container
@@ -21,11 +21,19 @@ export async function GET() {
   }
 
   // Housekeeping rides along on a trigger that exists anyway, throttled to at
-  // most one sweep an hour across every caller. It cannot fail the probe: the
-  // catch is for a bug in the throttle itself, which handles its own errors.
-  await maybePurgeExpiredTokens().catch((error) => {
+  // most one sweep an hour across every caller. Deliberately not awaited: the
+  // result is unused, and a table-wide DELETE blocked on a lock would otherwise
+  // hold the probe past its timeout (5s in the k8s and compose configs). The
+  // .catch is for a bug in the throttle itself, which handles its own errors.
+  void maybePurgeExpiredTokens().catch((error) => {
     console.error("[health] retention sweep threw unexpectedly:", error);
   });
 
-  return NextResponse.json({ ok: true, db: "up" }, { headers: NO_STORE });
+  // Reported, never fatal: a pod whose sweep is stuck still serves traffic
+  // perfectly well, so this must not take it out of the Service. It is here
+  // because a failing sweep is otherwise invisible — `SELECT 1` above says
+  // nothing about whether the DELETE works.
+  const retention = retentionStatus().stale ? "stale" : "ok";
+
+  return NextResponse.json({ ok: true, db: "up", retention }, { headers: NO_STORE });
 }

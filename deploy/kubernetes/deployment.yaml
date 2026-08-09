@@ -26,13 +26,16 @@ spec:
           livenessProbe:
             httpGet: { path: /api/health, port: 3000 }
             periodSeconds: 10
+            # The default 1s budget is where spurious restarts come from on a
+            # busy event loop, even for a handler this trivial.
+            timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
             httpGet: { path: /api/health/ready, port: 3000 }
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 5
-          # The container runs `prisma db push` before `next start`.
+          # The container runs `npm run db:push` before `next start`.
           startupProbe:
             httpGet: { path: /api/health, port: 3000 }
             periodSeconds: 5
@@ -40,3 +43,13 @@ spec:
           resources:
             requests: { cpu: 100m, memory: 256Mi }
             limits: { memory: 1Gi }
+          # The image has no USER, so the container still runs as root; these
+          # drop what it can do with that. `runAsNonRoot: true` belongs here
+          # too, but would stop the pod starting until the Dockerfile's runner
+          # stage sets a user — see the README.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault

@@ -20,15 +20,17 @@ instead, if you would rather not put an address in the configmap.
   would restart every pod whenever the database blips.
 - **readiness → `/api/health/ready`** checks the database and answers `503`
   when it is unreachable, taking the pod out of the Service until it recovers.
-- **startup → `/api/health`** covers `prisma db push`, which the container runs
-  before starting the server.
+- **startup → `/api/health`** gives the container time to finish
+  `npm run db:push` before the other two probes start counting failures.
 
 ## The database has to be up when a pod starts
 
 The container's command is `npm run db:push && exec npx next start`: it migrates
 before it serves. If the database is unreachable at that moment the process
-exits and the pod goes `CrashLoopBackOff`. No probe changes that, and the
-`startupProbe`'s budget never comes into it, because nothing is listening yet.
+exits and the pod goes `CrashLoopBackOff`. No probe changes that: the kubelet
+restarts an exited container whatever the probes say. The `startupProbe`'s
+budget only ever covers a server that is still starting, never one that has
+already given up, so raising `failureThreshold` will not help here.
 
 This is worth knowing precisely because it looks like a probe problem and is
 not. A pod that was already running rides an outage out — liveness stays green,
@@ -46,16 +48,40 @@ names the missing variables and `/legal/privacy` says no controller is
 configured. All three are required before the instance is publicly reachable;
 see `.env.example` for what each one says on the page.
 
+`LEGAL_MAIL_PROCESSOR` and `LEGAL_STORAGE_PROCESSOR` are the ones that bite
+quietly. This example points `SMTP_HOST` and `S3_ENDPOINT` at services outside
+the cluster, and an external service with an empty value here makes the privacy
+policy state that mail and image storage are *self-hosted* — a false statement
+rather than a missing one, and the processor naming Art. 28 asks for. Fill both
+in, or point the two services back inside the cluster. `LEGAL_HOSTING_REGION`
+is optional but empty means the policy declines to state a location.
+
+## Security context
+
+`deployment.yaml` drops capabilities and forbids privilege escalation, but not
+`runAsNonRoot`: the image has no `USER`, so the container runs as root and that
+setting would stop the pod starting. If you add `USER node` to the Dockerfile's
+`runner` stage, add `runAsNonRoot: true` and `runAsUser: 1000` here to match.
+
 ## Retention and replicas
 
-Expired confirmation and invitation links are deleted at startup, hourly, and
-on readiness checks (GDPR Art. 5(1)(e)). The interval is tracked per process,
+Expired confirmation and invitation links are deleted at startup and hourly
+after that (GDPR Art. 5(1)(e)); a readiness check can bring the next sweep
+forward, but never past the hourly budget. That budget is tracked per process,
 so `replicas: N` means up to N sweeps an hour instead of one. That is a
 `DELETE` against a table this sweep keeps small — harmless, but worth knowing
 before you read the query log.
 
-If you would rather have exactly one sweep, run the script on a schedule and
-ignore that the pods also do it:
+`/api/health/ready` reports `"retention": "stale"` once several hours pass with
+no sweep succeeding, and stays `200` while it does — a pod whose housekeeping is
+stuck still serves traffic. It is worth alerting on: `SELECT 1` passing says
+nothing about whether the `DELETE` does, and a role without delete rights or a
+full disk leaves readiness green while expired data accumulates.
+
+There is no way to switch the in-process sweep off, so a `CronJob` is an
+addition to it, not a replacement. It is still worth having if you want the
+deletion to run against a database the pods are not attached to, or on a
+schedule you control and can audit:
 
 ```yaml
 apiVersion: batch/v1
@@ -73,6 +99,10 @@ spec:
             - name: purge
               image: ghcr.io/ironpinguin/simple_jigsaw:latest
               command: ["npm", "run", "purge-expired"]
+              # Only the secret: the script needs DATABASE_URL and nothing
+              # else, and the Prisma client is baked for the build-time
+              # provider, so DATABASE_PROVIDER from the configmap would not
+              # change what it talks to.
               envFrom:
                 - secretRef: { name: jigsaw-secrets }
 ```

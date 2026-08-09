@@ -47,9 +47,11 @@ services:
     volumes:
       - sqlitedata:/data
     # start_period covers `npm run db:push`, which the container's CMD runs
-    # before `next start`. /ready rather than /health, because an app that
-    # cannot reach the database is not doing its job — and the probe is what
-    # keeps the retention sweep running on an idle instance.
+    # before `next start`. This file is its own Compose project, so the dev
+    # override never merges into it. /ready rather than /health, because an app
+    # that cannot reach the database is not doing its job. (The retention sweep
+    # runs on its own timer either way; a probe only brings the next one
+    # forward, and never past the hourly budget.)
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health/ready"]
       interval: 30s

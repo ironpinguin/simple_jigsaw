@@ -12,8 +12,9 @@ export async function createToken(userId: string, type: TokenKind): Promise<stri
   // instrumentation.ts and the readiness probe. Issuing a token therefore no
   // longer means a table-wide DELETE, and the one place that logs a failed
   // sweep is lib/retention.ts. Called bare, not `.catch()`-guarded: the
-  // function is documented never to throw, and lib/retention.test.ts's
-  // "logs a failed sweep instead of throwing" test is what keeps that true.
+  // function is documented never to throw, and lib/retention.test.ts pins the
+  // failure that actually happens — the DELETE rejecting. Code added *before*
+  // that function's try would escape both the test and this call site.
   await maybePurgeExpiredTokens(now);
 
   const token = randomBytes(32).toString("hex");
