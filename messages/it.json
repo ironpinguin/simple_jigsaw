@@ -95,7 +95,8 @@
     "resetView": "Reimposta vista",
     "zoomLevel": "Livello di zoom attuale",
     "zoomPercent": "{percent}%",
-    "minimap": "Panoramica del tavolo — clicca o usa i tasti freccia per spostarti in una zona"
+    "minimap": "Panoramica del tavolo — clicca o usa i tasti freccia per spostarti in una zona",
+    "reviewPending": "Questo puzzle è per ora privato ed è in corso una verifica. Al termine potrai renderlo pubblico."
   },
   "my": {
     "title": "I miei puzzle",

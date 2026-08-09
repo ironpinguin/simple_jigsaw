@@ -95,7 +95,8 @@
     "resetView": "Reset view",
     "zoomLevel": "Current zoom level",
     "zoomPercent": "{percent}%",
-    "minimap": "Board overview — click or use the arrow keys to jump to a region"
+    "minimap": "Board overview — click or use the arrow keys to jump to a region",
+    "reviewPending": "This puzzle is private for now and is being reviewed. Once the review is done you can make it public."
   },
   "my": {
     "title": "My puzzles",

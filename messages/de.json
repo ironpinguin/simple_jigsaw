@@ -95,7 +95,8 @@
     "resetView": "Ansicht zurücksetzen",
     "zoomLevel": "Aktuelle Zoomstufe",
     "zoomPercent": "{percent} %",
-    "minimap": "Übersicht des Spielfelds — anklicken oder mit den Pfeiltasten verschieben, um dorthin zu springen"
+    "minimap": "Übersicht des Spielfelds — anklicken oder mit den Pfeiltasten verschieben, um dorthin zu springen",
+    "reviewPending": "Dieses Puzzle ist zunächst privat und wird geprüft. Sobald die Prüfung abgeschlossen ist, kannst du es öffentlich schalten."
   },
   "my": {
     "title": "Meine Puzzles",
