@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jigsaw-config
+data:
+  DATABASE_PROVIDER: postgresql
+  STORAGE_DRIVER: s3
+  S3_REGION: us-east-1
+  S3_BUCKET: jigsaw
+  S3_FORCE_PATH_STYLE: "true"
+  APP_URL: https://jigsaw.example.org
+  REGISTRATION_ENABLED: "true"
+  SMTP_HOST: smtp.example.org
+  SMTP_PORT: "587"
+  SMTP_SECURE: "true"
+  SMTP_FROM: Jigsaw <no-reply@example.org>
+  # See .env.example for what each LEGAL_* value says on the page and which
+  # three are required.
+  LEGAL_NAME: ""
+  LEGAL_ADDRESS: ""
+  LEGAL_EMAIL: ""

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jigsaw
+  labels: { app: jigsaw }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: jigsaw }
+  template:
+    metadata:
+      labels: { app: jigsaw }
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/ironpinguin/simple_jigsaw:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef: { name: jigsaw-config }
+            - secretRef: { name: jigsaw-secrets }
+          # Liveness must not depend on the database: restarting the app
+          # because Postgres blipped turns someone else's outage into a
+          # crashloop. Readiness is where the database belongs — a pod that
+          # cannot reach it should leave the Service, not die.
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /api/health/ready, port: 3000 }
+            periodSeconds: 10
+            failureThreshold: 3
+          # The container runs `prisma db push` before `next start`.
+          startupProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 5
+            failureThreshold: 24
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
