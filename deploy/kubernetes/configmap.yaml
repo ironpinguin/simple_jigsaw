@@ -9,6 +9,8 @@ data:
   S3_BUCKET: jigsaw
   S3_FORCE_PATH_STYLE: "true"
   APP_URL: https://jigsaw.example.org
+  # Comma-separated allow-list of admin emails (auto-promoted on register/login).
+  ADMIN_EMAILS: ""
   REGISTRATION_ENABLED: "true"
   SMTP_HOST: smtp.example.org
   SMTP_PORT: "587"

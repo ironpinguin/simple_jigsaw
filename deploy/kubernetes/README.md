@@ -9,6 +9,10 @@ cp secret.example.yaml secret.yaml   # fill in, keep out of git
 kubectl apply -f configmap.yaml -f secret.yaml -f deployment.yaml -f service.yaml
 ```
 
+`configmap.yaml` ships `ADMIN_EMAILS` empty; leave it that way and bootstrap the
+first admin with `kubectl exec deploy/jigsaw -- npm run make-admin -- you@example.org`
+instead, if you would rather not put an address in the configmap.
+
 ## The probes
 
 - **liveness → `/api/health`** answers as long as the process serves requests
