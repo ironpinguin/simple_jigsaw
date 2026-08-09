@@ -1600,10 +1600,15 @@ Add to `.env.example` with the defaults from Global Constraints, and to both com
 # NSFW_MODE=off
 # NSFW_THRESHOLD=0.85
 # NSFW_TIMEOUT_MS=5000
+# local mode only — where the ONNX model lives inside the image. The Dockerfile
+# fetches and checksums it into this path, so it rarely needs overriding.
+# NSFW_MODEL_PATH=/app/models/nsfw.onnx
 # external mode only — makes the service a processor, see docs/data-processors.md
 # NSFW_API_URL=
 # NSFW_API_KEY=
 ```
+
+Six variables, not five: `NSFW_MODEL_PATH` is introduced by Task 9 and read directly in `lib/nsfw/local.ts` rather than through `readNsfwConfig`. While editing `.env.example`, also correct the header comment in `lib/nsfw/config.ts`, which says it reads "the five `NSFW_*` variables, in one place" — that is no longer true, and the sixth is deliberately outside it because only the local classifier needs it.
 
 - [ ] **Step 2: Correct `docs/data-processors.md`**
 
