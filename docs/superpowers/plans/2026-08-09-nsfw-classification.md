@@ -488,14 +488,86 @@ export function guard(inner: Classifier, timeoutMs: number): Classifier {
 Run: `npx vitest run lib/nsfw/guard.test.ts`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 9: Write the selector**
+- [ ] **Step 9: Run the whole nsfw suite and commit**
 
-`local` is imported lazily so the model is never loaded in `off` mode — a plain top-level import would pull the runtime into every process.
+The selector that ties these together is **Task 3b**, which is dispatched after Tasks 9 and 10 because it imports them statically.
+
+Run: `npx vitest run lib/nsfw/`
+Expected: PASS — verdict, config and guard tests all green.
+
+```bash
+git add lib/nsfw/
+git commit -m "feat(nsfw): mode configuration, the off classifier and the failure guard (#23)"
+```
+
+---
+
+### Task 3b: The classifier selector — `lib/nsfw/index.ts`
+
+**Execution order:** dispatch this **after Tasks 9 and 10**, because it imports `./local` and `./external` statically. Everything from Task 4 onwards depends on it, so it runs before Task 4 even though it is numbered here.
+
+`require()` is not used anywhere in this repo's TypeScript — the house pattern is `await import()`. Static imports are correct here because the weight is not in these modules: `local.ts` only pulls `onnxruntime-node` inside `classify`, so importing it costs nothing in `off` mode.
+
+**Files:**
+- Create: `lib/nsfw/index.ts`
+- Test: `lib/nsfw/index.test.ts`
+
+**Interfaces:**
+- Consumes: `readNsfwConfig`, `guard`, `offClassifier` (Task 3); `createLocalClassifier` (Task 9); `createExternalClassifier` (Task 10)
+- Produces: `getClassifier(): Classifier`, `resetClassifierForTests(): void`, and the re-exports every other task imports from `@/lib/nsfw`
+
+- [ ] **Step 1: Write the failing tests**
+
+```ts
+// lib/nsfw/index.test.ts
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { getClassifier, resetClassifierForTests } from "./index";
+
+afterEach(() => {
+  resetClassifierForTests();
+  vi.unstubAllEnvs();
+});
+
+describe("getClassifier", () => {
+  it("hands back the off classifier when nothing is configured", async () => {
+    const verdict = await getClassifier().classify(Buffer.from("x"));
+
+    expect(verdict).toEqual({ label: "CLEAN", score: 0, model: "off" });
+  });
+
+  it("builds the classifier once per process", () => {
+    // Otherwise every upload rebuilds it — and in local mode reloads the model.
+    expect(getClassifier()).toBe(getClassifier());
+  });
+
+  it("falls back to off when the mode is misconfigured", async () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("NSFW_MODE", "external");   // no url, no key
+
+    const verdict = await getClassifier().classify(Buffer.from("x"));
+
+    expect(verdict.model).toBe("off");
+    expect(warned).toHaveBeenCalled();
+    warned.mockRestore();
+  });
+});
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `npx vitest run lib/nsfw/index.test.ts`
+Expected: FAIL — `Failed to resolve import "./index"`.
+
+- [ ] **Step 3: Implement**
+
+If Task 1's spike failed, omit the `createLocalClassifier` import and the `local` branch; `NSFW_MODES` no longer contains `"local"`, so the branch is unreachable anyway.
 
 ```ts
 // lib/nsfw/index.ts
 import { readNsfwConfig } from "./config";
+import { createExternalClassifier } from "./external";
 import { guard } from "./guard";
+import { createLocalClassifier } from "./local";
 import { offClassifier } from "./off";
 import type { Classifier } from "./types";
 
@@ -507,8 +579,9 @@ export { readNsfwConfig } from "./config";
 let cached: Classifier | undefined;
 
 /**
- * The classifier this process uses, built once. In `off` mode nothing else in
- * lib/nsfw is even imported, so no model and no HTTP client is loaded.
+ * The classifier this process uses, built once. In `off` mode no model is
+ * loaded and no request is made: `local.ts` pulls its runtime inside
+ * `classify`, so importing it above costs nothing until it is used.
  */
 export function getClassifier(): Classifier {
   if (cached) return cached;
@@ -519,17 +592,12 @@ export function getClassifier(): Classifier {
     return cached;
   }
 
-  // Required lazily: a top-level import would load the runtime in every mode.
-  const build = (): Classifier => {
-    if (config.mode === "local") {
-      const { createLocalClassifier } = require("./local") as typeof import("./local");
-      return createLocalClassifier(config);
-    }
-    const { createExternalClassifier } = require("./external") as typeof import("./external");
-    return createExternalClassifier(config);
-  };
+  const inner =
+    config.mode === "local"
+      ? createLocalClassifier(config)
+      : createExternalClassifier(config);
 
-  cached = guard(build(), config.timeoutMs);
+  cached = guard(inner, config.timeoutMs);
   return cached;
 }
 
@@ -539,14 +607,16 @@ export function resetClassifierForTests(): void {
 }
 ```
 
-- [ ] **Step 10: Run the whole nsfw suite and commit**
+- [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npx vitest run lib/nsfw/`
-Expected: PASS — verdict, config and guard tests all green.
+Expected: PASS — every lib/nsfw suite green.
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add lib/nsfw/
-git commit -m "feat(nsfw): mode configuration, the off classifier and the failure guard (#23)"
+git add lib/nsfw/index.ts lib/nsfw/index.test.ts
+git commit -m "feat(nsfw): select the classifier from the configured mode (#23)"
 ```
 
 ---
@@ -1172,9 +1242,11 @@ describe("createLocalClassifier", () => {
 Run: `npx vitest run lib/nsfw/local.test.ts`
 Expected: FAIL — `Failed to resolve import "./local"`.
 
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement, complete, from the spike's result**
 
-Fill `MODEL_ID` and the preprocessing from the spike's result. The `run` parameter exists so the test can inject a scorer; production uses the default.
+Write the real preprocessing in this step — the tensor shape, normalisation and output index the spike recorded in the design doc. **Do not commit a stub or a `throw` standing in for it:** a placeholder in production code is indistinguishable from a defect to anyone reading the diff later, and this task's own Step 5 cannot pass while one is there. If the spike's notes are not specific enough to write this, stop and report `NEEDS_CONTEXT` rather than filling the gap with a placeholder.
+
+`MODEL_ID` takes the package, file name and version from the spike. The `run` parameter exists so the test can inject a scorer; production uses `defaultRun`.
 
 ```ts
 // lib/nsfw/local.ts
@@ -1195,8 +1267,10 @@ const defaultRun: Score = async (bytes) => {
   // Loaded once per process: the first upload after a start pays for it, the
   // rest do not.
   session ??= await ort.InferenceSession.create(process.env.NSFW_MODEL_PATH ?? "./models/nsfw.onnx");
-  // Preprocessing (resize, normalise, tensor layout) as recorded by the spike.
-  throw new Error("preprocessing not implemented — fill in from the Task 1 spike");
+  // Preprocessing and the output-to-probability step exactly as the spike
+  // recorded them: resize to the model's input size, normalise, build the
+  // tensor in the model's layout, run, read the explicit-class probability.
+  // …written out here, in full, from the design doc's spike section.
 };
 
 export function createLocalClassifier(config: NsfwConfig, run: Score = defaultRun): Classifier {
@@ -1209,9 +1283,7 @@ export function createLocalClassifier(config: NsfwConfig, run: Score = defaultRu
 }
 ```
 
-> The `throw` in `defaultRun` is deliberate and temporary: it is replaced in Step 4 with the spike's real preprocessing. It must not survive this task — Step 5 fails while it is there.
-
-- [ ] **Step 4: Replace the placeholder with the spike's preprocessing and wire the model into the image**
+- [ ] **Step 4: Wire the model into the image**
 
 Add the model file to the Docker image (`COPY` in `Dockerfile`, next to the other assets) and the dependency to `package.json`. Set `NSFW_MODEL_PATH` in `docker-compose.yml` alongside the other NSFW variables from Task 12.
 
