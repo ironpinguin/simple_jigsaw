@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Liveness and readiness endpoints (`/api/health`, `/api/health/ready`), a
+  healthcheck for the `app` service in `docker-compose.yml`, and a Kubernetes
+  example under `deploy/kubernetes/` that wires both probes. (#44)
 - Expired confirmation and invitation links are now deleted instead of being
   kept until the account goes (GDPR Art. 5(1)(e), storage limitation). The
   cleanup runs whenever a token is issued, so an instance keeps itself tidy
@@ -70,6 +73,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-commercial note for operators for whom it holds.
 
 ### Changed
+- Expired confirmation and invitation links are now deleted whenever the
+  container runs — at startup, hourly, and on every readiness check — instead
+  of only when a token happens to be issued. An instance with registration
+  disabled therefore keeps its promise from the privacy policy too, and issuing
+  a token no longer means a table-wide delete. (#44)
 - The privacy policy no longer says that an expired, never-redeemed link is
   kept until the account is deleted — it is now removed automatically, and the
   two paragraphs that described the old behaviour say so. (#20)
