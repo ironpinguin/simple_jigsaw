@@ -23,6 +23,10 @@ export function isExpired(expiresAt: Date, now: number): boolean {
  * because the two have to draw the line in the same place: `lt`, not `lte`, so
  * a token expiring precisely at `now` survives the sweep the same way it
  * survives being redeemed.
+ *
+ * `scripts/purge-expired.mjs` re-implements this predicate — it runs under
+ * plain `node` with no TS loader, so it cannot import this module. Any change
+ * to the boundary here has to be made there too.
  */
 export function expiredTokenFilter(now: number): { expiresAt: { lt: Date } } {
   return { expiresAt: { lt: new Date(now) } };

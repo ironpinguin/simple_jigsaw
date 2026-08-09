@@ -98,13 +98,17 @@ im Code, siehe `lib/roles.ts`).
   - `docker compose exec app npm run create-user -- user@example.com 'passwort'`
   - `docker compose exec app npm run create-user -- boss@example.com 'passwort' --admin`
 - **Abgelaufene Links aufräumen**: Bestätigungs- und Einladungs-Tokens werden
-  beim Einlösen gelöscht, abgelaufene beim nächsten Ausstellen eines Tokens
-  (Art. 5 Abs. 1 lit. e DSGVO, Speicherbegrenzung). Eine Instanz, die Tokens
-  ausgibt, hält sich damit selbst sauber; für einen einmaligen Nachlauf oder
-  einen festen Zeitplan gibt es zusätzlich:
+  beim Einlösen gelöscht, abgelaufene automatisch — beim Start des Containers
+  und danach stündlich (Art. 5 Abs. 1 lit. e DSGVO, Speicherbegrenzung). Ein
+  Readiness-Check kann den nächsten Lauf vorziehen, löst aber höchstens einen
+  Lauf pro Stunde aus. Eine laufende Instanz hält sich damit selbst sauber,
+  ohne dass etwas eingerichtet werden muss. Für einen einmaligen Nachlauf auf
+  einer länger laufenden Instanz:
   - `docker compose exec app npm run purge-expired`
-  - Als Cron auf dem Host, z. B. täglich um 4 Uhr:
-    `0 4 * * * cd /pfad/zum/projekt && docker compose exec -T app npm run purge-expired`
+  - Ob das Aufräumen tatsächlich läuft, sagt `/api/health/ready`: meldet es
+    `"retention": "stale"`, sind mehrere Läufe hintereinander fehlgeschlagen —
+    etwa fehlende Löschrechte oder eine volle Platte. Lesende Abfragen
+    funktionieren dann weiter, der Container gilt weiter als gesund.
 - **Registrierung abschalten**: `REGISTRATION_ENABLED=false` setzen — die
   öffentliche Selbst-Registrierung ist dann deaktiviert (die Registrierungsseite
   zeigt einen Hinweis, die Links verschwinden). Einladungen, Admin-Anlage und die

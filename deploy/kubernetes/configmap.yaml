@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jigsaw-config
+data:
+  DATABASE_PROVIDER: postgresql
+  STORAGE_DRIVER: s3
+  S3_REGION: us-east-1
+  S3_BUCKET: jigsaw
+  S3_FORCE_PATH_STYLE: "true"
+  APP_URL: https://jigsaw.example.org
+  # Comma-separated allow-list of admin emails (auto-promoted on register/login).
+  ADMIN_EMAILS: ""
+  REGISTRATION_ENABLED: "true"
+  # Number of proxies in front of the app, counted from the outside. A pod is
+  # essentially always behind an Ingress, and the default of 0 makes the report
+  # rate limit share one bucket for every reporter. Must match your actual
+  # chain: too high lets a client spoof its address.
+  TRUSTED_PROXY_HOPS: "1"
+  SMTP_HOST: smtp.example.org
+  SMTP_PORT: "587"
+  SMTP_SECURE: "true"
+  SMTP_FROM: Jigsaw <no-reply@example.org>
+  # See .env.example for what each LEGAL_* value says on the page and which
+  # three are required.
+  LEGAL_NAME: ""
+  LEGAL_ADDRESS: ""
+  LEGAL_EMAIL: ""
+  # This example points SMTP_HOST and S3_ENDPOINT at external services, so
+  # these two have to name them (GDPR Art. 28): left empty, the privacy policy
+  # states that mail and image storage are self-hosted, which would be a false
+  # statement. Fill them in, or point the two services back inside the cluster.
+  LEGAL_MAIL_PROCESSOR: ""
+  LEGAL_STORAGE_PROCESSOR: ""
+  # Where the instance runs, printed as-is ("Deutschland", "the EU"). Empty,
+  # the policy says the location is not stated rather than claiming the EU.
+  LEGAL_HOSTING_REGION: ""

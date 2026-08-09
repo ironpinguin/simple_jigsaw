@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jigsaw
+  labels: { app: jigsaw }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: jigsaw }
+  template:
+    metadata:
+      labels: { app: jigsaw }
+    spec:
+      containers:
+        - name: app
+          image: ghcr.io/ironpinguin/simple_jigsaw:latest
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef: { name: jigsaw-config }
+            - secretRef: { name: jigsaw-secrets }
+          # Liveness must not depend on the database: restarting the app
+          # because Postgres blipped turns someone else's outage into a
+          # crashloop. Readiness is where the database belongs — a pod that
+          # cannot reach it should leave the Service, not die.
+          livenessProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 10
+            # The default 1s budget is where spurious restarts come from on a
+            # busy event loop, even for a handler this trivial.
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /api/health/ready, port: 3000 }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          # The container runs `npm run db:push` before `next start`.
+          startupProbe:
+            httpGet: { path: /api/health, port: 3000 }
+            periodSeconds: 5
+            failureThreshold: 24
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+          # The image has no USER, so the container still runs as root; these
+          # drop what it can do with that. `runAsNonRoot: true` belongs here
+          # too, but would stop the pod starting until the Dockerfile's runner
+          # stage sets a user — see the README.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
