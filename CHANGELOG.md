@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Expired confirmation and invitation links are now deleted instead of being
+  kept until the account goes (GDPR Art. 5(1)(e), storage limitation). The
+  cleanup runs whenever a token is issued, so an instance keeps itself tidy
+  without any scheduling; `npm run purge-expired` does a one-off sweep for
+  instances that have been running a while, and the README shows how to put it
+  on cron. Ban entries are deliberately left as they are — the policy already
+  states their period and Art. 6(1)(f) as its basis. (#20)
 - The privacy policy's recipients section now names all four transactional
   mails — confirmation, invitation, notice of a report, notice of a removed
   puzzle — instead of only the first two, and states that the two notice mails
@@ -63,6 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-commercial note for operators for whom it holds.
 
 ### Changed
+- The privacy policy no longer says that an expired, never-redeemed link is
+  kept until the account is deleted — it is now removed automatically, and the
+  two paragraphs that described the old behaviour say so. (#20)
 - The site layout is a column that keeps the footer at the bottom of short
   pages, which affects every page, not just the legal ones.
 
