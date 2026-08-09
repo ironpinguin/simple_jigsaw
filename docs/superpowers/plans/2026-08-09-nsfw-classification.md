@@ -1289,12 +1289,16 @@ Add the model file to the Docker image (`COPY` in `Dockerfile`, next to the othe
 
 - [ ] **Step 5: Verify against a real image, outside the test suite**
 
+`lib/nsfw` is TypeScript, so `node -e` cannot load it — run the check through `tsx`, which `npx` fetches on demand without adding a dependency.
+
 ```bash
-NSFW_MODE=local node -e "
-const { getClassifier } = require('./lib/nsfw');
-const fs = require('fs');
-getClassifier().classify(fs.readFileSync(process.argv[1])).then(console.log);
-" ./path/to/a/harmless.webp
+cat > /tmp/nsfw-check.ts <<'TS'
+import { readFileSync } from "node:fs";
+import { getClassifier } from "./lib/nsfw";
+getClassifier().classify(readFileSync(process.argv[2])).then(console.log);
+TS
+NSFW_MODE=local npx tsx /tmp/nsfw-check.ts ./path/to/a/harmless.webp
+rm /tmp/nsfw-check.ts
 ```
 Expected: a `CLEAN` verdict with a low score and `model` starting `local:`. A verdict of `UNKNOWN` with `model: "error"` means the guard caught a throw — read the logged error.
 
