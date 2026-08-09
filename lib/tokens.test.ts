@@ -57,23 +57,29 @@ describe("createToken", () => {
     expect(first).not.toEqual(second);
   });
 
-  it("purges expired rows before inserting the new one", async () => {
-    // Ordering matters: sweeping after the insert would put the fresh row in
-    // the deleteMany's scope, and it is the only place the table is ever
-    // cleaned in a deployment without cron.
+  it("purges expired rows when it issues a token", async () => {
+    // Without an operator running `npm run purge-expired`, issuing a token is
+    // the only thing that ever cleans the table.
     await createToken("user-1", "EMAIL_VERIFY");
 
     expect(deleteMany).toHaveBeenCalledWith({ where: expiredTokenFilter(NOW) });
-    expect(deleteMany.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0]);
   });
 
-  it("still issues the token when the purge fails", async () => {
+  it("still issues the token when the purge fails, and says so", async () => {
     // Retention housekeeping must not turn a registration or an invite into a
-    // 500 — the user cannot act on it and has no other way in.
+    // 500 — the user cannot act on it and has no other way in. It must not be
+    // silent either: this is the sweep the privacy policy promises, and a
+    // permanently failing one is otherwise indistinguishable from a table that
+    // had nothing to clean.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     deleteMany.mockRejectedValue(new Error("db is having a day"));
 
     await expect(createToken("user-1", "EMAIL_VERIFY")).resolves.toMatch(/^[0-9a-f]{64}$/);
     expect(create).toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("purge of expired tokens failed"),
+      expect.any(Error),
+    );
   });
 });
 

@@ -9,7 +9,9 @@ import { tokenExpiry, isExpired, expiredTokenFilter, type TokenKind } from "./to
  * went. An expired row has no purpose left — `consumeToken` refuses it — so
  * keeping it is storing personal data for nothing.
  *
- * Called opportunistically from `createToken` and by `npm run purge-expired`.
+ * Called opportunistically from `createToken`. `scripts/purge-expired.mjs`
+ * performs the same deletion independently — it runs under plain `node` with
+ * no TS loader, so it cannot import this module; keep the two in step.
  */
 export async function purgeExpiredTokens(now: number = Date.now()): Promise<number> {
   const { count } = await prisma.verificationToken.deleteMany({
@@ -21,12 +23,18 @@ export async function purgeExpiredTokens(now: number = Date.now()): Promise<numb
 export async function createToken(userId: string, type: TokenKind): Promise<string> {
   const now = Date.now();
 
-  // Housekeeping on the way past: this is the only sweep a deployment without
-  // cron ever gets, and it is self-limiting because the table only grows when
-  // tokens are issued. Before the insert, so the new row is out of its scope —
-  // and swallowed, because a failed purge must not turn a registration or an
-  // invite into a 500 the user cannot act on.
-  await purgeExpiredTokens(now).catch(() => {});
+  // Housekeeping on the way past: the only unattended sweep an instance gets
+  // unless an operator schedules `npm run purge-expired`, and self-limiting
+  // because the table only grows when tokens are issued.
+  //
+  // Best-effort for control flow, because both callers would report a throw
+  // from here as a verification or invite mail that failed to send — a message
+  // the user cannot act on and that names the wrong thing. But never silent:
+  // the privacy policy promises this sweep runs, so a sweep that has stopped
+  // running has to be findable in the log.
+  await purgeExpiredTokens(now).catch((error) => {
+    console.error("[tokens] purge of expired tokens failed; they stay stored:", error);
+  });
 
   const token = randomBytes(32).toString("hex");
   await prisma.verificationToken.create({

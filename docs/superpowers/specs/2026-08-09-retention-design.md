@@ -13,7 +13,7 @@ period for the second.
   interest. No TTL, no per-entry expiry, no schema change — `legal.bansText`
   already words it that way ("for as long as the block is in place", Art.
   6(1)(f)), so the issue's "document why" bullet is met by the text that
-  shipped with #16.
+  shipped with #25.
 - **The sweep runs opportunistically from `createToken`**, plus an `npm run`
   script. The script alone would leave the bug in place on every instance that
   never sets up cron; the opportunistic call fixes the default deployment and
@@ -23,10 +23,12 @@ period for the second.
 
 ## Current state
 
-Verified, not assumed: there is no `deleteMany` anywhere in `app/` or `lib/`,
-and no scheduled job or startup hook. `consumeToken` deletes on redeem, so the
-gap is exactly the unredeemed path. Expiry is only ever *checked*, in
-`isExpired`.
+Verified, not assumed: nothing anywhere deletes by age — the three `deleteMany`
+calls in `app/` and `lib/` are all scoped to an id or an owner
+(`app/api/puzzles/[id]/route.ts`, `app/api/admin/puzzles/[id]/route.ts`,
+`lib/account-deletion.ts`) — and there is no scheduled job or startup hook.
+`consumeToken` deletes on redeem, so the gap is exactly the unredeemed path.
+Expiry is only ever *checked*, in `isExpired`.
 
 ## Components
 
@@ -49,10 +51,15 @@ export async function purgeExpiredTokens(now = Date.now()): Promise<number>;
 
 `deleteMany` with that filter, returning the count.
 
-`createToken` calls it before inserting, with the failure swallowed the way
-`consumeToken` already swallows its delete: a purge that fails must not turn a
-registration or an invite into a 500. Purging before the insert also keeps the
-row being created out of the sweep's scope entirely.
+`createToken` calls it before inserting. A failed purge must not turn a
+registration or an invite into a 500 — both routes would report it as a mail
+that failed to send — so it does not propagate, but it is logged: this is the
+sweep the policy promises, and a permanently failing one would otherwise look
+exactly like a table with nothing to clean.
+
+The order is not load-bearing. A fresh row's `expiresAt` is a whole TTL past
+the cutoff, so it is out of the sweep's scope in either order;
+`token-ttl.test.ts` pins that directly.
 
 ### Script — `scripts/purge-expired.mjs`
 
@@ -82,7 +89,9 @@ Both become the statement that is now true: expired links are removed
 automatically. `legal.bansText` is untouched.
 
 `PRIVACY_UPDATED` moves to `2026-08-09`. It is a single constant formatted per
-locale; `lib/messages.test.ts` fails if only one catalog gets edited.
+locale. Note that `lib/messages.test.ts` is no safety net here: it checks key
+parity, key order, ICU placeholders, rich-text tags, quoting and empty strings,
+none of which notice a *reworded* string. Editing all three catalogs is manual.
 
 ## Tests
 
@@ -90,7 +99,7 @@ locale; `lib/messages.test.ts` fails if only one catalog gets edited.
   and `isExpired`.
 - `lib/tokens.test.ts` — new, mocking `./db` the way `account-deletion.test.ts`
   does: `createToken` issues the purge, and a failing purge still creates the
-  token.
+  token while leaving a line in the log.
 
 ## Out of scope
 

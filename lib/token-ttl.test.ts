@@ -36,6 +36,15 @@ describe("expiredTokenFilter", () => {
     }
   });
 
+  it("leaves a token expiring exactly at the cutoff", () => {
+    // The test above uses `isExpired` as its own oracle, so making both sides
+    // inclusive would keep it green while moving the boundary. Pin the
+    // boundary itself: a token expiring precisely at `now` is still
+    // redeemable, and the sweep must leave it there.
+    expect(matches(expiredTokenFilter(NOW), new Date(NOW))).toBe(false);
+    expect(isExpired(new Date(NOW), NOW)).toBe(false);
+  });
+
   it("spares a token that was just created", () => {
     // The opportunistic purge in createToken runs against the same clock that
     // stamps the new row; a cutoff derived from anything but `now` would eat it.
