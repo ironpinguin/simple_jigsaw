@@ -4,6 +4,7 @@ import { Link } from "@/i18n/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import MyPuzzles from "@/components/MyPuzzles";
+import ExportAccount from "@/components/ExportAccount";
 import DeleteAccount from "@/components/DeleteAccount";
 
 // Per-request page (auth + DB); never prerender/query the DB at build time.
@@ -45,6 +46,7 @@ export default async function MyPage({
         <MyPuzzles initial={puzzles} />
       )}
 
+      <ExportAccount />
       <DeleteAccount />
     </div>
   );

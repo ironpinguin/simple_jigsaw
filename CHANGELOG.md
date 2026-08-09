@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Logged-in users can download their own data from *Meine Puzzles* (GDPR
+  Art. 15, and Art. 20 portability): account fields and every puzzle's
+  metadata as one JSON file. Images are referenced by URL rather than
+  embedded, the password hash is never read from the database let alone
+  written to the file, and the endpoint allows five exports per hour. (#19)
 - Liveness and readiness endpoints (`/api/health`, `/api/health/ready`), a
   healthcheck for the `app` service in `docker-compose.yml`, and a Kubernetes
   example under `deploy/kubernetes/` that wires both probes. (#44)
