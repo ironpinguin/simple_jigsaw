@@ -84,8 +84,13 @@ ignored.
 export async function maybePurgeExpiredTokens(now?: number): Promise<number | null>;
 ```
 
-Module-level `lastSweepAt`, and an exported `SWEEP_INTERVAL_MS = 60 * 60 * 1000`
+`lastSweepAt` on `globalThis`, and an exported `SWEEP_INTERVAL_MS = 60 * 60 * 1000`
 so `instrumentation.ts` schedules on the same constant the throttle enforces.
+
+Module scope would not have worked: Next emits this module once per webpack
+layer, so the timer and the route handlers would each hold their own clock and
+the budget would be two sweeps an hour rather than one. `lib/db.ts` hoists the
+Prisma client onto `globalThis` for the same reason.
 
 Returns the number of rows deleted, or `null` when the call was throttled or
 when the sweep failed. Nothing distinguishes those two cases, and nothing needs
