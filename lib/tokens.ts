@@ -11,7 +11,9 @@ export async function createToken(userId: string, type: TokenKind): Promise<stri
   // Housekeeping on the way past, sharing the hourly budget with the timer in
   // instrumentation.ts and the readiness probe. Issuing a token therefore no
   // longer means a table-wide DELETE, and the one place that logs a failed
-  // sweep is lib/retention.ts.
+  // sweep is lib/retention.ts. Called bare, not `.catch()`-guarded: the
+  // function is documented never to throw, and lib/retention.test.ts's
+  // "logs a failed sweep instead of throwing" test is what keeps that true.
   await maybePurgeExpiredTokens(now);
 
   const token = randomBytes(32).toString("hex");

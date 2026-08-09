@@ -12,12 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   healthcheck for the `app` service in `docker-compose.yml`, and a Kubernetes
   example under `deploy/kubernetes/` that wires both probes. (#44)
 - Expired confirmation and invitation links are now deleted instead of being
-  kept until the account goes (GDPR Art. 5(1)(e), storage limitation). The
-  cleanup runs whenever a token is issued, so an instance keeps itself tidy
-  without any scheduling; `npm run purge-expired` does a one-off sweep for
-  instances that have been running a while, and the README shows how to put it
-  on cron. Ban entries are deliberately left as they are — the policy already
-  states their period and Art. 6(1)(f) as its basis. (#20)
+  kept until the account goes (GDPR Art. 5(1)(e), storage limitation). An
+  instance keeps itself tidy without any scheduling — see #44 below for how
+  the cleanup is triggered; `npm run purge-expired` remains for a one-off
+  sweep on an instance that has been running a while. Ban entries are
+  deliberately left as they are — the policy already states their period and
+  Art. 6(1)(f) as its basis. (#20)
 - The privacy policy's recipients section now names all four transactional
   mails — confirmation, invitation, notice of a report, notice of a removed
   puzzle — instead of only the first two, and states that the two notice mails
