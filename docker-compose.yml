@@ -56,6 +56,16 @@ services:
       LEGAL_STORAGE_PROCESSOR: ${LEGAL_STORAGE_PROCESSOR:-}
       LEGAL_HOSTING_REGION: ${LEGAL_HOSTING_REGION:-}
       LEGAL_PRIVATE_SERVICE: ${LEGAL_PRIVATE_SERVICE:-}
+    # start_period covers `npm run db:push`, which the container's CMD runs
+    # before `next start`. /ready rather than /health, because an app that
+    # cannot reach the database is not doing its job — and the probe is what
+    # keeps the retention sweep running on an idle instance.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
