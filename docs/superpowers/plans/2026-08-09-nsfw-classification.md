@@ -221,20 +221,22 @@ git commit -m "feat(nsfw): verdict labels and the review threshold (#23)"
 
 ---
 
-### Task 3: Configuration, selection and the failure guard — `lib/nsfw/index.ts`
+### Task 3: Configuration, the off classifier and the failure guard
+
+Do **not** create `lib/nsfw/index.ts` in this task — the selector is Task 3b, dispatched after Tasks 9 and 10 because it imports them statically. Creating it here would import modules that do not exist yet.
 
 **Files:**
-- Create: `lib/nsfw/config.ts`, `lib/nsfw/off.ts`, `lib/nsfw/guard.ts`, `lib/nsfw/index.ts`
+- Create: `lib/nsfw/config.ts`, `lib/nsfw/types.ts`, `lib/nsfw/off.ts`, `lib/nsfw/guard.ts`
 - Test: `lib/nsfw/config.test.ts`, `lib/nsfw/guard.test.ts`
 
 **Interfaces:**
 - Consumes: `Verdict`, `VerdictLabel`, `labelFor` from Task 2
 - Produces:
-  - `interface Classifier { classify(bytes: Buffer): Promise<Verdict> }`
+  - `interface Classifier { classify(bytes: Buffer): Promise<Verdict> }` (in `types.ts`)
   - `type NsfwConfig = { mode: "off" | "local" | "external"; threshold: number; timeoutMs: number; apiUrl: string | null; apiKey: string | null }`
   - `readNsfwConfig(env: NodeJS.ProcessEnv): NsfwConfig`
+  - `NSFW_MODES`, `DEFAULT_THRESHOLD`, `DEFAULT_TIMEOUT_MS`
   - `guard(classifier: Classifier, timeoutMs: number): Classifier`
-  - `getClassifier(): Classifier`
   - `offClassifier: Classifier`
 
 - [ ] **Step 1: Write the failing config tests**
