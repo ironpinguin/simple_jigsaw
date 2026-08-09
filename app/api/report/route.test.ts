@@ -110,6 +110,15 @@ describe("POST /api/report", () => {
     expect(reportCreate).not.toHaveBeenCalled();
   });
 
+  it("rejects machine-generated categories that a user cannot pick", async () => {
+    // AUTO_NSFW is valid in the database but users cannot submit it — the
+    // server writes it directly when it detects NSFW content. Accepting it
+    // from the API would let an attacker forge a machine verdict.
+    const res = await callPost({ ...VALID, category: "AUTO_NSFW" });
+    expect(res.status).toBe(400);
+    expect(reportCreate).not.toHaveBeenCalled();
+  });
+
   it("stores the reporter email when given and rejects an invalid one", async () => {
     await callPost({ ...VALID, email: "me@example.com" });
     expect(reportCreate.mock.calls[0][0].data.reporterEmail).toBe("me@example.com");

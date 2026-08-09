@@ -72,4 +72,11 @@ describe("sendTakedownNotice", () => {
     const mail = sendMailMock.mock.calls[0][0];
     expect(mail.text).toBe("Your puzzle “Beach” was removed by an administrator after a review.");
   });
+
+  it("includes machine-generated categories in the takedown notice", async () => {
+    await sendTakedownNotice("owner@example.com", "Beach", "AUTO_NSFW", "en");
+    const mail = sendMailMock.mock.calls[0][0];
+    expect(mail.text).toContain("Beach");
+    expect(mail.text).toContain("removed");
+  });
 });

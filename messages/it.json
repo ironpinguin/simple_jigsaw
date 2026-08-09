@@ -345,6 +345,7 @@
     "categoryNSFW": "Contenuto esplicito",
     "categoryILLEGAL": "Violenza o contenuto illegale",
     "categoryCOPYRIGHT": "Violazione del diritto d’autore",
-    "categoryOTHER": "Altro"
+    "categoryOTHER": "Altro",
+    "categoryAUTO_NSFW": "Contenuto esplicito"
   }
 }
