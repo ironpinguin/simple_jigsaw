@@ -35,12 +35,15 @@ describe("createExternalClassifier", () => {
   it("sends the key and the bytes to the configured url", async () => {
     respondWith({ ok: true, body: { score: 0.1 } });
 
-    await createExternalClassifier(config).classify(Buffer.from("x"));
+    const imageBytes = Buffer.from([0x52, 0x49, 0x46, 0x46]); // "RIFF" header, recognizable
+    await createExternalClassifier(config).classify(imageBytes);
 
     const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("https://classifier.example/check");
-    expect(init.headers.Authorization).toContain("secret");
+    expect(init.headers.Authorization).toBe("Bearer secret");
     expect(init.method).toBe("POST");
+    expect(init.headers["Content-Type"]).toBe("image/webp");
+    expect(new Uint8Array(init.body)).toEqual(new Uint8Array(imageBytes));
   });
 
   it("throws on a refusal, so the guard can hold the image", async () => {
