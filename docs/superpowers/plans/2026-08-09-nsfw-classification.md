@@ -1583,6 +1583,121 @@ git commit -m "feat(nsfw): sweep verdicts that no puzzle ever claimed (#23)"
 
 ---
 
+### Task 13: Keep a held puzzle held
+
+**Added after Task 7's review, which found the feature can be bypassed with one click.** `PATCH /api/puzzles/<id>` with `{ isPublic: true }` is an unconditional owner-scoped `updateMany` (`app/api/puzzles/[id]/route.ts:67-77`), and `components/MyPuzzles.tsx:65` puts a visibility toggle on exactly that endpoint. So the owner of an auto-flagged puzzle can publish it immediately, before any admin opens the queue — and Task 8's own copy ("Once the review is done you can make it public") promises an enforcement that does not exist. Without this task the whole feature is decorative.
+
+**Scope is deliberately narrow: machine holds only.** An open *user* report does not block publishing today, and changing that would alter behaviour shipped in #22 for cases this issue has nothing to do with.
+
+**Files:**
+- Modify: `app/api/puzzles/[id]/route.ts`
+- Test: `app/api/puzzles/[id]/route.test.ts`
+- Modify: `messages/de.json`, `messages/en.json`, `messages/it.json` (the `errors` namespace)
+
+**Interfaces:**
+- Consumes: `AUTO_REPORT_CATEGORIES` (Task 4), the `Report` model's `puzzleId`/`category`/`status`
+- Produces: a `409` response with a translated `awaitingReview` error when publishing is refused
+
+- [ ] **Step 1: Write the failing tests**
+
+Adapt the mock names to whatever that test file already hoists — read it first.
+
+```ts
+describe("publishing a puzzle held for review", () => {
+  it("refuses while an automatic report is still open", async () => {
+    // Otherwise the uploader clears their own hold before an admin ever sees
+    // the queue entry, and the classifier is decorative.
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await PATCH(patchRequest({ isPublic: true }), { params: paramsFor("p1") });
+
+    expect(res.status).toBe(409);
+    expect(puzzleUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("looks only for an unresolved machine finding on this puzzle", async () => {
+    // A user report does not block publishing — that is #22's behaviour and
+    // this feature must not change it — and a resolved one is spent.
+    await PATCH(patchRequest({ isPublic: true }), { params: paramsFor("p1") });
+
+    expect(reportFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { puzzleId: "p1", category: "AUTO_NSFW", status: "OPEN" },
+      }),
+    );
+  });
+
+  it("publishes normally when nothing is holding it", async () => {
+    reportFindFirst.mockResolvedValue(null);
+
+    const res = await PATCH(patchRequest({ isPublic: true }), { params: paramsFor("p1") });
+
+    expect(res.status).toBe(200);
+    expect(puzzleUpdateMany).toHaveBeenCalled();
+  });
+
+  it("never blocks making a puzzle private", async () => {
+    // A hold must not trap someone into keeping their own puzzle public.
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await PATCH(patchRequest({ isPublic: false }), { params: paramsFor("p1") });
+
+    expect(res.status).toBe(200);
+  });
+});
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `npx vitest run "app/api/puzzles/[id]/route.test.ts"`
+Expected: the 409 cases fail — publishing currently always succeeds.
+
+- [ ] **Step 3: Implement**
+
+In the `parsed.data.isPublic` branch, before the `updateMany`:
+
+```ts
+    // A machine hold is not the owner's to lift: without this they can clear
+    // it from "My puzzles" before an admin ever opens the queue. Scoped to
+    // AUTO_NSFW on purpose — an open *user* report has never blocked
+    // publishing, and this feature must not quietly change that.
+    const held = await prisma.report.findFirst({
+      where: { puzzleId: id, category: AUTO_REPORT_CATEGORIES[0], status: "OPEN" },
+      select: { id: true },
+    });
+    if (held) {
+      return NextResponse.json({ error: t("awaitingReview") }, { status: 409 });
+    }
+```
+
+- [ ] **Step 4: Add the message in all three locales**
+
+Under `errors`:
+
+```json
+// de.json
+"awaitingReview": "Dieses Puzzle wird noch geprüft und kann so lange nicht öffentlich geschaltet werden.",
+// en.json
+"awaitingReview": "This puzzle is still being reviewed and cannot be made public yet.",
+// it.json
+"awaitingReview": "Questo puzzle è ancora in verifica e non può essere reso pubblico per ora.",
+```
+
+`components/MyPuzzles.tsx` already renders the server's error message on a failed toggle, so no client change is needed: the enforcement lives on the server, which is the only place it can be trusted, and the UI reports what the server said. Disabling the toggle up front would need the list endpoint to expose a per-puzzle review flag — a query the list does not do today, and not worth it for a state that is rare and self-clearing.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `npx vitest run "app/api/puzzles/[id]/route.test.ts" lib/messages.test.ts`
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "app/api/puzzles/[id]/route.ts" "app/api/puzzles/[id]/route.test.ts" messages/
+git commit -m "fix(nsfw): an owner cannot lift a machine hold themselves (#23)"
+```
+
+---
+
 ### Task 12: Configuration reference, legal text and changelog
 
 **Files:**
