@@ -127,7 +127,7 @@ auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
   (`NSFW_MODEL_PATH`), `external` schickt jedes hochgeladene Bild an einen
   Dienst unter `NSFW_API_URL`/`NSFW_API_KEY` — das macht ihn zu einem
   Auftragsverarbeiter, siehe [docs/data-processors.md](docs/data-processors.md).
-  Ein als möglich explizit erkanntes oder nicht klassifizierbares Bild wird
+  Ein als möglicherweise explizit erkanntes oder nicht klassifizierbares Bild wird
   trotzdem gespeichert, das Puzzle bleibt aber privat, landet in der
   Admin-Warteschlange und kann von der hochladenden Person nicht selbst
   veröffentlicht werden, bis ein Admin die Meldung entschieden hat; sie wird

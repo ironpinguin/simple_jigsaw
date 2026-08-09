@@ -48,15 +48,18 @@ services:
       # Local NSFW classification (NSFW_MODE=local): where the Dockerfile bakes
       # the model.
       NSFW_MODEL_PATH: /app/models/nsfw.onnx
-      # Image classification on upload — off (default) | local | external — and
-      # its remaining variables are commented out here so the default stays
-      # off; see .env.example for what each one does before uncommenting.
-      # NSFW_MODE: external
-      # NSFW_THRESHOLD: "0.85"
-      # NSFW_TIMEOUT_MS: "5000"
-      # external mode only — makes the service a processor, see docs/data-processors.md
-      # NSFW_API_URL: ""
-      # NSFW_API_KEY: ""
+      # Image classification on upload — off (default) | local | external; see
+      # .env.example for what each variable does. Templated like every other
+      # operator-settable variable above rather than commented out: a literal
+      # commented line here would do nothing even after being uncommented in
+      # .env, since compose only injects variables it declares in this block.
+      # NSFW_API_KEY is a secret, so — like AUTH_SECRET and SMTP_PASS — it is
+      # read through ${...}, never written inline.
+      NSFW_MODE: ${NSFW_MODE:-off}
+      NSFW_THRESHOLD: ${NSFW_THRESHOLD:-0.85}
+      NSFW_TIMEOUT_MS: ${NSFW_TIMEOUT_MS:-5000}
+      NSFW_API_URL: ${NSFW_API_URL:-}
+      NSFW_API_KEY: ${NSFW_API_KEY:-}
     volumes:
       - sqlitedata:/data
     # start_period covers `npm run db:push`, which the container's CMD runs

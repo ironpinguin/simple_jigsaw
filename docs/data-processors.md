@@ -166,9 +166,15 @@ published images work as they are:
 
 What *cannot* wait is knowing the answers. From the first minute the instance
 is publicly reachable, `/legal/privacy` states either self-operation or a named
-processor — so pointing `SMTP_HOST` or `S3_ENDPOINT` at an external service
-while the matching `LEGAL_*` variable is empty publishes a false claim
-immediately. Nothing cross-checks the two; that is on the operator.
+processor — so pointing `SMTP_HOST`, `S3_ENDPOINT` or `NSFW_API_URL` (with
+`NSFW_MODE=external`) at an external service while the matching `LEGAL_*`
+variable is empty publishes a false claim immediately. Nothing cross-checks
+the two; that is on the operator — though `readNsfwConfig`
+(`lib/nsfw/config.ts`) does log a warning when `NSFW_MODE=external` is set
+without a matching `LEGAL_CLASSIFIER_PROCESSOR`, the same way it already warns
+about a missing `NSFW_API_URL`/`NSFW_API_KEY`. Classification itself is not
+disabled by the missing variable — only the disclosure is missing, and that is
+a legal problem rather than a functional one.
 
 **One exception to "everything is environment":** the database provider is
 baked. `Dockerfile` takes `ARG DATABASE_PROVIDER=postgresql` and the generated

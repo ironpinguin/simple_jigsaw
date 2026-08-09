@@ -39,9 +39,46 @@ describe("readNsfwConfig", () => {
       NSFW_MODE: "external",
       NSFW_API_URL: "https://x.example/check",
       NSFW_API_KEY: "secret",
+      LEGAL_CLASSIFIER_PROCESSOR: "Example Classifier Inc.",
     });
     expect(config.mode).toBe("external");
     expect(config.apiUrl).toBe("https://x.example/check");
+  });
+
+  it("warns, but keeps classifying, when external has no named legal processor", () => {
+    // A missing LEGAL_CLASSIFIER_PROCESSOR is a disclosure gap, not a reason
+    // to stop uploads from being classified — unlike the missing url/key case
+    // above, which makes the classifier unusable outright.
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const config = readNsfwConfig({
+      NSFW_MODE: "external",
+      NSFW_API_URL: "https://x.example/check",
+      NSFW_API_KEY: "secret",
+    });
+    expect(config.mode).toBe("external");
+    expect(warned).toHaveBeenCalled();
+    warned.mockRestore();
+  });
+
+  it("does not warn about the legal processor once one is named", () => {
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    readNsfwConfig({
+      NSFW_MODE: "external",
+      NSFW_API_URL: "https://x.example/check",
+      NSFW_API_KEY: "secret",
+      LEGAL_CLASSIFIER_PROCESSOR: "Example Classifier Inc.",
+    });
+    expect(warned).not.toHaveBeenCalled();
+    warned.mockRestore();
+  });
+
+  it("does not warn about the legal processor in local or off mode", () => {
+    // The variable only matters once images actually leave the instance.
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    readNsfwConfig({ NSFW_MODE: "local" });
+    readNsfwConfig({});
+    expect(warned).not.toHaveBeenCalled();
+    warned.mockRestore();
   });
 
   it("ignores an unusable threshold rather than classifying everything", () => {

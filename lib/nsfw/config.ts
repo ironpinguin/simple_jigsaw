@@ -42,6 +42,19 @@ export function readNsfwConfig(env: NodeJS.ProcessEnv): NsfwConfig {
     mode = "off";
   }
 
+  // Not a functional problem — classification still runs — but a legal one:
+  // every upload is about to leave for a named-nowhere third party, and
+  // nothing else checks that LEGAL_CLASSIFIER_PROCESSOR (lib/legal.ts) was
+  // set to match. Read directly off `env` rather than importing lib/legal.ts,
+  // since NodeJS.ProcessEnv already carries every variable regardless of
+  // which module declares it.
+  if (mode === "external" && !env.LEGAL_CLASSIFIER_PROCESSOR?.trim()) {
+    console.warn(
+      "[nsfw] NSFW_MODE=external is set but LEGAL_CLASSIFIER_PROCESSOR is not — uploads are being " +
+        "sent to an unnamed processor and the privacy policy does not disclose it; see docs/data-processors.md",
+    );
+  }
+
   return {
     mode,
     threshold: positiveNumber(env.NSFW_THRESHOLD, DEFAULT_THRESHOLD, 1),

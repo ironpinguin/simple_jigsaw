@@ -8,6 +8,7 @@ import {
   isOperatorComplete,
   PRIVACY_UPDATED,
 } from "@/lib/legal";
+import { readNsfwConfig } from "@/lib/nsfw";
 
 // The named processors and the hosting region come from the environment, and in
 // the Docker setup `next build` sees a different one than the running container
@@ -35,6 +36,7 @@ export default async function PrivacyPage({
   const processors = legalProcessors();
   const instance = legalInstance();
   const operator = legalOperator();
+  const nsfw = readNsfwConfig(process.env);
 
   return (
     <div className="legal">
@@ -66,6 +68,15 @@ export default async function PrivacyPage({
 
       <h3>{t("imagesTitle")}</h3>
       <p>{t("imagesText")}</p>
+      {/* Written for every upload regardless of mode — even `off` produces a
+          neutral verdict — so this is not conditional the way the sentence
+          below it is. */}
+      <p>{t("imagesVerdictText")}</p>
+      {/* Same wording covers local and external: both actually scan the
+          image, so a data subject needs to know either way. Only `off` skips
+          this paragraph, matching that mode's classifier never being asked
+          anything (lib/nsfw/off.ts). */}
+      {nsfw.mode !== "off" && <p>{t("imagesClassificationText")}</p>}
       <p>{t("imagesPublicText")}</p>
 
       <h3>{t("localTitle")}</h3>
@@ -83,10 +94,18 @@ export default async function PrivacyPage({
           ? t("recipientsMailExternal", { provider: processors.mail })
           : t("recipientsMailSelf")}
       </p>
+      {/* recipientsStorageSelf asserts images reach no third party at all —
+          true only when there is also no named classifier. With one named,
+          the very next paragraph says the opposite, so the self-hosted
+          variant has to drop that clause rather than merely add to it: two
+          adjacent paragraphs making opposite claims about the same images
+          would make the older sentence the false one. */}
       <p>
         {processors.storage
           ? t("recipientsStorageExternal", { provider: processors.storage })
-          : t("recipientsStorageSelf")}
+          : processors.classifier
+            ? t("recipientsStorageSelfClassified")
+            : t("recipientsStorageSelf")}
       </p>
       {/* Unlike mail/storage there is no "self-hosted" half: off and local
           never send the image anywhere, so an unset processor means nothing

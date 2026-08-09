@@ -71,6 +71,9 @@ describe("getClassifier", () => {
     vi.stubEnv("NSFW_MODE", "external");
     vi.stubEnv("NSFW_API_URL", "https://classifier.example/v1");
     vi.stubEnv("NSFW_API_KEY", "secret");
+    // Named so this test doesn't also trip the legal-processor warning —
+    // that path is covered by lib/nsfw/config.test.ts.
+    vi.stubEnv("LEGAL_CLASSIFIER_PROCESSOR", "Example Classifier Inc.");
 
     const verdict = await getClassifier().classify(Buffer.from("x"));
 
