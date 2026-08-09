@@ -117,6 +117,10 @@ auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
   `LEGAL_MAIL_PROCESSOR` bzw. `LEGAL_STORAGE_PROCESSOR` ihn benennen, sonst
   behauptet die Datenschutzerklärung Eigenbetrieb. `.env.example` erklärt alle
   `LEGAL_*`-Variablen im Detail.
+- **Auftragsverarbeitung**: Welche personenbezogenen Daten die Instanz überhaupt
+  verlassen und was pro externem Dienst zu klären ist (AV-Vertrag, Drittland),
+  steht in [docs/data-processors.md](docs/data-processors.md) — mit einer
+  Tabelle zum Ausfüllen für die eigene Instanz.
 - **Reverse Proxy**: Läuft die App hinter nginx/traefik/Caddy, muss
   `TRUSTED_PROXY_HOPS` die Anzahl der eigenen Proxys angeben (1 = ein Proxy,
   2 = zusätzlich ein Load Balancer davor). Beim Standardwert `0` gilt
