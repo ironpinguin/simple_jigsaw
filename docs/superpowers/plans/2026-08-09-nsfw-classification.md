@@ -1745,11 +1745,15 @@ One paragraph in the `legal` namespace of all three locales, conditioned on the 
 ### Added
 - Optional NSFW classification of uploaded images (`NSFW_MODE`, off by
   default). A flagged image still uploads, but the puzzle is created private
-  and appears in the admin review queue instead of being published; a
-  classifier that fails or times out is treated the same way. Operators can run
-  a local model or an external service — the latter is an Art. 28 processor,
-  see `docs/data-processors.md`. (#23)
+  and appears in the admin review queue instead of being published, and its
+  owner cannot publish it themselves until an admin has resolved the entry;
+  a classifier that fails or times out is treated the same way. The uploader
+  is told their puzzle is awaiting review. Operators can run a local model or
+  an external service — the latter is an Art. 28 processor, see
+  `docs/data-processors.md`. (#23)
 ```
+
+The "cannot publish it themselves" clause is not decoration: without it a reader would reasonably assume the hold is advisory, which is what it was until Task 13.
 
 - [ ] **Step 5: Run every gate**
 
