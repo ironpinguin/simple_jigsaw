@@ -66,20 +66,36 @@ export async function PATCH(
   const { id } = await params;
 
   if (parsed.data.isPublic) {
+    // Ownership must be settled before the hold lookup: a hold check keyed
+    // only on puzzleId would answer 409-vs-404 for an id the caller does not
+    // own, leaking both that the puzzle exists and that it is under
+    // moderation — the same existence oracle the private branch below
+    // deliberately avoids. This read is otherwise redundant with the
+    // ownerId-scoped updateMany that follows; it exists only so a non-owner
+    // gets identical output whether or not a hold exists.
+    const owned = await prisma.puzzle.findUnique({
+      where: { id },
+      select: { ownerId: true },
+    });
+    if (!owned || owned.ownerId !== user.id) {
+      return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+    }
+
     // A machine hold is not the owner's to lift: without this they can clear
     // it from "My puzzles" before an admin ever opens the queue. Scoped to
-    // AUTO_NSFW on purpose — an open *user* report has never blocked
-    // publishing, and this feature must not quietly change that.
+    // the machine categories on purpose — an open *user* report has never
+    // blocked publishing, and this feature must not quietly change that.
     const held = await prisma.report.findFirst({
-      where: { puzzleId: id, category: AUTO_REPORT_CATEGORIES[0], status: "OPEN" },
+      where: { puzzleId: id, category: { in: [...AUTO_REPORT_CATEGORIES] }, status: "OPEN" },
       select: { id: true },
     });
     if (held) {
       return NextResponse.json({ error: t("awaitingReview") }, { status: 409 });
     }
 
-    // Making a puzzle public needs no rotation: one atomic statement does the
-    // lookup, the ownership check and the write.
+    // The ownerId scope here is the actual authorisation, not the read
+    // above: a race between the two must not turn into a write a non-owner
+    // triggered.
     const updated = await prisma.puzzle.updateMany({
       where: { id, ownerId: user.id },
       data: { isPublic: true },
