@@ -22,6 +22,16 @@ type RetentionState = {
   lastSuccessAt?: number;
   /** Consecutive failures since the last success. */
   failures: number;
+  /**
+   * Paging cursor into the age-ordered verdict candidates. Without it, a wall
+   * of verdicts that are old enough but still claimed would occupy every
+   * batch forever — its rows never stop matching the age filter, so a sweep
+   * that always started at the top would re-examine the same wall on every
+   * run and never reach genuine orphans behind it. In-memory only, like the
+   * rest of this state: a restart loses the cursor, and the next sweep just
+   * starts over from the oldest candidates, which is fine for housekeeping.
+   */
+  verdictSweepOffset: number;
 };
 
 // Next compiles instrumentation.ts and the route handlers into different
@@ -37,7 +47,10 @@ declare global {
 
 // Same object in every layer, so the mutations below are shared. Callers that
 // need to reset it (tests) delete the global and re-import.
-const state: RetentionState = (globalThis.__jigsawRetention ??= { failures: 0 });
+const state: RetentionState = (globalThis.__jigsawRetention ??= {
+  failures: 0,
+  verdictSweepOffset: 0,
+});
 
 /**
  * Delete every token past its expiry and report how many went. An expired row
@@ -61,7 +74,9 @@ export const VERDICT_GRACE_MS = 24 * 60 * 60 * 1000;
 // the instance has accumulated. SQLite's default bound-parameter limit is 999
 // (SQLITE_MAX_VARIABLE_NUMBER); 500 leaves headroom for the query's other
 // parameters and for this to be raised later without brushing that ceiling.
-const VERDICT_SWEEP_BATCH = 500;
+// Exported so a test can pin the exact value — otherwise nothing stops a
+// future edit from raising it above 999 and reintroducing that crash.
+export const VERDICT_SWEEP_BATCH = 500;
 
 /**
  * Delete verdicts for images no puzzle references. An upload the user
@@ -73,14 +88,33 @@ const VERDICT_SWEEP_BATCH = 500;
  * grow with the size of the instance, and a large enough `IN (...)` list can
  * exceed SQLite's bound-variable limit and turn routine housekeeping into an
  * exception. This shape is bounded by VERDICT_SWEEP_BATCH instead.
+ *
+ * Pages through candidates via `verdictSweepOffset` rather than taking the
+ * same batch every time: `createdAt` only grows staler, never fresher, so a
+ * verdict that is old enough but still claimed would otherwise occupy the
+ * same slot in every future sweep and permanently block any real orphan
+ * behind it from ever being examined. Ordering is explicit (`createdAt` then
+ * `imageKey`, both total and stable) so paging cannot skip or repeat a row
+ * regardless of what either database's default row order would do.
  */
 export async function purgeOrphanedVerdicts(now: number = Date.now()): Promise<number> {
   const candidates = await prisma.imageVerdict.findMany({
     where: { createdAt: { lt: new Date(now - VERDICT_GRACE_MS) } },
     select: { imageKey: true },
+    orderBy: [{ createdAt: "asc" }, { imageKey: "asc" }],
+    skip: state.verdictSweepOffset,
     take: VERDICT_SWEEP_BATCH,
   });
-  if (candidates.length === 0) return 0;
+
+  // A page shorter than a full batch means the scan reached the end of the
+  // candidates that currently exist; start the next sweep over from the
+  // oldest rather than paging into empty space forever.
+  const reachedEnd = candidates.length < VERDICT_SWEEP_BATCH;
+
+  if (candidates.length === 0) {
+    state.verdictSweepOffset = 0;
+    return 0;
+  }
 
   const candidateKeys = candidates.map((verdict) => verdict.imageKey);
   const claimed = await prisma.puzzle.findMany({
@@ -93,6 +127,18 @@ export async function purgeOrphanedVerdicts(now: number = Date.now()): Promise<n
   const { count } = await prisma.imageVerdict.deleteMany({
     where: { imageKey: { in: orphanKeys } },
   });
+
+  // Deleted rows vanish from the table entirely, so only the rows that
+  // survive this page — the claimed ones — need to be skipped next time.
+  // Advancing by the full page size regardless would, whenever this page
+  // deleted anything, skip over the rows that shift down to fill the gap:
+  // the exact "real orphans never examined" failure this paging exists to
+  // prevent. Left unchanged on a thrown deleteMany, so a failed page is
+  // retried from the same offset rather than assumed processed.
+  state.verdictSweepOffset = reachedEnd
+    ? 0
+    : state.verdictSweepOffset + candidates.length - count;
+
   return count;
 }
 

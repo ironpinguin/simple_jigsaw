@@ -185,22 +185,77 @@ describe("maybePurgeExpiredTokens", () => {
   });
 });
 
+/**
+ * A minimal in-memory stand-in for the imageVerdict/puzzle tables, wired into
+ * the same mock functions the module calls through `./db`. The paging tests
+ * below need `skip`/`take`/`orderBy` to actually behave like Prisma's, and
+ * the row set to actually shrink when a delete goes through — a single
+ * `mockResolvedValue` can't express either, so those tests drive this fake
+ * instead. The exact-shape tests above and below it stay on plain
+ * `mockResolvedValue`, which is the right tool when there's only one call to
+ * describe.
+ */
+function fakeVerdictStore(
+  entries: { imageKey: string; createdAt: number }[],
+  claimedKeys: Set<string>,
+) {
+  let rows = [...entries].sort(
+    (a, b) => a.createdAt - b.createdAt || a.imageKey.localeCompare(b.imageKey),
+  );
+
+  verdictFindMany.mockImplementation(
+    async ({
+      where,
+      skip = 0,
+      take,
+    }: {
+      where: { createdAt: { lt: Date } };
+      skip?: number;
+      take: number;
+    }) => {
+      const cutoff = where.createdAt.lt.getTime();
+      return rows
+        .filter((row) => row.createdAt < cutoff)
+        .slice(skip, skip + take)
+        .map((row) => ({ imageKey: row.imageKey }));
+    },
+  );
+
+  puzzleFindMany.mockImplementation(async ({ where }: { where: { imageKey: { in: string[] } } }) =>
+    where.imageKey.in.filter((key) => claimedKeys.has(key)).map((imageKey) => ({ imageKey })),
+  );
+
+  verdictDeleteMany.mockImplementation(async ({ where }: { where: { imageKey: { in: string[] } } }) => {
+    const toDelete = new Set(where.imageKey.in);
+    const before = rows.length;
+    rows = rows.filter((row) => !toDelete.has(row.imageKey));
+    return { count: before - rows.length };
+  });
+
+  return { has: (key: string) => rows.some((row) => row.imageKey === key) };
+}
+
 describe("purgeOrphanedVerdicts", () => {
   it("deletes a verdict older than the grace period that no puzzle claimed", async () => {
     // An abandoned upload would otherwise keep its row for the life of the DB.
-    const { purgeOrphanedVerdicts, VERDICT_GRACE_MS } = await reimportRetention();
+    const { purgeOrphanedVerdicts, VERDICT_GRACE_MS, VERDICT_SWEEP_BATCH } =
+      await reimportRetention();
     verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
     verdictDeleteMany.mockResolvedValue({ count: 1 });
 
     await expect(purgeOrphanedVerdicts(NOW)).resolves.toBe(1);
 
-    // Candidates are selected by age first, with a bounded take — not by
-    // loading every puzzle's imageKey and excluding it — so the query stays
-    // cheap and safe regardless of how many puzzles the instance has.
+    // Candidates are selected by age first, with a bounded, explicitly
+    // ordered, cursor-following page — not by loading every puzzle's
+    // imageKey and excluding it — so the query stays cheap and safe
+    // regardless of how many puzzles the instance has, and paging can't
+    // repeat or skip a row depending on either database's default order.
     expect(verdictFindMany).toHaveBeenCalledWith({
       where: { createdAt: { lt: new Date(NOW - VERDICT_GRACE_MS) } },
       select: { imageKey: true },
-      take: expect.any(Number),
+      orderBy: [{ createdAt: "asc" }, { imageKey: "asc" }],
+      skip: 0,
+      take: VERDICT_SWEEP_BATCH,
     });
     // Only the candidates' own keys are asked about, not every puzzle's.
     expect(puzzleFindMany).toHaveBeenCalledWith({
@@ -260,6 +315,75 @@ describe("purgeOrphanedVerdicts", () => {
       expect.any(Error),
     );
     logged.mockRestore();
+  });
+
+  it("examines different candidates on consecutive sweeps instead of the same batch twice", async () => {
+    // The starvation this exists to prevent: `createdAt` only grows staler,
+    // so a `take` with no cursor would re-select the same oldest rows on
+    // every sweep once there are more candidates than fit in one batch.
+    const { purgeOrphanedVerdicts, VERDICT_GRACE_MS, VERDICT_SWEEP_BATCH } =
+      await reimportRetention();
+    const total = VERDICT_SWEEP_BATCH * 2;
+    const entries = Array.from({ length: total }, (_, i) => ({
+      imageKey: `verdict-${String(i).padStart(4, "0")}`,
+      createdAt: NOW - VERDICT_GRACE_MS - total + i,
+    }));
+    // All claimed: nothing gets deleted, isolating the paging behaviour from
+    // the offset-adjustment-on-delete behaviour the next test covers.
+    fakeVerdictStore(entries, new Set(entries.map((e) => e.imageKey)));
+
+    await purgeOrphanedVerdicts(NOW);
+    const firstBatch = new Set<string>(puzzleFindMany.mock.calls[0][0].where.imageKey.in);
+
+    await purgeOrphanedVerdicts(NOW);
+    const secondBatch = new Set<string>(puzzleFindMany.mock.calls[1][0].where.imageKey.in);
+
+    expect(firstBatch.size).toBe(VERDICT_SWEEP_BATCH);
+    expect(secondBatch.size).toBe(VERDICT_SWEEP_BATCH);
+    for (const key of secondBatch) expect(firstBatch.has(key)).toBe(false);
+  });
+
+  it("eventually deletes a genuine orphan sitting behind a wall of claimed verdicts", async () => {
+    const { purgeOrphanedVerdicts, VERDICT_GRACE_MS, VERDICT_SWEEP_BATCH } =
+      await reimportRetention();
+    const gap = 10_000;
+    const wall = Array.from({ length: VERDICT_SWEEP_BATCH }, (_, i) => ({
+      imageKey: `claimed-${String(i).padStart(4, "0")}`,
+      createdAt: NOW - VERDICT_GRACE_MS - gap + i,
+    }));
+    // Sorts right after the wall, but is still old enough to be a candidate.
+    const orphan = { imageKey: "orphan", createdAt: NOW - VERDICT_GRACE_MS - gap + wall.length };
+    const store = fakeVerdictStore([...wall, orphan], new Set(wall.map((w) => w.imageKey)));
+
+    // First sweep exhausts the wall; the orphan is one batch further along.
+    await expect(purgeOrphanedVerdicts(NOW)).resolves.toBe(0);
+    expect(store.has("orphan")).toBe(true);
+
+    // Second sweep, thanks to the persisted cursor, reaches and deletes it.
+    await expect(purgeOrphanedVerdicts(NOW)).resolves.toBe(1);
+    expect(store.has("orphan")).toBe(false);
+  });
+
+  it("resets the paging cursor once a sweep reaches the end, instead of paging into emptiness", async () => {
+    const { purgeOrphanedVerdicts, VERDICT_GRACE_MS } = await reimportRetention();
+    const entries = Array.from({ length: 5 }, (_, i) => ({
+      imageKey: `verdict-${i}`,
+      createdAt: NOW - VERDICT_GRACE_MS - 5 + i,
+    }));
+    fakeVerdictStore(entries, new Set(entries.map((e) => e.imageKey)));
+
+    // A page of 5 is short of a full batch, so the cursor should reset to 0
+    // rather than advance past the end.
+    await purgeOrphanedVerdicts(NOW);
+    const firstBatch = puzzleFindMany.mock.calls[0][0].where.imageKey.in as string[];
+
+    await purgeOrphanedVerdicts(NOW);
+    const secondBatch = puzzleFindMany.mock.calls[1][0].where.imageKey.in as string[];
+
+    // Without the reset, this sweep would skip past all 5 rows and find
+    // nothing — the same "sweep runs forever and does nothing" failure mode,
+    // just from an empty tail instead of a wall of claimed rows.
+    expect(secondBatch).toEqual(firstBatch);
   });
 });
 
