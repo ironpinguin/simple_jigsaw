@@ -54,6 +54,48 @@ export async function purgeExpiredTokens(now: number = Date.now()): Promise<numb
   return count;
 }
 
+/** How long an unclaimed verdict is kept, in case the puzzle is still coming. */
+export const VERDICT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+// Bounds both queries below regardless of how many puzzles or stale verdicts
+// the instance has accumulated. SQLite's default bound-parameter limit is 999
+// (SQLITE_MAX_VARIABLE_NUMBER); 500 leaves headroom for the query's other
+// parameters and for this to be raised later without brushing that ceiling.
+const VERDICT_SWEEP_BATCH = 500;
+
+/**
+ * Delete verdicts for images no puzzle references. An upload the user
+ * abandoned leaves a row behind that nothing will ever read; the grace period
+ * covers the gap between the upload request and the puzzle that claims it.
+ *
+ * Selects candidates first and asks only about their keys, rather than
+ * loading every puzzle's imageKey and excluding it with `notIn`: that would
+ * grow with the size of the instance, and a large enough `IN (...)` list can
+ * exceed SQLite's bound-variable limit and turn routine housekeeping into an
+ * exception. This shape is bounded by VERDICT_SWEEP_BATCH instead.
+ */
+export async function purgeOrphanedVerdicts(now: number = Date.now()): Promise<number> {
+  const candidates = await prisma.imageVerdict.findMany({
+    where: { createdAt: { lt: new Date(now - VERDICT_GRACE_MS) } },
+    select: { imageKey: true },
+    take: VERDICT_SWEEP_BATCH,
+  });
+  if (candidates.length === 0) return 0;
+
+  const candidateKeys = candidates.map((verdict) => verdict.imageKey);
+  const claimed = await prisma.puzzle.findMany({
+    where: { imageKey: { in: candidateKeys } },
+    select: { imageKey: true },
+  });
+  const claimedKeys = new Set(claimed.map((puzzle) => puzzle.imageKey));
+  const orphanKeys = candidateKeys.filter((key) => !claimedKeys.has(key));
+
+  const { count } = await prisma.imageVerdict.deleteMany({
+    where: { imageKey: { in: orphanKeys } },
+  });
+  return count;
+}
+
 /**
  * Sweep at most once per `SWEEP_INTERVAL_MS`, per process, across every caller.
  * Returns the number of rows deleted, or null when the call was throttled or
@@ -84,6 +126,17 @@ export async function maybePurgeExpiredTokens(
     // privacy policy promises this deletion and an operator deserves evidence
     // of it beyond the absence of an error.
     if (count > 0) console.info(`[retention] deleted ${count} expired token(s)`);
+
+    // Housekeeping, not the promise the privacy policy makes: its failure is
+    // logged and swallowed here so it can never turn a successful token purge
+    // into a null, or throw past this function's no-throw contract.
+    try {
+      const orphans = await purgeOrphanedVerdicts(now);
+      if (orphans > 0) console.info(`[retention] deleted ${orphans} unclaimed image verdict(s)`);
+    } catch (error) {
+      console.error("[retention] purge of unclaimed image verdicts failed:", error);
+    }
+
     return count;
   } catch (error) {
     state.failures += 1;

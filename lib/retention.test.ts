@@ -1,10 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { expiredTokenFilter } from "./token-ttl";
 
-const { deleteMany } = vi.hoisted(() => ({ deleteMany: vi.fn() }));
+const { deleteMany, verdictFindMany, verdictDeleteMany, puzzleFindMany } = vi.hoisted(() => ({
+  deleteMany: vi.fn(),
+  // imageVerdict gets two mocks, not one: purgeOrphanedVerdicts now selects
+  // candidates before deciding what to delete (see lib/retention.ts), so the
+  // mock needs to distinguish the two calls the way the real client does.
+  verdictFindMany: vi.fn(),
+  verdictDeleteMany: vi.fn(),
+  puzzleFindMany: vi.fn(),
+}));
 
 vi.mock("./db", () => ({
-  prisma: { verificationToken: { deleteMany } },
+  prisma: {
+    verificationToken: { deleteMany },
+    imageVerdict: { findMany: verdictFindMany, deleteMany: verdictDeleteMany },
+    puzzle: { findMany: puzzleFindMany },
+  },
 }));
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
@@ -28,6 +40,11 @@ async function reimportRetention() {
 
 beforeEach(() => {
   deleteMany.mockResolvedValue({ count: 0 });
+  // No candidates by default, so the token-purge tests below don't have to
+  // know the verdict sweep exists; tests that do care override these.
+  verdictFindMany.mockResolvedValue([]);
+  verdictDeleteMany.mockResolvedValue({ count: 0 });
+  puzzleFindMany.mockResolvedValue([]);
   resetRetentionState();
 });
 
@@ -165,6 +182,84 @@ describe("maybePurgeExpiredTokens", () => {
     await maybePurgeExpiredTokens(NOW + SWEEP_INTERVAL_MS);
 
     expect(logged).toHaveBeenCalledWith(expect.stringContaining("4"));
+  });
+});
+
+describe("purgeOrphanedVerdicts", () => {
+  it("deletes a verdict older than the grace period that no puzzle claimed", async () => {
+    // An abandoned upload would otherwise keep its row for the life of the DB.
+    const { purgeOrphanedVerdicts, VERDICT_GRACE_MS } = await reimportRetention();
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+    verdictDeleteMany.mockResolvedValue({ count: 1 });
+
+    await expect(purgeOrphanedVerdicts(NOW)).resolves.toBe(1);
+
+    // Candidates are selected by age first, with a bounded take — not by
+    // loading every puzzle's imageKey and excluding it — so the query stays
+    // cheap and safe regardless of how many puzzles the instance has.
+    expect(verdictFindMany).toHaveBeenCalledWith({
+      where: { createdAt: { lt: new Date(NOW - VERDICT_GRACE_MS) } },
+      select: { imageKey: true },
+      take: expect.any(Number),
+    });
+    // Only the candidates' own keys are asked about, not every puzzle's.
+    expect(puzzleFindMany).toHaveBeenCalledWith({
+      where: { imageKey: { in: ["uploads/orphan.webp"] } },
+      select: { imageKey: true },
+    });
+    expect(verdictDeleteMany).toHaveBeenCalledWith({
+      where: { imageKey: { in: ["uploads/orphan.webp"] } },
+    });
+  });
+
+  it("keeps a verdict whose image a puzzle still uses", async () => {
+    const { purgeOrphanedVerdicts } = await reimportRetention();
+    verdictFindMany.mockResolvedValue([{ imageKey: "puzzles/kept.webp" }]);
+    puzzleFindMany.mockResolvedValue([{ imageKey: "puzzles/kept.webp" }]);
+
+    await purgeOrphanedVerdicts(NOW);
+
+    const { where } = verdictDeleteMany.mock.calls[0][0];
+    expect(where.imageKey.in).not.toContain("puzzles/kept.webp");
+  });
+
+  it("does not ask about claims or issue a delete when nothing is old enough", async () => {
+    // An empty candidate batch is not worth a second round trip to ask the
+    // puzzle table about zero keys.
+    const { purgeOrphanedVerdicts } = await reimportRetention();
+
+    await expect(purgeOrphanedVerdicts(NOW)).resolves.toBe(0);
+
+    expect(puzzleFindMany).not.toHaveBeenCalled();
+    expect(verdictDeleteMany).not.toHaveBeenCalled();
+  });
+
+  it("runs as part of the sweep, so no operator has to schedule it", async () => {
+    const { maybePurgeExpiredTokens } = await reimportRetention();
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+
+    await maybePurgeExpiredTokens(NOW);
+
+    expect(verdictDeleteMany).toHaveBeenCalled();
+  });
+
+  it("does not let a verdict failure stop the token purge from counting", async () => {
+    // Token deletion is the promise the privacy policy makes; verdict cleanup
+    // is housekeeping and must not mask it.
+    const { maybePurgeExpiredTokens } = await reimportRetention();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    deleteMany.mockResolvedValue({ count: 5 });
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+    verdictDeleteMany.mockRejectedValue(new Error("db down"));
+
+    // Not just "resolves" — the token count itself must come through intact.
+    await expect(maybePurgeExpiredTokens(NOW)).resolves.toBe(5);
+
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("purge of unclaimed image verdicts failed"),
+      expect.any(Error),
+    );
+    logged.mockRestore();
   });
 });
 
