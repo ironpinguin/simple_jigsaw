@@ -3,14 +3,30 @@
 // Pure and dependency-free so client components can import the value sets;
 // the reporter-IP hashing lives in lib/report-ip.ts (node:crypto, server-only).
 
+/** What a *person* may choose in the report dialog. */
 export const REPORT_CATEGORIES = ["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"] as const;
-export type ReportCategory = (typeof REPORT_CATEGORIES)[number];
+
+/**
+ * Categories only the server produces. Kept out of REPORT_CATEGORIES because
+ * components/ReportDialog.tsx renders one radio per entry of that list — a
+ * machine verdict must not become something a user can pick.
+ */
+export const AUTO_REPORT_CATEGORIES = ["AUTO_NSFW"] as const;
+
+/** Everything a stored row may contain. */
+export const ALL_REPORT_CATEGORIES = [
+  ...REPORT_CATEGORIES,
+  ...AUTO_REPORT_CATEGORIES,
+] as const;
+
+export type UserReportCategory = (typeof REPORT_CATEGORIES)[number];
+export type ReportCategory = (typeof ALL_REPORT_CATEGORIES)[number];
 
 // Guard for DB → typed-value boundaries: category columns are plain strings,
 // so anything read back must be narrowed before it reaches a translation
 // lookup like t(`category${category}`), which throws on an unknown key.
 export function isReportCategory(value: string): value is ReportCategory {
-  return (REPORT_CATEGORIES as readonly string[]).includes(value);
+  return (ALL_REPORT_CATEGORIES as readonly string[]).includes(value);
 }
 
 // ACCOUNT_DELETED is not a moderation decision an admin makes: it records that

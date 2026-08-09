@@ -215,7 +215,8 @@
     "categoryNSFW": "Contenuto esplicito",
     "categoryILLEGAL": "Violenza o contenuto illegale",
     "categoryCOPYRIGHT": "Violazione del diritto d’autore",
-    "categoryOTHER": "Altro"
+    "categoryOTHER": "Altro",
+    "categoryAUTO_NSFW": "Rilevato automaticamente"
   },
   "legal": {
     "imprintTitle": "Note legali",
