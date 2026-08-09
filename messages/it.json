@@ -326,7 +326,8 @@
     "tooManyReports": "Troppe segnalazioni in poco tempo. Riprova più tardi.",
     "tooManyRequests": "Troppe richieste in poco tempo. Riprova più tardi.",
     "storageFailed": "L’archivio immagini non è al momento raggiungibile. Riprova.",
-    "reportNotFound": "Segnalazione non trovata."
+    "reportNotFound": "Segnalazione non trovata.",
+    "awaitingReview": "Questo puzzle è ancora in verifica e non può essere reso pubblico per ora."
   },
   "email": {
     "verifySubject": "Conferma la tua e-mail — Jigsaw",

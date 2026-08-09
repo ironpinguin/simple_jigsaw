@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { copyObject, deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
+import { AUTO_REPORT_CATEGORIES } from "@/lib/reports";
 import { z } from "zod";
 
 export async function GET(
@@ -65,6 +66,18 @@ export async function PATCH(
   const { id } = await params;
 
   if (parsed.data.isPublic) {
+    // A machine hold is not the owner's to lift: without this they can clear
+    // it from "My puzzles" before an admin ever opens the queue. Scoped to
+    // AUTO_NSFW on purpose — an open *user* report has never blocked
+    // publishing, and this feature must not quietly change that.
+    const held = await prisma.report.findFirst({
+      where: { puzzleId: id, category: AUTO_REPORT_CATEGORIES[0], status: "OPEN" },
+      select: { id: true },
+    });
+    if (held) {
+      return NextResponse.json({ error: t("awaitingReview") }, { status: 409 });
+    }
+
     // Making a puzzle public needs no rotation: one atomic statement does the
     // lookup, the ownership check and the write.
     const updated = await prisma.puzzle.updateMany({

@@ -326,7 +326,8 @@
     "tooManyReports": "Zu viele Meldungen in kurzer Zeit. Bitte versuche es später erneut.",
     "tooManyRequests": "Zu viele Anfragen in kurzer Zeit. Bitte versuche es später erneut.",
     "storageFailed": "Der Bildspeicher ist derzeit nicht erreichbar. Bitte versuche es erneut.",
-    "reportNotFound": "Meldung nicht gefunden."
+    "reportNotFound": "Meldung nicht gefunden.",
+    "awaitingReview": "Dieses Puzzle wird noch geprüft und kann so lange nicht öffentlich geschaltet werden."
   },
   "email": {
     "verifySubject": "Bestätige deine E-Mail — Jigsaw",

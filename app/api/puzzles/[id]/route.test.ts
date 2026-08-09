@@ -5,6 +5,7 @@ const {
   findFirst,
   updateMany,
   deleteMany,
+  reportFindFirst,
   deleteObjectMock,
   copyObjectMock,
   getSessionViewerMock,
@@ -14,6 +15,7 @@ const {
   findFirst: vi.fn(),
   updateMany: vi.fn(),
   deleteMany: vi.fn(),
+  reportFindFirst: vi.fn(),
   deleteObjectMock: vi.fn(),
   copyObjectMock: vi.fn(),
   getSessionViewerMock: vi.fn(),
@@ -21,7 +23,10 @@ const {
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { puzzle: { findUnique, findFirst, updateMany, deleteMany } },
+  prisma: {
+    puzzle: { findUnique, findFirst, updateMany, deleteMany },
+    report: { findFirst: reportFindFirst },
+  },
 }));
 vi.mock("@/lib/auth", () => ({
   getSessionViewer: getSessionViewerMock,
@@ -78,6 +83,7 @@ beforeEach(() => {
   findFirst.mockResolvedValue(null);
   updateMany.mockResolvedValue({ count: 1 });
   deleteMany.mockResolvedValue({ count: 1 });
+  reportFindFirst.mockResolvedValue(null);
   deleteObjectMock.mockResolvedValue(undefined);
   copyObjectMock.mockResolvedValue(undefined);
 });
@@ -167,6 +173,53 @@ describe("PATCH /api/puzzles/[id]", () => {
       where: { id: "p1", ownerId: "owner-1" },
       data: { isPublic: true },
     });
+  });
+});
+
+describe("publishing a puzzle held for review", () => {
+  beforeEach(() => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+  });
+
+  it("refuses while an automatic report is still open", async () => {
+    // Otherwise the uploader clears their own hold before an admin ever sees
+    // the queue entry, and the classifier is decorative.
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await callPatch({ isPublic: true });
+
+    expect(res.status).toBe(409);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("looks only for an unresolved machine finding on this puzzle", async () => {
+    // A user report does not block publishing — that is #22's behaviour and
+    // this feature must not change it — and a resolved one is spent.
+    await callPatch({ isPublic: true });
+
+    expect(reportFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { puzzleId: "p1", category: "AUTO_NSFW", status: "OPEN" },
+      }),
+    );
+  });
+
+  it("publishes normally when nothing is holding it", async () => {
+    reportFindFirst.mockResolvedValue(null);
+
+    const res = await callPatch({ isPublic: true });
+
+    expect(res.status).toBe(200);
+    expect(updateMany).toHaveBeenCalled();
+  });
+
+  it("never blocks making a puzzle private", async () => {
+    // A hold must not trap someone into keeping their own puzzle public.
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await callPatch({ isPublic: false });
+
+    expect(res.status).toBe(200);
   });
 });
 
