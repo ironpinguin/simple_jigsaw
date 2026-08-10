@@ -14,6 +14,7 @@ const {
   transaction,
   txCreate,
   txReportCreate,
+  notifyAdmins,
 } = vi.hoisted(() => ({
   puzzleFindMany: vi.fn(),
   create: vi.fn(),
@@ -23,6 +24,7 @@ const {
   transaction: vi.fn(),
   txCreate: vi.fn(),
   txReportCreate: vi.fn(),
+  notifyAdmins: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -34,6 +36,10 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/auth", () => ({ getSessionUser: getSessionUserMock }));
+// The notification's own behaviour — every admin, the no-admins log, the
+// never-throws contract — is lib/report-notify.test.ts. Here only the routing
+// decision matters: held notifies, clean does not.
+vi.mock("@/lib/report-notify", () => ({ notifyAdminsOfReport: notifyAdmins }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
 }));
@@ -349,6 +355,41 @@ describe("automatic moderation", () => {
     expect(txReportCreate).toHaveBeenCalled();
     await expect(res.json()).resolves.toEqual({ id: "p1", pendingReview: true });
     warned.mockRestore();
+  });
+
+  it("tells the admins about a machine hold", async () => {
+    // The uploader is told to wait for a review; somebody has to be told to
+    // perform one. A user report has emailed every admin since #22, and this
+    // path notified nobody — the asymmetry was backwards, because this is the
+    // case where the content is most likely to actually be bad and the only one
+    // where a user is blocked until an admin acts.
+    vi.stubEnv("NSFW_MODE", "local");
+    verdictFindUnique.mockResolvedValue({ label: "FLAGGED", score: 0.97, model: "local:x" });
+
+    await callPost({ ...BODY, isPublic: true });
+
+    expect(notifyAdmins).toHaveBeenCalledWith("My puzzle", "AUTO_NSFW", "machine");
+  });
+
+  it("does not notify anyone about a clean upload", async () => {
+    verdictFindUnique.mockResolvedValue({ label: "CLEAN", score: 0.01, model: "local:x" });
+
+    await callPost({ ...BODY, isPublic: true });
+
+    expect(notifyAdmins).not.toHaveBeenCalled();
+  });
+
+  it("does not notify when the puzzle was never committed", async () => {
+    // Proves the notification sits after the transaction rather than inside it:
+    // no puzzle, no report, so nothing to review. Mail inside the transaction
+    // would also hold it open across an SMTP round trip.
+    vi.stubEnv("NSFW_MODE", "local");
+    verdictFindUnique.mockResolvedValue({ label: "FLAGGED", score: 0.97, model: "local:x" });
+    transaction.mockRejectedValue(new Error("db down"));
+
+    await expect(callPost({ ...BODY, isPublic: true })).rejects.toThrow("db down");
+
+    expect(notifyAdmins).not.toHaveBeenCalled();
   });
 
   it("keeps publishing an unclaimed key with no verdict when classification is off", async () => {

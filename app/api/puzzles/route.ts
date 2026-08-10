@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import { getErrorT } from "@/lib/i18n-server";
 import { readNsfwConfig, requiresReview, toVerdictLabel, type VerdictLabel } from "@/lib/nsfw";
+import { notifyAdminsOfReport } from "@/lib/report-notify";
 import { AUTO_REPORT_CATEGORIES } from "@/lib/reports";
 
 const CreateSchema = z.object({
@@ -194,6 +195,16 @@ export async function POST(request: Request) {
 
     return created;
   });
+
+  if (pendingReview) {
+    // After the transaction, never inside it: an SMTP round trip must not hold a
+    // database transaction open, and a mail failure must not roll back a puzzle
+    // that was created and held exactly as intended. Awaited rather than
+    // fire-and-forget so the ping is not cut short by the response ending the
+    // request's lifetime — notifyAdminsOfReport is total, so this cannot turn a
+    // successful create into a 500.
+    await notifyAdminsOfReport(title, AUTO_REPORT_CATEGORIES[0], "machine");
+  }
 
   return NextResponse.json({ id: puzzle.id, pendingReview }, { status: 201 });
 }

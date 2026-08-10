@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getErrorT } from "@/lib/i18n-server";
-import { sendReportNotification } from "@/lib/mail";
+import { notifyAdminsOfReport } from "@/lib/report-notify";
 import {
   REPORT_CATEGORIES,
   REPORT_MESSAGE_MAX,
@@ -75,23 +75,9 @@ export async function POST(request: Request) {
     });
 
     // The queue is the source of truth; the mail is only a ping. Failures are
-    // logged, never surfaced to the reporter.
-    const admins = await prisma.user.findMany({
-      where: { role: "ADMIN" },
-      select: { email: true },
-    });
-    if (admins.length === 0) {
-      // Without this line the no-admins case is indistinguishable from
-      // success, and reports queue up unseen indefinitely.
-      console.error("[report] no ADMIN users to notify — the report will sit unseen in the queue");
-    }
-    await Promise.all(
-      admins.map((a) =>
-        sendReportNotification(a.email, puzzle.title, parsed.data.category).catch((err) => {
-          console.error(`[report] admin notification to ${a.email} failed:`, err);
-        }),
-      ),
-    );
+    // logged, never surfaced to the reporter. Shared with the classifier's own
+    // findings (/api/puzzles) so the two cannot drift on who gets told.
+    await notifyAdminsOfReport(puzzle.title, parsed.data.category, "user");
   }
 
   return NextResponse.json({ ok: true });

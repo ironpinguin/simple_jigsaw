@@ -345,6 +345,8 @@
     "reportSubject": "A puzzle was reported",
     "reportIntro": "The puzzle “{title}” was reported ({category}).",
     "reportAction": "Review the report in the admin area:",
+    "autoReportSubject": "A puzzle was held by the automatic check",
+    "autoReportIntro": "The puzzle “{title}” was held by the automatic check ({category}). It stays private until an admin resolves the entry — the person who uploaded it cannot publish it themselves.",
     "takedownSubject": "Your puzzle was removed",
     "takedownIntro": "Your puzzle “{title}” was removed by an administrator following a report ({category}).",
     "takedownIntroNoReport": "Your puzzle “{title}” was removed by an administrator after a review.",

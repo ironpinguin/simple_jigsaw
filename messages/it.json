@@ -345,6 +345,8 @@
     "reportSubject": "Un puzzle è stato segnalato",
     "reportIntro": "Il puzzle “{title}” è stato segnalato ({category}).",
     "reportAction": "Esamina la segnalazione nell’area admin:",
+    "autoReportSubject": "Un puzzle è stato trattenuto dal controllo automatico",
+    "autoReportIntro": "Il puzzle “{title}” è stato trattenuto dal controllo automatico ({category}). Resta privato finché un amministratore non risolve la voce: chi lo ha caricato non può pubblicarlo da sé.",
     "takedownSubject": "Il tuo puzzle è stato rimosso",
     "takedownIntro": "Il tuo puzzle “{title}” è stato rimosso da un amministratore in seguito a una segnalazione ({category}).",
     "takedownIntroNoReport": "Il tuo puzzle “{title}” è stato rimosso da un amministratore dopo una verifica.",

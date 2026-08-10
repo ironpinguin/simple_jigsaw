@@ -24,7 +24,13 @@ vi.mock("@/lib/db", () => ({
     user: { findMany: userFindMany },
   },
 }));
-vi.mock("@/lib/mail", () => ({ sendReportNotification: sendReportNotificationMock }));
+// Both, because the route now notifies through lib/report-notify, which picks
+// the wording from the report's origin. A user report must still take the
+// sendReportNotification branch — that is what the assertions below pin.
+vi.mock("@/lib/mail", () => ({
+  sendReportNotification: sendReportNotificationMock,
+  sendAutoReportNotification: vi.fn(),
+}));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
 }));

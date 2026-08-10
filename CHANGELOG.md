@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional NSFW classification of uploaded images (`NSFW_MODE`, off by
   default). A flagged image still uploads, but the puzzle is created private
   and appears in the admin review queue instead of being published, and its
-  owner cannot publish it themselves until an admin has resolved the entry;
+  owner cannot publish it themselves until an admin has resolved the entry.
+  Every admin is emailed about it, as for a user report, but with wording that
+  does not claim a person reported it;
   a classifier that fails or times out is treated the same way, as is an
   image whose classification result is no longer on file — because the upload
   sat unclaimed for more than a week, or because the image is being re-used and

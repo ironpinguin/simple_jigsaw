@@ -345,6 +345,8 @@
     "reportSubject": "Ein Puzzle wurde gemeldet",
     "reportIntro": "Das Puzzle „{title}“ wurde gemeldet ({category}).",
     "reportAction": "Prüfe die Meldung im Admin-Bereich:",
+    "autoReportSubject": "Ein Puzzle wurde automatisch zurückgehalten",
+    "autoReportIntro": "Das Puzzle „{title}“ wurde von der automatischen Prüfung zurückgehalten ({category}). Es bleibt privat, bis ein Admin den Eintrag bearbeitet hat — die hochladende Person kann es nicht selbst veröffentlichen.",
     "takedownSubject": "Dein Puzzle wurde entfernt",
     "takedownIntro": "Dein Puzzle „{title}“ wurde nach einer Meldung von einem Administrator entfernt ({category}).",
     "takedownIntroNoReport": "Dein Puzzle „{title}“ wurde nach einer Überprüfung von einem Administrator entfernt.",
