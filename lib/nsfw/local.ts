@@ -23,6 +23,43 @@ type InferenceSession = import("onnxruntime-web").InferenceSession;
 /** Loads (or re-loads) the ONNX session. Injectable so a test can count and
  * fail loads without the real model or the WASM backend. */
 type LoadSession = () => Promise<InferenceSession>;
+/** Milliseconds since the epoch. Injectable so the budget check below can be
+ * tested without sleeping through a real inference. */
+type Clock = () => number;
+
+/**
+ * Local mode's own deadline — the counterpart to the AbortSignal external.ts
+ * hands to fetch, needed for the same reason and one more specific to here.
+ *
+ * onnxruntime-web's WASM backend runs the graph on the calling thread
+ * (`wasm.proxy` is a browser Web Worker feature and nothing sets it), so while
+ * an inference executes the event loop is blocked and the guard's setTimeout
+ * cannot fire. The guard is not defeated — pending timers run as soon as the
+ * loop is free again — but it answers *late*, after the blocking call returns,
+ * rather than at timeoutMs.
+ *
+ * Two things that leaves this module to handle, and one it cannot:
+ *
+ * - A load that never settles used to be cached forever, so every later upload
+ *   in the process awaited the same dead promise. The load now has its own
+ *   deadline and clears the cache when it fires (see getSession).
+ * - A request that queued behind other inferences can reach the graph long
+ *   after the guard already answered UNKNOWN on its behalf. The budget is
+ *   re-checked immediately before the uninterruptible step, which is the last
+ *   moment this thread is free to decide not to take it.
+ * - Not fixed: an inference already underway cannot be interrupted, so a single
+ *   slow image can still overrun timeoutMs. Bounding that needs the graph off
+ *   the request thread (worker_threads), which is a deployment change rather
+ *   than a patch — and the reason warming the session at startup is on the
+ *   follow-up list.
+ */
+function deadline(ms: number, what: string) {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} exceeded ${ms}ms`)), ms);
+  });
+  return { expired, cancel: () => clearTimeout(timer) };
+}
 
 const defaultLoadSession: LoadSession = async () => {
   const ort = await import("onnxruntime-web");
@@ -97,24 +134,40 @@ let sessionPromise: Promise<InferenceSession> | undefined;
  * every caller, including ones that arrive while the first load is still in
  * flight, awaits the very same load.
  *
- * Cleared on rejection, so a transient failure (a bad path, a disk hiccup)
- * doesn't poison the module for the rest of the process — the next call gets
- * to retry instead of every future upload coming back UNKNOWN forever.
+ * Cleared on rejection *and* on timeout, so neither a transient failure (a bad
+ * path, a disk hiccup) nor a load that never settles at all (a stalled mount, a
+ * truncated file ORT spins on) poisons the module for the rest of the process —
+ * the next call gets to retry instead of every future upload coming back
+ * UNKNOWN forever. Only the rejection half used to hold, and a hang is the
+ * likelier of the two.
  */
-function getSession(loadSession: LoadSession): Promise<InferenceSession> {
+function getSession(loadSession: LoadSession, timeoutMs: number): Promise<InferenceSession> {
   if (!sessionPromise) {
-    sessionPromise = loadSession().catch((error: unknown) => {
-      sessionPromise = undefined;
-      throw error;
-    });
+    const load = loadSession();
+    // The race below may stop waiting on this before it settles; without a
+    // handler a later rejection would surface as an unhandled rejection.
+    load.catch(() => {});
+
+    const bound = deadline(timeoutMs, "loading the model");
+    sessionPromise = Promise.race([load, bound.expired])
+      .finally(bound.cancel)
+      .catch((error: unknown) => {
+        // A load that was merely slow rather than stuck is then started again
+        // by the next upload while the first is still running: at worst one
+        // abandoned load per timeoutMs, against an instance that otherwise
+        // answers UNKNOWN for the rest of its life.
+        sessionPromise = undefined;
+        throw error;
+      });
   }
   return sessionPromise;
 }
 
-function createDefaultRun(loadSession: LoadSession): Score {
+function createDefaultRun(loadSession: LoadSession, timeoutMs: number, now: Clock): Score {
   return async (bytes) => {
+    const deadlineAt = now() + timeoutMs;
     const ort = await import("onnxruntime-web");
-    const session = await getSession(loadSession);
+    const session = await getSession(loadSession, timeoutMs);
 
     // fit: "fill" matches the spike's pipeline exactly (it does not preserve
     // aspect ratio, but this model was verified against that exact distortion).
@@ -138,6 +191,15 @@ function createDefaultRun(loadSession: LoadSession): Score {
     }
 
     const input = new ort.Tensor("float32", chw, [1, 3, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
+
+    // The last point this thread is free before the uninterruptible step. Past
+    // the budget the guard has already answered UNKNOWN for this upload, so
+    // running the graph would spend CPU on an answer nobody reads and delay
+    // every request queued behind it. See `deadline` above.
+    if (now() >= deadlineAt) {
+      throw new Error(`no budget left to run the model within ${timeoutMs}ms`);
+    }
+
     const outputs = await session.run({ image: input });
 
     // Already soft-maxed by the graph; no further normalisation needed — but
@@ -150,12 +212,14 @@ export function createLocalClassifier(
   config: NsfwConfig,
   run?: Score,
   loadSession: LoadSession = defaultLoadSession,
+  now: Clock = Date.now,
 ): Classifier {
   // `run`, when supplied, replaces the whole scoring pipeline (what the
   // existing tests inject); `loadSession` only matters for the real
   // pipeline, so it is a separate, independently injectable seam — a test
   // can exercise the real preprocessing while faking just the model load.
-  const score = run ?? createDefaultRun(loadSession);
+  // `now` is the third such seam, for the budget check alone.
+  const score = run ?? createDefaultRun(loadSession, config.timeoutMs, now);
   return {
     async classify(bytes) {
       const value = await score(bytes);

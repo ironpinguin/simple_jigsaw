@@ -11,6 +11,12 @@ import type { Classifier } from "./types";
  * hit — the upload still succeeds, but the puzzle is held for review. Logged,
  * because a permanently broken classifier must not be indistinguishable from
  * a clean instance.
+ *
+ * The timeout bounds how long this waits, which is not always how long the work
+ * takes: `local` runs the graph on this thread, so the timer below cannot fire
+ * until the inference returns and the answer arrives late. Each mode therefore
+ * carries its own inner deadline for the part it can actually cut short — an
+ * AbortSignal in external.ts, a pre-inference budget check in local.ts.
  */
 export function guard(inner: Classifier, timeoutMs: number): Classifier {
   return {

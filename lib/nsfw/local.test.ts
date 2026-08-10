@@ -109,6 +109,45 @@ describe("the session cache", () => {
     expect(loadSession).toHaveBeenCalledTimes(1);
   });
 
+  it("gives up on a load that hangs, so a retry can still succeed", async () => {
+    // What the old comment denied: clearing the cache only in `.catch` covers a
+    // load that *rejects*, never one that does not settle at all — a stalled
+    // mount, a truncated file ORT spins on. That promise stayed cached for the
+    // life of the process, so every later upload awaited the same dead load and
+    // came back UNKNOWN forever. A hang is the likelier I/O failure of the two.
+    //
+    // The 2s test budget also pins the deadline to config.timeoutMs: with the
+    // 5s default hardcoded instead, nothing settles in time and this fails.
+    const { createLocalClassifier } = await import("./local");
+    const bytes = await tinyImage();
+    const session = fakeSession();
+    const loadSession = vi
+      .fn()
+      .mockReturnValueOnce(new Promise(() => {})) // never settles
+      .mockResolvedValueOnce(session);
+    const tight = createLocalClassifier(
+      { ...config, timeoutMs: 20 },
+      undefined,
+      loadSession as LoadSession,
+    );
+
+    await expect(tight.classify(bytes)).rejects.toThrow(/model/i);
+
+    // Same module state, a realistic budget — the retry the old code made
+    // impossible. Deliberately not the 20ms one: that budget covers the load
+    // deadline being tested above, not a whole decode-and-infer pass, and
+    // reusing it would make this assertion a race against the machine.
+    const roomy = createLocalClassifier(
+      { ...config, timeoutMs: 5_000 },
+      undefined,
+      loadSession as LoadSession,
+    );
+    const verdict = await roomy.classify(bytes);
+
+    expect(verdict.score).toBe(0.2);
+    expect(loadSession).toHaveBeenCalledTimes(2);
+  }, 2000);
+
   it("does not poison the cache when the load fails, so a retry can succeed", async () => {
     const { createLocalClassifier } = await import("./local");
     const bytes = await tinyImage();
@@ -124,6 +163,58 @@ describe("the session cache", () => {
 
     expect(verdict.score).toBe(0.2);
     expect(loadSession).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The half of the timeout that the guard cannot enforce for this mode. The WASM
+// backend runs the graph on the calling thread, so while an inference executes
+// the guard's setTimeout cannot fire; it answers late, once the loop is free.
+// These pin the parts local.ts can decide for itself.
+describe("the inference budget", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("does not start an inference whose answer is already too late", async () => {
+    // The real sequence: uploads queue behind each other because the thread is
+    // blocked, so this request reaches the graph long after the guard already
+    // answered UNKNOWN on its behalf. Running it then burns CPU on an answer
+    // nobody will read and pushes back everything still queued behind it. The
+    // clock is injected because the alternative is sleeping through a real
+    // inference to observe it.
+    const { createLocalClassifier } = await import("./local");
+    const bytes = await tinyImage();
+    const session = fakeSession();
+    let t = 1_000;
+    const now = () => (t += 100); // 1100 at entry, 1200 at the pre-run check
+    const classifier = createLocalClassifier(
+      { ...config, timeoutMs: 50 },
+      undefined,
+      (async () => session) as unknown as LoadSession,
+      now,
+    );
+
+    await expect(classifier.classify(bytes)).rejects.toThrow(/budget/);
+    expect(session.run).not.toHaveBeenCalled();
+  });
+
+  it("runs the inference while the budget is intact", async () => {
+    // The other direction, so the check above cannot be satisfied by simply
+    // refusing everything.
+    const { createLocalClassifier } = await import("./local");
+    const bytes = await tinyImage();
+    const session = fakeSession();
+    const classifier = createLocalClassifier(
+      { ...config, timeoutMs: 50 },
+      undefined,
+      (async () => session) as unknown as LoadSession,
+      () => 1_000, // no time passes at all
+    );
+
+    const verdict = await classifier.classify(bytes);
+
+    expect(verdict.score).toBe(0.2);
+    expect(session.run).toHaveBeenCalledTimes(1);
   });
 });
 
