@@ -102,7 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled therefore keeps its promise from the privacy policy too, and issuing
   a token no longer means a table-wide delete. `/api/health/ready` reports
   `"retention": "stale"` if several sweeps in a row fail, so a sweep that has
-  quietly stopped working is visible without reading the log. (#44)
+  quietly stopped working is visible without reading the log — covering the
+  cleanup of orphaned classification verdicts too, which runs independently of
+  the token sweep rather than being skipped when that one fails. (#44, #23)
 - The privacy policy no longer says that an expired, never-redeemed link is
   kept until the account is deleted — it is now removed automatically, and the
   two paragraphs that described the old behaviour say so. (#20)

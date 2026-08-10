@@ -108,7 +108,10 @@ im Code, siehe `lib/roles.ts`).
   - Ob das Aufräumen tatsächlich läuft, sagt `/api/health/ready`: meldet es
     `"retention": "stale"`, sind mehrere Läufe hintereinander fehlgeschlagen —
     etwa fehlende Löschrechte oder eine volle Platte. Lesende Abfragen
-    funktionieren dann weiter, der Container gilt weiter als gesund.
+    funktionieren dann weiter, der Container gilt weiter als gesund. Gemeldet
+    werden beide Läufe, Tokens und verwaiste Klassifizierungsergebnisse; welcher
+    davon klemmt, steht im Log. Die beiden hängen nicht voneinander ab: schlägt
+    einer fehl, läuft der andere trotzdem.
 - **Registrierung abschalten**: `REGISTRATION_ENABLED=false` setzen — die
   öffentliche Selbst-Registrierung ist dann deaktiviert (die Registrierungsseite
   zeigt einen Hinweis, die Links verschwinden). Einladungen, Admin-Anlage und die

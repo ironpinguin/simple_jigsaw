@@ -317,6 +317,23 @@ describe("purgeOrphanedVerdicts", () => {
     logged.mockRestore();
   });
 
+  it("still sweeps verdicts when the token purge fails", async () => {
+    // The two tables are unrelated, so one being unavailable must not disable
+    // cleanup of the other. This sat inside the token purge's try, after its
+    // await, so a locked verificationToken table silently stopped verdict
+    // deletion as well — two failures for the price of one, and the second with
+    // nothing in the log to attribute it to.
+    const { maybePurgeExpiredTokens } = await reimportRetention();
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+
+    await expect(maybePurgeExpiredTokens(NOW)).resolves.toBeNull();
+
+    expect(verdictDeleteMany).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
   it("examines different candidates on consecutive sweeps instead of the same batch twice", async () => {
     // The starvation this exists to prevent: `createdAt` only grows staler,
     // so a `take` with no cursor would re-select the same oldest rows on
@@ -392,7 +409,67 @@ describe("retentionStatus", () => {
     // A process that has only just booted has swept nothing, which is normal.
     const { retentionStatus } = await reimportRetention();
 
-    expect(retentionStatus(NOW)).toEqual({ lastSuccessAt: null, failures: 0, stale: false });
+    expect(retentionStatus(NOW)).toEqual({
+      lastSuccessAt: null,
+      failures: 0,
+      stale: false,
+      verdicts: { lastSuccessAt: null, failures: 0, stale: false },
+    });
+  });
+
+  it("goes stale when only the verdict sweep is failing", async () => {
+    // The privacy policy promises verdict deletion too, and this is the only
+    // code path that performs it. Left out of the status, a verdict sweep
+    // failing every hour forever showed a green readiness probe — exactly the
+    // invisibility retentionStatus exists to end.
+    const { maybePurgeExpiredTokens, retentionStatus, SWEEP_INTERVAL_MS } =
+      await reimportRetention();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+    verdictDeleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    for (let i = 0; i < 3; i += 1) await maybePurgeExpiredTokens(NOW + i * SWEEP_INTERVAL_MS);
+
+    // The token half is healthy and says so; the instance is still not well.
+    expect(retentionStatus(NOW)).toMatchObject({
+      failures: 0,
+      stale: true,
+      verdicts: { failures: 3, stale: true },
+    });
+  });
+
+  it("does not let a healthy token purge erase the verdict sweep's failures", async () => {
+    // Why the two counters are separate. On one shared counter the token
+    // purge's success resets it every hour, so a verdict sweep that fails every
+    // single time oscillates 0 → 1 → 0 and can never reach the stale threshold
+    // — the bug would be permanently invisible rather than merely quiet.
+    const { maybePurgeExpiredTokens, retentionStatus, SWEEP_INTERVAL_MS } =
+      await reimportRetention();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    deleteMany.mockResolvedValue({ count: 1 }); // tokens succeed every time
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+    verdictDeleteMany.mockRejectedValue(new Error("db down"));
+
+    for (let i = 0; i < 3; i += 1) await maybePurgeExpiredTokens(NOW + i * SWEEP_INTERVAL_MS);
+
+    expect(retentionStatus(NOW).verdicts.failures).toBe(3);
+    expect(retentionStatus(NOW).stale).toBe(true);
+  });
+
+  it("clears the verdict failures once that sweep works again", async () => {
+    const { maybePurgeExpiredTokens, retentionStatus, SWEEP_INTERVAL_MS } =
+      await reimportRetention();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    verdictFindMany.mockResolvedValue([{ imageKey: "uploads/orphan.webp" }]);
+    verdictDeleteMany.mockRejectedValueOnce(new Error("db is having a day"));
+
+    await maybePurgeExpiredTokens(NOW);
+    await maybePurgeExpiredTokens(NOW + SWEEP_INTERVAL_MS);
+
+    expect(retentionStatus(NOW + SWEEP_INTERVAL_MS)).toMatchObject({
+      stale: false,
+      verdicts: { lastSuccessAt: NOW + SWEEP_INTERVAL_MS, failures: 0, stale: false },
+    });
   });
 
   it("records when the sweep last actually worked", async () => {

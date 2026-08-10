@@ -23,6 +23,16 @@ type RetentionState = {
   /** Consecutive failures since the last success. */
   failures: number;
   /**
+   * The same two facts for the verdict sweep, tracked apart from the token
+   * sweep rather than sharing its counter. A success in one says nothing about
+   * the other, and on a shared counter the token purge's hourly success would
+   * reset it — so a verdict sweep failing every single time would oscillate
+   * 0 → 1 → 0 and never reach the stale threshold, making it permanently
+   * invisible instead of merely quiet.
+   */
+  verdictLastSuccessAt?: number;
+  verdictFailures: number;
+  /**
    * Paging cursor into the age-ordered verdict candidates. Without it, a wall
    * of verdicts that are old enough but still claimed would occupy every
    * batch forever — its rows never stop matching the age filter, so a sweep
@@ -49,6 +59,7 @@ declare global {
 // need to reset it (tests) delete the global and re-import.
 const state: RetentionState = (globalThis.__jigsawRetention ??= {
   failures: 0,
+  verdictFailures: 0,
   verdictSweepOffset: 0,
 });
 
@@ -155,14 +166,17 @@ export async function purgeOrphanedVerdicts(now: number = Date.now()): Promise<n
 
 /**
  * Sweep at most once per `SWEEP_INTERVAL_MS`, per process, across every caller.
- * Returns the number of rows deleted, or null when the call was throttled or
- * the sweep failed — callers that need to tell those apart want
- * `retentionStatus`, which is what the readiness endpoint reports from.
+ * Returns the number of *tokens* deleted, or null when the call was throttled
+ * or the token purge failed — callers that need to tell those apart, or that
+ * care about the verdict sweep at all, want `retentionStatus`, which is what
+ * the readiness endpoint reports from.
  *
- * Never throws, and every statement outside the try below must stay that way:
- * its callers are a readiness probe that must not fail for housekeeping, a
- * timer in instrumentation.ts with nobody to catch it, and token issuance that
- * must not turn into a 500 the user cannot act on.
+ * Runs both sweeps, independently: neither is skipped because the other threw.
+ *
+ * Never throws, and every statement outside the two try blocks below must stay
+ * that way: its callers are a readiness probe that must not fail for
+ * housekeeping, a timer in instrumentation.ts with nobody to catch it, and
+ * token issuance that must not turn into a 500 the user cannot act on.
  */
 export async function maybePurgeExpiredTokens(
   now: number = Date.now(),
@@ -175,35 +189,45 @@ export async function maybePurgeExpiredTokens(
   // failed sweep waits out the interval rather than retrying on every probe.
   state.lastSweepAt = now;
 
+  let count: number | null = null;
   try {
-    const count = await purgeExpiredTokens(now);
+    count = await purgeExpiredTokens(now);
     state.lastSuccessAt = now;
     state.failures = 0;
     // Only when something went: an idle instance must not log hourly, but the
     // privacy policy promises this deletion and an operator deserves evidence
     // of it beyond the absence of an error.
     if (count > 0) console.info(`[retention] deleted ${count} expired token(s)`);
-
-    // Subordinate to the token purge, not unimportant: the privacy policy now
-    // promises this deletion too (legal.retentionText), and this is the only
-    // code path that ever removes an ImageVerdict row. Its failure is logged
-    // and swallowed here so it can never turn a successful token purge into a
-    // null, or throw past this function's no-throw contract — but that also
-    // means it stays out of `state.failures`, so a verdict sweep failing every
-    // hour leaves /api/health/ready green. Worth wiring into retentionStatus.
-    try {
-      const orphans = await purgeOrphanedVerdicts(now);
-      if (orphans > 0) console.info(`[retention] deleted ${orphans} unclaimed image verdict(s)`);
-    } catch (error) {
-      console.error("[retention] purge of unclaimed image verdicts failed:", error);
-    }
-
-    return count;
   } catch (error) {
     state.failures += 1;
     console.error("[retention] purge of expired tokens failed; they stay stored:", error);
-    return null;
   }
+
+  // Sequenced after the token purge but not conditional on it. These are
+  // unrelated tables, and this block used to sit inside the try above, after
+  // its await — so a locked verificationToken table skipped verdict deletion
+  // entirely: two failures for the price of one, the second with nothing in the
+  // log to attribute it to.
+  //
+  // Still caught rather than propagated, because this function's callers are a
+  // readiness probe, an unattended timer and token issuance, none of which may
+  // see a throw. Counted separately so that swallowing it is not the same as
+  // hiding it — the privacy policy promises this deletion too
+  // (legal.retentionText) and this is the only code path that performs it.
+  try {
+    const orphans = await purgeOrphanedVerdicts(now);
+    state.verdictLastSuccessAt = now;
+    state.verdictFailures = 0;
+    if (orphans > 0) console.info(`[retention] deleted ${orphans} unclaimed image verdict(s)`);
+  } catch (error) {
+    state.verdictFailures += 1;
+    console.error("[retention] purge of unclaimed image verdicts failed:", error);
+  }
+
+  // Null when the token purge failed, as before: it is the caller-visible half
+  // of this sweep, and a verdict failure must not turn a real token count into
+  // one. `retentionStatus` is where both halves are answerable.
+  return count;
 }
 
 /**
@@ -212,13 +236,31 @@ export async function maybePurgeExpiredTokens(
  * full disk, a lock, or a read-only SQLite mount all leave reads healthy while
  * expired personal data accumulates. The readiness endpoint reports this so
  * that failure is visible somewhere other than one line of stdout an hour.
+ *
+ * Covers both sweeps. The top-level `stale` is true when *either* is failing,
+ * because the endpoint reports one boolean and an operator who sees it reads
+ * the log line naming which; `verdicts` carries that detail for anything that
+ * wants to answer the question directly. Deliberately not two fields in the
+ * public probe body: the endpoint is unauthenticated, and one health bit says
+ * all a probe needs to know.
  */
 export function retentionStatus(now: number = Date.now()): {
   lastSuccessAt: number | null;
   failures: number;
   stale: boolean;
+  verdicts: { lastSuccessAt: number | null; failures: number; stale: boolean };
 } {
-  const { lastSuccessAt, failures } = state;
+  const tokens = sweepHealth(state.lastSuccessAt, state.failures, now);
+  const verdicts = sweepHealth(state.verdictLastSuccessAt, state.verdictFailures, now);
+
+  return { ...tokens, stale: tokens.stale || verdicts.stale, verdicts };
+}
+
+function sweepHealth(
+  lastSuccessAt: number | undefined,
+  failures: number,
+  now: number,
+): { lastSuccessAt: number | null; failures: number; stale: boolean } {
   // A fresh process has no success yet and is not stale; one blip is not
   // either. Only a run of missed windows counts.
   const stale =
