@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { maybePurgeExpiredTokens, retentionStatus } from "@/lib/retention";
+import { tokenClaimStatus } from "@/lib/tokens";
 
 // Readiness: can this instance actually serve requests? Kubernetes takes a
 // failing pod out of the Service on this, and compose reports the container
@@ -35,5 +36,12 @@ export async function GET() {
   // nothing about whether the DELETE works.
   const retention = retentionStatus().stale ? "stale" : "ok";
 
-  return NextResponse.json({ ok: true, db: "up", retention }, { headers: NO_STORE });
+  // The same argument for the other write this instance depends on and `SELECT
+  // 1` cannot vouch for: a redeem path that cannot delete refuses every link it
+  // is handed, so nobody can confirm an address or accept an invitation while
+  // the database still answers reads perfectly. Reported, never fatal — the
+  // instance serves puzzles fine, and a restart would not fix a missing grant.
+  const tokens = tokenClaimStatus().degraded ? "degraded" : "ok";
+
+  return NextResponse.json({ ok: true, db: "up", retention, tokens }, { headers: NO_STORE });
 }

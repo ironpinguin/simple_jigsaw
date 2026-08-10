@@ -1,35 +1,56 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { create, findUnique, deleteOne, maybePurge } = vi.hoisted(() => ({
+const { create, findUnique, deleteMany, maybePurge } = vi.hoisted(() => ({
   create: vi.fn(),
   findUnique: vi.fn(),
-  deleteOne: vi.fn(),
+  deleteMany: vi.fn(),
   maybePurge: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
   prisma: {
-    verificationToken: { create, delete: deleteOne, findUnique },
+    verificationToken: { create, deleteMany, findUnique },
   },
 }));
 vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
 
-import { consumeToken, createToken } from "./tokens";
+import { consumeToken, createToken, tokenClaimStatus } from "./tokens";
 import { tokenExpiry } from "./token-ttl";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
+
+/**
+ * The claim counters live on globalThis, for the reason lib/tokens.ts gives.
+ * Cleared field by field rather than by deleting the global the way
+ * lib/retention.test.ts does: the static import above already captured the
+ * object, so deleting the key would only orphan it and leave every call in this
+ * file mutating a counter `tokenClaimStatus` no longer reads.
+ */
+function resetClaimState() {
+  const claims = (globalThis.__jigsawTokenClaims ??= { failures: 0, lost: 0 });
+  claims.failures = 0;
+  claims.lost = 0;
+  delete claims.lastFailureAt;
+}
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   create.mockResolvedValue({});
-  deleteOne.mockResolvedValue({});
+  // One row removed = this call is the one that claimed the token.
+  deleteMany.mockResolvedValue({ count: 1 });
   maybePurge.mockResolvedValue(null);
+  resetClaimState();
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  // restore, not just clear: the console.error spies below are restored inline,
+  // and an assertion that throws before that line would otherwise leave stdout
+  // stubbed for every test after it in this file.
+  vi.restoreAllMocks();
   vi.clearAllMocks();
+  resetClaimState();
 });
 
 describe("createToken", () => {
@@ -70,8 +91,23 @@ describe("consumeToken", () => {
   it("returns the user and removes the row", async () => {
     findUnique.mockResolvedValue(row);
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({ userId: "user-1" });
-    expect(deleteOne).toHaveBeenCalledWith({ where: { token: "abc" } });
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+      ok: true,
+      userId: "user-1",
+    });
+    expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "EMAIL_VERIFY" } });
+  });
+
+  it("claims an INVITE by its own type", async () => {
+    // The type the whole fix is about — an invite sets a password — and the one
+    // with no happy path of its own until now. Both the guard above and the
+    // delete's `where` mention `type`, and a hardcoded "EMAIL_VERIFY" in either
+    // satisfies every other test in this file while killing invite redemption
+    // outright on a real database: nothing matches, so nothing is ever claimed.
+    findUnique.mockResolvedValue({ ...row, type: "INVITE" });
+
+    await expect(consumeToken("abc", "INVITE")).resolves.toEqual({ ok: true, userId: "user-1" });
+    expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "INVITE" } });
   });
 
   it("removes an expired row and refuses it", async () => {
@@ -79,20 +115,160 @@ describe("consumeToken", () => {
     // does get clicked leaves nothing behind either.
     findUnique.mockResolvedValue({ ...row, expiresAt: new Date(NOW - 1) });
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toBeNull();
-    expect(deleteOne).toHaveBeenCalledWith({ where: { token: "abc" } });
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+      ok: false,
+      reason: "invalid",
+    });
+    expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "EMAIL_VERIFY" } });
   });
 
   it("refuses a token issued for another purpose without deleting it", async () => {
     findUnique.mockResolvedValue({ ...row, type: "INVITE" });
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toBeNull();
-    expect(deleteOne).not.toHaveBeenCalled();
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+      ok: false,
+      reason: "invalid",
+    });
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses the redemption whose delete removed nothing", async () => {
+    // The loser of a race, and the reason the delete has to be the claim: both
+    // redemptions read the row before either delete lands, so read-then-delete
+    // granted both. For an INVITE that is two people setting the password on one
+    // account, each believing they were the only one.
+    //
+    // What a mocked client can pin is this half — a count of 0 is refused. The
+    // other half, that only one concurrent DELETE can report a non-zero count,
+    // belongs to the database and rests on `token @unique` in
+    // prisma/schema.prisma; no test in this file can observe it.
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockResolvedValue({ count: 0 });
+
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+      ok: false,
+      reason: "invalid",
+    });
+  });
+
+  it("does not call a lost race an error", async () => {
+    // Losing the race is ordinary. Only a genuine failure deserves the log, or
+    // an operator learns nothing from it — and the probe must not turn amber
+    // because somebody double-clicked.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockResolvedValue({ count: 0 });
+
+    await consumeToken("abc", "EMAIL_VERIFY");
+
+    expect(logged).not.toHaveBeenCalled();
+    expect(tokenClaimStatus()).toMatchObject({ lost: 1, failures: 0, degraded: false });
+  });
+
+  it("refuses the token as unavailable when the delete fails outright", async () => {
+    // A role without delete rights, a lock timeout, SQLITE_BUSY. Granting here
+    // is the security bug — it leaves a single-use link live for its whole TTL —
+    // and `unavailable` is what lets the route answer 503 instead of telling the
+    // holder their perfectly good link has expired.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+      ok: false,
+      reason: "unavailable",
+    });
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("[tokens]"), expect.any(Error));
+  });
+
+  it("names the type and the user in the log, and never the token", async () => {
+    // Which link type is broken and whose account is stuck are the two things an
+    // operator needs; the token is a live credential precisely because the
+    // delete failed, so it must not reach the log.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue({ ...row, type: "INVITE" });
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await consumeToken("abc", "INVITE");
+
+    const [message] = logged.mock.calls[0];
+    expect(message).toContain("INVITE");
+    expect(message).toContain("user-1");
+    expect(message).not.toContain("abc");
   });
 
   it("refuses an unknown token", async () => {
     findUnique.mockResolvedValue(null);
 
-    await expect(consumeToken("nope", "EMAIL_VERIFY")).resolves.toBeNull();
+    await expect(consumeToken("nope", "EMAIL_VERIFY")).resolves.toEqual({
+      ok: false,
+      reason: "invalid",
+    });
+  });
+});
+
+describe("tokenClaimStatus", () => {
+  const row = {
+    token: "abc",
+    type: "EMAIL_VERIFY",
+    userId: "user-1",
+    expiresAt: new Date(NOW + 1000),
+  };
+
+  it("is healthy on a fresh process", async () => {
+    expect(tokenClaimStatus()).toEqual({
+      failures: 0,
+      lastFailureAt: null,
+      lost: 0,
+      degraded: false,
+    });
+  });
+
+  it("goes degraded on the first failed claim", async () => {
+    // One is the threshold, where the sweep tolerates three: a claim only runs
+    // because somebody clicked their link, so there is no second window and the
+    // one that failed already cost them their activation.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await consumeToken("abc", "EMAIL_VERIFY");
+
+    expect(tokenClaimStatus()).toMatchObject({
+      failures: 1,
+      lastFailureAt: NOW,
+      degraded: true,
+    });
+  });
+
+  it("clears only when a delete actually removes a row", async () => {
+    // A read proves nothing about the DELETE — that is the whole reason this
+    // exists alongside the probe's `SELECT 1` — so nothing short of a real claim
+    // may reset it. A lost race must not either: the row being gone says somebody
+    // else deleted it, not that this instance can.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+    await consumeToken("abc", "EMAIL_VERIFY");
+
+    deleteMany.mockReset().mockResolvedValue({ count: 0 });
+    await consumeToken("abc", "EMAIL_VERIFY");
+    expect(tokenClaimStatus()).toMatchObject({ failures: 1, degraded: true });
+
+    deleteMany.mockReset().mockResolvedValue({ count: 1 });
+    await consumeToken("abc", "EMAIL_VERIFY");
+    expect(tokenClaimStatus()).toMatchObject({ failures: 0, degraded: false });
+  });
+
+  it("counts consecutive failures", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY");
+
+    expect(tokenClaimStatus()).toMatchObject({ failures: 3, degraded: true });
   });
 });

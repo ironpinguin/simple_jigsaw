@@ -14,12 +14,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t(signupErrorKey(parsed.error.issues)) }, { status: 400 });
   }
 
-  const result = await consumeToken(parsed.data.token, "INVITE");
-  if (!result) {
-    return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
+  const claim = await consumeToken(parsed.data.token, "INVITE");
+  if (!claim.ok) {
+    // 503, not 400, when the claim could not be attempted: the invite is still
+    // valid and the row is still there, so a retry may work — and this is the
+    // one route where refusing wrongly means an account nobody but an admin can
+    // rescue, because there is no self-service resend. See lib/tokens.ts.
+    return claim.reason === "unavailable"
+      ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
+      : NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
   }
 
-  const user = await prisma.user.findUnique({ where: { id: result.userId } });
+  const user = await prisma.user.findUnique({ where: { id: claim.userId } });
   if (!user) {
     return NextResponse.json({ error: t("accountNotFound") }, { status: 404 });
   }
