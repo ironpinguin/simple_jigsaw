@@ -45,9 +45,14 @@ grouping) is unit-tested and easy to extend.
 
 ## Making changes
 
-- Planning lives on a private GitHub Project board — see
-  [docs/github-project.md](docs/github-project.md) for the status lifecycle and
-  the `gh project` commands (maintainer access required).
+- Planning lives on a [GitHub Project board](https://github.com/users/ironpinguin/projects/4),
+  readable by anyone — see [docs/github-project.md](docs/github-project.md) for
+  the status lifecycle. Moving cards needs collaborator access, so treat the
+  board as the place to *see* what is planned, not somewhere you have to file
+  anything.
+- **Everything actionable is in the issue itself**, the board only adds metadata
+  on top. Open an issue before a larger change so the design can be agreed there
+  rather than in a finished pull request — small fixes can go straight to a PR.
 - Work on a feature branch and open a pull request against `main`.
 - The CI workflow (lint · sast · test · build) must be green before merging.
 - Keep commits focused with a clear, descriptive message (imperative mood).

@@ -6,7 +6,7 @@ for the stack and [CONTRIBUTING.md](CONTRIBUTING.md) for setup and releases.
 
 ## Planning
 
-Work is tracked on a private GitHub Project board, not in the repo —
+Work is tracked on a public GitHub Project board, not in the repo —
 **[docs/github-project.md](docs/github-project.md)** explains the fields, the
 status lifecycle and the `gh project` commands. Read the `Ready` column before
 starting anything; ask before changing cards you are not working on.

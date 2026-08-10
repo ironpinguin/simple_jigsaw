@@ -1,0 +1,49 @@
+# Dependency updates. Free for public repositories, and the reason this file
+# exists: three of the advisories closed in 0.5.0 sat in transitive dependencies
+# where nothing would have surfaced them without an alert.
+#
+# Everything is grouped and weekly on purpose — the quality gates (lint · test ·
+# build · sast) run on every one of these PRs, so a daily ungrouped schedule
+# would spend more CI time than the updates are worth.
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Patch and minor bumps are the boring majority; one PR a week for the lot
+      # keeps them reviewable together and keeps the lockfile churn in one place.
+      minor-and-patch:
+        update-types: [minor, patch]
+      # Majors land on their own — Next.js, Prisma and Auth.js majors have
+      # migration notes, and reviewing one of those next to twelve patch bumps
+      # is how a breaking change gets waved through.
+      major:
+        update-types: [major]
+    labels: [dependencies]
+
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies]
+
+  # ---------------------------------------------------------------------------
+  # The runtime image. Both published variants (PostgreSQL and SQLite) are built
+  # from this one Dockerfile via the DATABASE_PROVIDER build arg, so a base image
+  # bump here reaches both.
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels: [dependencies]
