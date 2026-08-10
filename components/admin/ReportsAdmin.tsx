@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
+import { formatDateTimeUtc } from "@/lib/dates";
 import { isReportCategory, type ReportDecision, type ReportStatus } from "@/lib/reports";
 
 export interface ReportRow {
@@ -27,6 +28,7 @@ export default function ReportsAdmin({
   initialResolved: ReportRow[];
 }) {
   const t = useTranslations("admin");
+  const locale = useLocale();
   const [openReports, setOpenReports] = useState(initialOpen);
   const [resolved, setResolved] = useState(initialResolved);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -146,7 +148,7 @@ export default function ReportsAdmin({
                   {r.puzzleTitle} — {t("reportPuzzleDeleted")}
                 </span>
               )}
-              <span className="muted">{new Date(r.createdAt).toLocaleString()}</span>
+              <span className="muted">{formatDateTimeUtc(r.createdAt, locale)}</span>
             </div>
             <p style={{ whiteSpace: "pre-wrap" }}>{r.message}</p>
             {r.reporterEmail && (
@@ -185,7 +187,7 @@ export default function ReportsAdmin({
             <strong>{decisionLabel(r.status)}</strong>{" "}
             — {categoryLabel(r.category)} — {r.puzzleTitle}
             {r.resolvedAt && (
-              <span className="muted"> ({new Date(r.resolvedAt).toLocaleString()})</span>
+              <span className="muted"> ({formatDateTimeUtc(r.resolvedAt, locale)})</span>
             )}
           </li>
         ))}

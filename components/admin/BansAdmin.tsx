@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { formatDateUtc } from "@/lib/dates";
 
 interface BanRow {
   id: string;
@@ -98,7 +99,7 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
               <tr key={b.id}>
                 <td>{b.value}</td>
                 <td>{b.type === "EMAIL" ? t("banTypeEmail") : t("banTypeDomain")}</td>
-                <td className="muted">{new Date(b.createdAt).toLocaleDateString(locale)}</td>
+                <td className="muted">{formatDateUtc(b.createdAt, locale)}</td>
                 <td>
                   <button className="button secondary" type="button" onClick={() => remove(b.id)}>
                     {t("banRemove")}
