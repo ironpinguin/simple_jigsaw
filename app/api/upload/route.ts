@@ -68,8 +68,11 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     // The bytes are already stored, so failing here would lose an image that
-    // exists. /api/puzzles treats a missing verdict as clean — a narrow, known
-    // hole, preferred over a 500 on an upload that otherwise worked.
+    // exists — preferred over a 500 on an upload that otherwise worked. The
+    // image is not waved through: /api/puzzles only reads a missing verdict as
+    // clean for a key some puzzle already references, and this key has none
+    // yet, so claiming it holds the puzzle for review instead (except with
+    // classification off, where nothing is judged in the first place).
     console.error(`[nsfw] could not record the verdict for ${imageKey}:`, error);
   }
 

@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default). A flagged image still uploads, but the puzzle is created private
   and appears in the admin review queue instead of being published, and its
   owner cannot publish it themselves until an admin has resolved the entry;
-  a classifier that fails or times out is treated the same way. The uploader
-  is told their puzzle is awaiting review. Operators can run a local model or
+  a classifier that fails or times out is treated the same way, as is an
+  upload whose classification result is no longer on file because it sat
+  unclaimed for more than a week. The uploader is told their puzzle is
+  awaiting review. Operators can run a local model or
   an external service — the latter is an Art. 28 processor, name it in
   `LEGAL_CLASSIFIER_PROCESSOR` so the privacy policy discloses it, see
   `docs/data-processors.md`. (#23)

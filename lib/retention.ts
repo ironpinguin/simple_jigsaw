@@ -67,8 +67,18 @@ export async function purgeExpiredTokens(now: number = Date.now()): Promise<numb
   return count;
 }
 
-/** How long an unclaimed verdict is kept, in case the puzzle is still coming. */
-export const VERDICT_GRACE_MS = 24 * 60 * 60 * 1000;
+/**
+ * How long an unclaimed verdict is kept, in case the puzzle is still coming.
+ *
+ * A week, far more than the minutes a create form takes, because deleting one
+ * early is not free: /api/puzzles holds a key whose verdict has vanished for
+ * review rather than publishing it (that is what stops a flagged upload being
+ * laundered by outwaiting this sweep), so an honest user who uploads, leaves
+ * the tab open over a long weekend and submits on Monday would land in the
+ * moderation queue. Each row is a handful of bytes and only genuine orphans
+ * are ever swept, so a generous window costs nothing and spares that user.
+ */
+export const VERDICT_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Bounds both queries below regardless of how many puzzles or stale verdicts
 // the instance has accumulated. SQLite's default bound-parameter limit is 999

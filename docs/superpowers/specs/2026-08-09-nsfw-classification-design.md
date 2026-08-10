@@ -11,9 +11,17 @@ half: an image is judged before it becomes a public puzzle.
 
 - **Three modes, `off` by default.** `NSFW_MODE` is `off` | `local` |
   `external`. `off` is a full member, not a degraded state: an existing
-  instance that takes this update behaves exactly as before — no model in
-  memory, no new row written — until an operator switches it on. The operator
-  who wants no classifier at all is a supported operator, not an oversight.
+  instance that takes this update keeps publishing exactly as before — no model
+  in memory, no request leaving the instance, nothing held for review — until
+  an operator switches it on. The operator who wants no classifier at all is a
+  supported operator, not an oversight.
+
+  *Amended during implementation:* this bullet originally also promised "no new
+  row written". `off` does write one `ImageVerdict` per upload
+  (`CLEAN`/`0`/`model: "off"`), and the privacy policy says so. One uniform
+  path is simpler, and the row is load-bearing: `model: "off"` is what
+  distinguishes "judged by a disabled classifier" from "never judged at all",
+  which is the distinction the missing-verdict rule below rests on.
 - **A hit is accepted, not rejected.** The puzzle is created private and queued
   for review instead of the upload being refused. A wrongly flagged holiday
   photo is then one admin click from being public, rather than gone with no
@@ -252,8 +260,19 @@ since it is a property of the bytes.
 
 **`POST /api/puzzles`** — reads the verdict for the submitted `imageKey`:
 
-- `CLEAN`, or no verdict row at all (an image uploaded before this feature, or
-  in `off` mode): `isPublic: true`, nothing else happens.
+- `CLEAN`: `isPublic: true`, nothing else happens.
+- **No verdict row at all:** what that means depends on whether any puzzle
+  already references the key — the same read that rejects a key owned by
+  someone else answers this, so it costs no extra query.
+  - *Referenced:* an image uploaded before this feature, which is always
+    already attached to the puzzle it was uploaded for. Treated as `CLEAN`.
+  - *Unreferenced:* the verdict was swept as an orphan (see Cleanup) or its
+    write failed after `putObject`. Nothing deletes the stored object in
+    either case, so reading this as clean would let a flagged upload be
+    laundered — never claim the key, wait out the grace period, then create
+    the puzzle. Treated as `UNKNOWN`, i.e. held for review.
+  - Both cases stay `CLEAN` when `NSFW_MODE` is `off`: nothing is judged
+    there, so holding would hold everything.
 - `FLAGGED` or `UNKNOWN`: `isPublic: false`, plus one `Report` row —
   `category: "AUTO_NSFW"`, `status: "OPEN"`, `reporterEmail: null`,
   `reporterIpHash: null`, `message` carrying the score and model. The response
@@ -272,17 +291,23 @@ unparseable response — produces `UNKNOWN`, logged with `console.error`, and
 classification runs on the downscaled WebP.
 
 A `putObject` failure leaves no verdict row. A verdict write failure after a
-successful `putObject` is logged and the upload still succeeds — `/api/puzzles`
-then sees no row and treats it as `CLEAN`, the same as any pre-existing image.
-That is a deliberate narrow hole: the alternative is failing an upload whose
-bytes are already stored.
+successful `putObject` is logged and the upload still succeeds — the
+alternative is failing an upload whose bytes are already stored. It is not a
+hole: the key is unreferenced at that moment, so `/api/puzzles` holds the
+puzzle for review when it is claimed (unless the mode is `off`).
 
 ## Cleanup
 
 An upload the user abandons leaves a verdict with no puzzle. `lib/retention.ts`
-gains one step: delete `ImageVerdict` rows older than 24 hours whose `imageKey`
-no `Puzzle` references. It rides the existing opportunistic sweep and its
-throttle, and is reported by `/api/health/ready` like the others.
+gains one step: delete `ImageVerdict` rows older than the grace period whose
+`imageKey` no `Puzzle` references. It rides the existing opportunistic sweep
+and its throttle, and is reported by `/api/health/ready` like the others.
+
+The grace period is a week, not the day originally planned. Since a key whose
+verdict has vanished is now *held* rather than published, sweeping early has a
+cost — a user who uploads and submits the create form days later would land in
+the moderation queue. The rows are tiny and only orphans are swept, so the
+generous window is free.
 
 ## Text and documentation
 
@@ -309,9 +334,16 @@ No test touches a real model or the network.
   the assertion that the response body never carries the verdict.
 - Puzzles route — flagged verdict produces `isPublic: false` and exactly one
   `AUTO_NSFW` report with null reporter fields; clean verdict produces a public
-  puzzle and no report; a missing verdict row behaves like clean.
-- Retention step — a verdict with no puzzle and older than 24 h is deleted, one
-  with a puzzle is kept, and a young orphan is kept.
+  puzzle and no report; a missing verdict row behaves like clean when a puzzle
+  already references the key, and is held when none does (except in `off`).
+- Retention step — a verdict with no puzzle and past the grace period is
+  deleted, one with a puzzle is kept, and a young orphan is kept.
+- The two together — a verdict exists, the sweep deletes it as an orphan, the
+  key is then claimed: the puzzle must be held and a report filed. Each half is
+  correct alone, which is exactly why the combination needs its own test.
+- Local preprocessing — the tensor name, dtype and `[1, 3, 224, 224]` shape,
+  the HWC→CHW transposition, RGB plane order, raw 0-255 values (no `/255`, no
+  mean/std), and that the score read is the NSFW class index.
 
 ## Deliberately not in scope
 

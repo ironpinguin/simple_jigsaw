@@ -62,4 +62,41 @@ describe("createExternalClassifier", () => {
       createExternalClassifier(config).classify(Buffer.from("x")),
     ).rejects.toThrow();
   });
+
+  it.each([1.5, -0.2])("throws on the out-of-range score %s instead of holding silently", async (score) => {
+    // labelFor would turn this into UNKNOWN, which holds the image — safe, but
+    // wordless. A service answering 1.5 to everything would then queue every
+    // upload with nothing in the log to explain it. Throwing puts it through
+    // the guard's console.error like every other classifier failure.
+    respondWith({ ok: true, body: { score } });
+
+    await expect(
+      createExternalClassifier(config).classify(Buffer.from("x")),
+    ).rejects.toThrow(String(score));
+  });
+
+  it("gives the request its own deadline, so a hang does not outlive the answer", async () => {
+    // The guard's timeout only stops waiting for the promise; without a signal
+    // the request itself keeps a socket and this request's context alive for
+    // however long the service takes.
+    const signals: (AbortSignal | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: { signal?: AbortSignal }) => {
+        signals.push(init.signal);
+        return { ok: true, status: 200, json: async () => ({ score: 0.1 }) };
+      }),
+    );
+
+    await createExternalClassifier({ ...config, timeoutMs: 5 }).classify(Buffer.from("x"));
+
+    const signal = signals[0];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+
+    // Past the configured budget the signal fires on its own — it is wired to
+    // timeoutMs, not merely present.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(signal?.aborted).toBe(true);
+  });
 });

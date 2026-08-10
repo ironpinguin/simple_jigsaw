@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The tx client gets its own spies, separate from the bare `prisma` ones.
 // Sharing them would make the transaction boundary unobservable: a create
@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // transaction, and every assertion below would still pass. See
 // lib/account-deletion.test.ts for the same precedent.
 const {
-  findFirst,
+  puzzleFindMany,
   create,
   getSessionUserMock,
   reportCreate,
@@ -15,7 +15,7 @@ const {
   txCreate,
   txReportCreate,
 } = vi.hoisted(() => ({
-  findFirst: vi.fn(),
+  puzzleFindMany: vi.fn(),
   create: vi.fn(),
   getSessionUserMock: vi.fn(),
   reportCreate: vi.fn(),
@@ -27,7 +27,7 @@ const {
 
 vi.mock("@/lib/db", () => ({
   prisma: {
-    puzzle: { findFirst, create },
+    puzzle: { findMany: puzzleFindMany, create },
     report: { create: reportCreate },
     imageVerdict: { findUnique: verdictFindUnique },
     $transaction: transaction,
@@ -58,10 +58,22 @@ function callPost(body: unknown) {
   );
 }
 
+/** The single read the route makes about who already references the key. */
+const REFERENCE_LOOKUP = {
+  where: { imageKey: BODY.imageKey },
+  select: { ownerId: true },
+  distinct: ["ownerId"],
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
-  findFirst.mockResolvedValue(null);
+  // Nobody references the key yet — the ordinary "upload, then create" flow.
+  puzzleFindMany.mockResolvedValue([]);
+  // Pinned rather than inherited: the route reads NSFW_MODE to decide what a
+  // *missing* verdict means, and a developer with the variable set in their
+  // shell must not get different results from CI.
+  vi.stubEnv("NSFW_MODE", "off");
   txCreate.mockResolvedValue({ id: "p1" });
   txReportCreate.mockResolvedValue({});
   transaction.mockImplementation((fn: (tx: unknown) => unknown) =>
@@ -74,6 +86,10 @@ beforeEach(() => {
   );
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("POST /api/puzzles", () => {
   it("requires login", async () => {
     getSessionUserMock.mockResolvedValue(null);
@@ -83,38 +99,44 @@ describe("POST /api/puzzles", () => {
   });
 
   it("rejects an imageKey already referenced by another user's puzzle", async () => {
-    findFirst.mockResolvedValue({ id: "other-puzzle" });
+    puzzleFindMany.mockResolvedValue([{ ownerId: "someone-else" }]);
     const res = await callPost(BODY);
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toBe("invalidInput");
     expect(transaction).not.toHaveBeenCalled();
-    // The lookup that produced the rejection only matches foreign puzzles.
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { imageKey: BODY.imageKey, ownerId: { not: "owner-1" } },
-      select: { id: true },
-    });
+    expect(puzzleFindMany).toHaveBeenCalledWith(REFERENCE_LOOKUP);
+  });
+
+  it("still rejects when the caller also owns a puzzle using that key", async () => {
+    // The read is no longer filtered to foreign owners, so a caller who
+    // already uses the key must not shadow the stranger who also does.
+    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1" }, { ownerId: "someone-else" }]);
+    const res = await callPost(BODY);
+    expect(res.status).toBe(400);
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("allows reusing an imageKey across the caller's own puzzles", async () => {
-    // findFirst resolves null because the foreign-reference lookup excludes
-    // the caller's puzzles — a same-owner reuse is not a hit.
+    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1" }]);
     const res = await callPost(BODY);
     expect(res.status).toBe(201);
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { imageKey: BODY.imageKey, ownerId: { not: "owner-1" } },
-      select: { id: true },
-    });
+    expect(puzzleFindMany).toHaveBeenCalledWith(REFERENCE_LOOKUP);
     expect(txCreate).toHaveBeenCalled();
+  });
+
+  it("asks who references the key exactly once", async () => {
+    // The reference read serves both the rejection above and the
+    // missing-verdict rule below; a second query for the second question
+    // would be a second round trip on every create.
+    await callPost(BODY);
+    expect(puzzleFindMany).toHaveBeenCalledTimes(1);
   });
 
   it("creates the puzzle with a fresh imageKey, defaulting isPublic to true", async () => {
     const res = await callPost(BODY);
     expect(res.status).toBe(201);
-    expect(findFirst).toHaveBeenCalledWith({
-      where: { imageKey: BODY.imageKey, ownerId: { not: "owner-1" } },
-      select: { id: true },
-    });
+    expect(puzzleFindMany).toHaveBeenCalledWith(REFERENCE_LOOKUP);
     expect(txCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ isPublic: true, ownerId: "owner-1" }),
@@ -235,14 +257,70 @@ describe("automatic moderation", () => {
     expect(txReportCreate).toHaveBeenCalled();
   });
 
-  it("treats an image with no verdict as clean", async () => {
-    // Uploaded before this feature, or in off mode.
+  it("treats an image with no verdict as clean when a puzzle already uses it", async () => {
+    // The case the rule exists for: an image uploaded before this feature.
+    // Such an image is always already attached to the puzzle it was uploaded
+    // for, which is what tells it apart from an unclaimed key below.
+    vi.stubEnv("NSFW_MODE", "local");
     verdictFindUnique.mockResolvedValue(null);
+    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1" }]);
 
     await callPost({ ...BODY, isPublic: true });
 
     expect(txCreate.mock.calls[0][0].data.isPublic).toBe(true);
     expect(txReportCreate).not.toHaveBeenCalled();
+  });
+
+  it("holds a key with no verdict that no puzzle references", async () => {
+    // Nothing deletes the stored object when its verdict goes, so "no verdict"
+    // on an unclaimed key means the row was swept as an orphan or its write
+    // failed — not that the image is old and clean. Publishing it would let a
+    // flagged upload be laundered by simply waiting out the sweep.
+    vi.stubEnv("NSFW_MODE", "local");
+    verdictFindUnique.mockResolvedValue(null);
+    puzzleFindMany.mockResolvedValue([]);
+
+    const res = await callPost({ ...BODY, isPublic: true });
+
+    expect(txCreate.mock.calls[0][0].data.isPublic).toBe(false);
+    expect(txReportCreate).toHaveBeenCalled();
+    await expect(res.json()).resolves.toEqual({ id: "p1", pendingReview: true });
+  });
+
+  it("names the missing row in the report, not a model that never ran", async () => {
+    vi.stubEnv("NSFW_MODE", "local");
+    verdictFindUnique.mockResolvedValue(null);
+
+    await callPost({ ...BODY, isPublic: true });
+
+    const { message } = txReportCreate.mock.calls[0][0].data;
+    expect(message).toContain("UNKNOWN");
+    expect(message).toContain("unknown");
+  });
+
+  it("keeps publishing an unclaimed key with no verdict when classification is off", async () => {
+    // Nothing is judged in `off` mode, so holding here would hold every
+    // upload on an instance that deliberately runs without a classifier.
+    vi.stubEnv("NSFW_MODE", "off");
+    verdictFindUnique.mockResolvedValue(null);
+    puzzleFindMany.mockResolvedValue([]);
+
+    await callPost({ ...BODY, isPublic: true });
+
+    expect(txCreate.mock.calls[0][0].data.isPublic).toBe(true);
+    expect(txReportCreate).not.toHaveBeenCalled();
+  });
+
+  it("still reads a stored verdict in off mode rather than assuming clean", async () => {
+    // An instance that switches the classifier off must not republish what it
+    // flagged while it was on.
+    vi.stubEnv("NSFW_MODE", "off");
+    verdictFindUnique.mockResolvedValue({ label: "FLAGGED", score: 0.97, model: "local:x" });
+
+    await callPost({ ...BODY, isPublic: true });
+
+    expect(txCreate.mock.calls[0][0].data.isPublic).toBe(false);
+    expect(txReportCreate).toHaveBeenCalled();
   });
 
   it("does not make a flagged puzzle public just because the user asked for private", async () => {
