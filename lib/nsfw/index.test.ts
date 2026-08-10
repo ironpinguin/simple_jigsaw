@@ -66,13 +66,39 @@ describe("getClassifier", () => {
 
   it("routes a valid local config to createLocalClassifier", async () => {
     vi.stubEnv("NSFW_MODE", "local");
+    // Deliberately not the defaults: asserting the parsed values reach the
+    // factory is what stops the operator's knobs being quietly disconnected
+    // from the classifier. config.test.ts proves NSFW_THRESHOLD parses and
+    // local.test.ts proves the classifier honours whatever it is handed —
+    // this is the join between them, and it was the missing link.
+    vi.stubEnv("NSFW_THRESHOLD", "0.6");
+    vi.stubEnv("NSFW_TIMEOUT_MS", "1234");
 
     const verdict = await getClassifier().classify(Buffer.from("x"));
 
-    expect(localFactory).toHaveBeenCalledWith(expect.objectContaining({ mode: "local" }));
+    expect(localFactory).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "local", threshold: 0.6, timeoutMs: 1234 }),
+    );
     expect(externalFactory).not.toHaveBeenCalled();
     expect(verdict.model).toBe("fake-local");
   });
+
+  it("gives the guard the configured timeout, not a baked-in one", async () => {
+    // The guard's own budget is plumbed separately from the one external.ts
+    // hands to AbortSignal, so it needs its own test. A classifier that never
+    // settles must answer UNKNOWN after NSFW_TIMEOUT_MS; with the plumbing cut
+    // and the guard left on the 5s default, nothing resolves inside this
+    // test's own 1s budget and it fails rather than passing by accident.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("NSFW_MODE", "local");
+    vi.stubEnv("NSFW_TIMEOUT_MS", "20");
+    localFactory.mockReturnValueOnce({ classify: vi.fn(() => new Promise<never>(() => {})) });
+
+    const verdict = await getClassifier().classify(Buffer.from("x"));
+
+    expect(verdict).toEqual({ label: "UNKNOWN", score: 0, model: "error" });
+    logged.mockRestore();
+  }, 1000);
 
   it("routes a valid external config to createExternalClassifier", async () => {
     vi.stubEnv("NSFW_MODE", "external");

@@ -39,6 +39,23 @@ describe("createLocalClassifier", () => {
     expect(verdict.score).toBe(0.93);
   });
 
+  it("judges against the configured threshold, not a baked-in one", async () => {
+    // Both directions on one score, so no literal can satisfy this: 0.6 is
+    // CLEAN at 0.85 and FLAGGED at 0.5. Without it, replacing
+    // `config.threshold` with the default passes the whole suite, and an
+    // operator who lowers NSFW_THRESHOLD because the model under-flags gets
+    // no classification change and nothing in the log to say so.
+    const run = vi.fn(async () => 0.6);
+
+    const lenient = await createLocalClassifier({ ...config, threshold: 0.85 }, run)
+      .classify(Buffer.from("x"));
+    const strict = await createLocalClassifier({ ...config, threshold: 0.5 }, run)
+      .classify(Buffer.from("x"));
+
+    expect(lenient.label).toBe("CLEAN");
+    expect(strict.label).toBe("FLAGGED");
+  });
+
   it("names the model in the verdict, so an old row can be re-checked", async () => {
     const verdict = await createLocalClassifier(config, async () => 0.1).classify(Buffer.from("x"));
 

@@ -32,6 +32,21 @@ describe("createExternalClassifier", () => {
     expect(verdict.score).toBe(0.91);
   });
 
+  it("judges against the configured threshold, not a baked-in one", async () => {
+    // Same score, both directions, so no literal can satisfy this — see the
+    // matching test in local.test.ts. The two modes share `labelFor` but plumb
+    // the threshold to it separately, so each needs its own.
+    respondWith({ ok: true, body: { score: 0.6 } });
+
+    const lenient = await createExternalClassifier({ ...config, threshold: 0.85 })
+      .classify(Buffer.from("x"));
+    const strict = await createExternalClassifier({ ...config, threshold: 0.5 })
+      .classify(Buffer.from("x"));
+
+    expect(lenient.label).toBe("CLEAN");
+    expect(strict.label).toBe("FLAGGED");
+  });
+
   it("sends the key and the bytes to the configured url", async () => {
     respondWith({ ok: true, body: { score: 0.1 } });
 
