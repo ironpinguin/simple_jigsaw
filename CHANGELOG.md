@@ -136,6 +136,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because that earlier link may still be perfectly valid. Registering with such
   an address still answers "already registered" — an admin re-inviting it is the
   way in. (#33)
+- The user list in the admin area says when it could not be reloaded, instead of
+  quietly showing a list that no longer matches the database. Every action there
+  reloads the table afterwards, and the table is what the next action works from
+  — the invite error asks the admin to invite the same address again, which needs
+  the row on screen. An unexpected answer from the server no longer blanks the
+  page either.
 - API error messages and transactional mails now follow the visitor's browser
   language instead of falling back to German. They were German for exactly the
   visitors browsing in their own language — an English browser on `/en`, an

@@ -155,6 +155,103 @@ describe("UsersAdmin invite form", () => {
   });
 });
 
+describe("UsersAdmin list reload", () => {
+  const STALE = "The list could not be reloaded and may be out of date.";
+
+  // Every action reloads the table afterwards, and the table is what the admin
+  // acts on next: the invite error tells them to invite the same address again,
+  // which needs the row on screen. A reload that fails quietly leaves them
+  // working from a list that no longer matches the database.
+  function stubReload(reload: () => Response | never) {
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).endsWith("/invite")
+        ? new Response(JSON.stringify({ ok: true, reinvited: false }), { status: 201 })
+        : reload(),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("says the list may be stale without disowning the action that succeeded", async () => {
+    // Two different facts: the invitation really did go out, and the table is now
+    // out of date. Neither message may overwrite the other.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    stubReload(() => new Response("upstream error", { status: 500 }));
+    mount([ORPHAN]);
+
+    typeInvite("second@example.com");
+    await submitInvite();
+
+    expect(container.textContent).toContain("Invitation sent to second@example.com.");
+    expect(container.textContent).toContain(STALE);
+    expect(container.textContent).toContain("invitee@example.com");
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("keeps the page up when the reload returns an unexpected body", async () => {
+    // A 200 carrying anything but a users array used to put `undefined` into
+    // state, and the render then threw on `.map` — the whole admin page blank
+    // over what is only a stale table.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    stubReload(() => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    mount([ORPHAN]);
+
+    typeInvite("second@example.com");
+    await submitInvite();
+
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.textContent).toContain("invitee@example.com");
+    expect(container.textContent).toContain(STALE);
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("says so when the reload request never lands", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    stubReload(() => {
+      throw new TypeError("Failed to fetch");
+    });
+    mount([ORPHAN]);
+
+    typeInvite("second@example.com");
+    await submitInvite();
+
+    expect(container.textContent).toContain(STALE);
+    expect(container.textContent).toContain("invitee@example.com");
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("takes the notice back down once a reload works", async () => {
+    let failing = true;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith("/invite")) {
+        return new Response(JSON.stringify({ ok: true, reinvited: false }), { status: 201 });
+      }
+      if (failing) {
+        failing = false;
+        return new Response("upstream error", { status: 500 });
+      }
+      return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    mount([]);
+
+    typeInvite("second@example.com");
+    await submitInvite();
+    expect(container.textContent).toContain(STALE);
+
+    typeInvite("third@example.com");
+    await submitInvite();
+
+    expect(container.textContent).not.toContain(STALE);
+    expect(container.textContent).toContain("invitee@example.com");
+    logged.mockRestore();
+  });
+});
+
 describe("UsersAdmin re-invite action", () => {
   // A row with a password can be logged into, so the route refuses to re-invite
   // it and offering the action would promise something that cannot happen.

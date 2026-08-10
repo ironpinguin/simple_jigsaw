@@ -186,6 +186,7 @@
     "confirmDeleteUser": "Konto {email} wirklich löschen?",
     "accountDeleted": "Konto {email} gelöscht.",
     "deleteUserFailed": "Löschen fehlgeschlagen.",
+    "listStale": "Die Liste konnte nicht neu geladen werden und ist möglicherweise nicht aktuell. Lade die Seite neu.",
     "bansDesc": "Gesperrte Adressen/Domains können sich weder registrieren noch anmelden.",
     "banAddTitle": "Bann hinzufügen",
     "banDomainLabel": "Domain (z. B. spam.com)",

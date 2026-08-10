@@ -186,6 +186,7 @@
     "confirmDeleteUser": "Really delete account {email}?",
     "accountDeleted": "Account {email} deleted.",
     "deleteUserFailed": "Delete failed.",
+    "listStale": "The list could not be reloaded and may be out of date. Please reload the page.",
     "bansDesc": "Banned addresses/domains can neither register nor sign in.",
     "banAddTitle": "Add ban",
     "banDomainLabel": "Domain (e.g. spam.com)",

@@ -25,6 +25,7 @@ export default function UsersAdmin({
   const [users, setUsers] = useState<UserRow[]>(initial);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
 
   // create-forms state
   const [inviteEmail, setInviteEmail] = useState("");
@@ -33,9 +34,39 @@ export default function UsersAdmin({
   const [newRole, setNewRole] = useState<"USER" | "ADMIN">("USER");
   const [busy, setBusy] = useState(false);
 
+  // The table is not decoration — it is what the admin acts on, and the invite
+  // error tells them to invite the same address again, which needs the row on
+  // screen. A reload that quietly fails leaves them working from a list that no
+  // longer matches the database, so a failure says so.
+  //
+  // It reports through its own `stale` line rather than `flash`, because the
+  // action's outcome and the list's freshness are different facts: an invitation
+  // really did go out even if the reload afterwards did not, and neither message
+  // should overwrite the other. Nothing here throws, so callers can await it
+  // without wrapping it.
   async function refresh() {
-    const res = await fetch("/api/admin/users");
-    if (res.ok) setUsers((await res.json()).users);
+    try {
+      const res = await fetch("/api/admin/users");
+      if (!res.ok) {
+        console.error(`[admin] reloading the user list failed: HTTP ${res.status}`);
+        setStale(true);
+        return;
+      }
+      const data = await res.json().catch(() => null);
+      // Without this check a 200 carrying anything else puts `undefined` into
+      // `users` and the render below throws on `.map`, blanking the whole admin
+      // page over what is only a stale table.
+      if (!Array.isArray(data?.users)) {
+        console.error("[admin] the user list response carried no users array");
+        setStale(true);
+        return;
+      }
+      setUsers(data.users);
+      setStale(false);
+    } catch (error) {
+      console.error("[admin] reloading the user list failed:", error);
+      setStale(true);
+    }
   }
 
   function flash(ok: string | null, error: string | null) {
@@ -66,7 +97,7 @@ export default function UsersAdmin({
       // path acts on one that was there already. Refresh either way, or the
       // account the admin is being told to invite again is not on screen to
       // invite.
-      refresh();
+      await refresh();
       if (res.ok) {
         // The same form re-invites when the address belongs to an account that
         // never activated, so which of the two happened comes from the route.
@@ -103,7 +134,7 @@ export default function UsersAdmin({
         body: JSON.stringify({ email: u.email }),
       });
       const data = await res.json().catch(() => ({}));
-      refresh();
+      await refresh();
       flash(
         res.ok ? t("reinviteSent", { email: u.email }) : null,
         res.ok ? null : data.error || t("inviteFailed"),
@@ -131,7 +162,7 @@ export default function UsersAdmin({
         setNewEmail("");
         setNewPassword("");
         setNewRole("USER");
-        refresh();
+        await refresh();
       } else {
         flash(null, data.error || t("createFailed"));
       }
@@ -155,7 +186,7 @@ export default function UsersAdmin({
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         flash(t("roleChanged", { email: u.email, role: roleLabel(role) }), null);
-        refresh();
+        await refresh();
       } else {
         flash(null, data.error || t("changeFailed"));
       }
@@ -241,6 +272,10 @@ export default function UsersAdmin({
           </button>
         </form>
       </div>
+
+      {/* Next to the table it is about, and after the action flash above, so a
+          stale list never displaces the outcome of what the admin just did. */}
+      {stale && <p className="error">{t("listStale")}</p>}
 
       <div style={{ overflowX: "auto" }}>
         <table className="admin-table">

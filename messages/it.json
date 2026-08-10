@@ -186,6 +186,7 @@
     "confirmDeleteUser": "Eliminare davvero l'account {email}?",
     "accountDeleted": "Account {email} eliminato.",
     "deleteUserFailed": "Eliminazione non riuscita.",
+    "listStale": "Non è stato possibile ricaricare l'elenco, che potrebbe non essere aggiornato. Ricarica la pagina.",
     "bansDesc": "Gli indirizzi/domini bloccati non possono né registrarsi né accedere.",
     "banAddTitle": "Aggiungi blocco",
     "banDomainLabel": "Dominio (es. spam.com)",
