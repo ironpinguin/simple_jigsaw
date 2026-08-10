@@ -116,6 +116,61 @@ published. Two workable shapes:
   name in `LEGAL_CLASSIFIER_PROCESSOR` is then the *upstream service*, not your
   adapter, because that is who actually receives the image.
 
+#### What to look for in a service
+
+The market calls this **image moderation**, **visual content moderation** or
+**NSFW/explicit content detection**; for something you host yourself, search for
+an **NSFW image classifier** with **ONNX** or **TorchServe** weights. Once you
+have candidates, the questions that decide whether one fits *this* deployment:
+
+**Does it fit the contract and the request cycle?**
+
+- **A numeric confidence, not just a verdict.** The adapter needs a `0..1`
+  number to hand over, and `NSFW_THRESHOLD` is only a useful knob if there is a
+  score behind it. A service that answers `SAFE` / `UNSAFE` and nothing else
+  can be mapped to `0`/`1`, but the threshold stops meaning anything.
+- **Synchronous, one request, fast.** The call sits inside the user's upload,
+  bounded by `NSFW_TIMEOUT_MS` (default 5 s). Queue-and-poll or webhook-callback
+  APIs do not fit without holding the upload open, and every timeout is a held
+  puzzle.
+- **Categories that match what you are moderating.** `local` scores gore *and*
+  explicit content, so a service that only detects nudity narrows what the
+  instance catches when an operator switches modes. Pick which categories your
+  adapter folds into the score deliberately, and write it down.
+- **Accepts the bytes directly, and accepts WebP.** Uploads are re-encoded to
+  WebP before classification. Services that require JPEG/PNG, base64, or a URL
+  they fetch themselves all mean more work in the adapter — and the URL variant
+  means making the image publicly reachable, which for an image that has not
+  been cleared yet is the wrong direction entirely.
+
+**Does it survive the data-protection questions?** These are the ones that
+actually take time, so ask them before benchmarking accuracy:
+
+- **An Art. 28 DPA it will actually sign.** You are sending user-uploaded
+  photographs to a third party. No contract, no `external` mode.
+- **Where processing happens**, and for a non-EU/EEA provider, which transfer
+  mechanism applies (adequacy decision, or SCCs plus a transfer impact
+  assessment). This is also what `LEGAL_HOSTING_REGION` and the policy have to
+  stay consistent with.
+- **No retention and no training on your images**, contractually, not in a blog
+  post. The privacy policy this repo renders says images are sent *to check for
+  explicit content* — a provider that keeps them for model improvement makes
+  that statement incomplete.
+- **A published subprocessor list**, since their subprocessors become yours to
+  disclose.
+
+**Operationally**, check per-image pricing and rate limits against your upload
+volume — note `/api/upload` is not rate-limited yet, so a burst is a bill — and
+remember that an outage is not a silent failure here: every upload is held for
+review until the service answers again.
+
+**The alternative that skips all of the above** is running the classification
+yourself, either as `local` or as your own endpoint behind `external`. Then
+there is no Art. 28 relationship, `LEGAL_CLASSIFIER_PROCESSOR` stays empty, and
+the privacy policy keeps its stronger claim that images reach no third party.
+That is the default this repo is built around; `external` exists for operators
+who have a reason to prefer someone else's classifier.
+
 A minimal compatible endpoint is about as long as its own error handling:
 
 ```js
