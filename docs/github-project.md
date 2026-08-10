@@ -5,10 +5,11 @@ the repo itself:
 
 > https://github.com/users/ironpinguin/projects/4
 
-The board is **private** — you need to be added as a collaborator by
-@ironpinguin to see or change it. Issues themselves live in
+The board is **public to read** — anyone can see what is planned and what is
+being worked on. **Changing** it (status, priority, size, release) needs
+collaborator access from @ironpinguin. Issues themselves live in
 `ironpinguin/simple_jigsaw` as usual; the project only adds planning metadata
-(status, priority, size, release) on top of them.
+on top of them, so everything actionable is in the issue itself.
 
 This document describes the board so that both humans and Claude Code sessions
 work it the same way.
