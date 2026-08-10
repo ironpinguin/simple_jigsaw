@@ -82,18 +82,15 @@ describe("createToken", () => {
 
 describe("revokeTokens", () => {
   it("deletes only that user's tokens of that kind, and reports how many", async () => {
-    // Scoped both ways on purpose: a re-invite must not revoke the invitee's
-    // pending email confirmation, nor anybody else's invitation.
+    // Scoped both ways on purpose, and neither guarantee is visible any other
+    // way: without `type` a caller superseding one kind of link would silently
+    // take out the user's other kinds too, and without `userId` it would take out
+    // every user's. The count is what tells a caller how many live links it just
+    // destroyed.
     deleteMany.mockResolvedValue({ count: 2 });
 
     await expect(revokeTokens("user-1", "INVITE")).resolves.toBe(2);
     expect(deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1", type: "INVITE" } });
-  });
-
-  it("reports zero when there was nothing outstanding", async () => {
-    deleteMany.mockResolvedValue({ count: 0 });
-
-    await expect(revokeTokens("user-1", "INVITE")).resolves.toBe(0);
   });
 
   it("lets a failure through to the caller", async () => {

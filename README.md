@@ -118,7 +118,9 @@ im Code, siehe `lib/roles.ts`).
   CLI bleiben davon unberührt.
 - **Admin-Bereich** (`/admin`):
   - *Nutzer*: anlegen per **Einladung** (Mail-Link zum Passwort setzen) oder
-    **direkt** (E-Mail + Startpasswort), Rolle umschalten, löschen.
+    **direkt** (E-Mail + Startpasswort), Rolle umschalten, löschen. Wer eingeladen
+    wurde, aber nie ein Passwort gesetzt hat, kann per **erneut einladen** eine
+    frische Mail bekommen; der bisherige Link wird dabei ungültig.
   - *Banns*: E-Mail-Adressen oder ganze Domains sperren — gesperrte Adressen
     können sich weder registrieren noch anmelden.
 

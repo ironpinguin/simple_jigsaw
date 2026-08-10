@@ -31,8 +31,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// The row the invite route leaves behind when delivery fails: created, but with
-// no password and no verification.
+// A row that never activated: created, but with no password and no
+// verification. The invite mail failed, the link expired, or the invitee has
+// simply not clicked yet.
 const ORPHAN: UserRow = {
   id: "user-1",
   email: "invitee@example.com",
@@ -90,7 +91,7 @@ describe("UsersAdmin invite form", () => {
     // account behind — the admin needs it on screen to invite it again.
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).endsWith("/invite")) {
-        return new Response(JSON.stringify({ error: "Invitation could not be delivered." }), {
+        return new Response(JSON.stringify({ error: "The invitation could not be sent." }), {
           status: 500,
         });
       }
@@ -105,7 +106,7 @@ describe("UsersAdmin invite form", () => {
     await submitInvite();
 
     expect(container.querySelector(".error")?.textContent).toBe(
-      "Invitation could not be delivered.",
+      "The invitation could not be sent.",
     );
     expect(fetchMock).toHaveBeenCalledWith("/api/admin/users");
     expect(container.textContent).toContain("invitee@example.com");
@@ -114,7 +115,7 @@ describe("UsersAdmin invite form", () => {
   it("reloads the list and clears the field when the invite succeeds", async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).endsWith("/invite")) {
-        return new Response(JSON.stringify({ ok: true }), { status: 201 });
+        return new Response(JSON.stringify({ ok: true, reinvited: false }), { status: 201 });
       }
       return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
     });
@@ -127,6 +128,11 @@ describe("UsersAdmin invite form", () => {
     expect(container.querySelector(".error")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/api/admin/users");
     expect(container.querySelector<HTMLInputElement>("#inviteEmail")!.value).toBe("");
+    // The other half of the pair below: a first invitation must not announce
+    // itself as a re-invite, which would tell the admin the address was already
+    // in the system.
+    expect(container.textContent).toContain("Invitation sent to invitee@example.com.");
+    expect(container.textContent).not.toContain("sent again");
   });
 
   it("says the invitation was re-sent when the address was already invited", async () => {
@@ -150,8 +156,8 @@ describe("UsersAdmin invite form", () => {
 });
 
 describe("UsersAdmin re-invite action", () => {
-  // An account with a password activated successfully; offering to re-invite it
-  // would promise something the route answers 409 to.
+  // A row with a password can be logged into, so the route refuses to re-invite
+  // it and offering the action would promise something that cannot happen.
   const ACTIVE: UserRow = {
     ...ORPHAN,
     id: "user-2",
@@ -160,8 +166,35 @@ describe("UsersAdmin re-invite action", () => {
     hasPassword: true,
   };
 
+  // The row that separates the two conditions: self-registered, so it has a
+  // password, but the confirmation mail is still outstanding. It shares
+  // `verified: false` with ORPHAN and `hasPassword: true` with ACTIVE, so a gate
+  // written against the wrong field shows up here and nowhere else.
+  const UNVERIFIED: UserRow = {
+    ...ORPHAN,
+    id: "user-3",
+    email: "unverified@example.com",
+    verified: false,
+    hasPassword: true,
+  };
+
+  // The action revokes a link that may still be valid, so it confirms first.
+  beforeEach(() => {
+    vi.stubGlobal("confirm", vi.fn(() => true));
+  });
+
+  function stubInviteFetch(response: () => Response) {
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).endsWith("/invite")
+        ? response()
+        : new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
   it("offers the action only on a row that never activated", () => {
-    mount([ORPHAN, ACTIVE]);
+    mount([ORPHAN, ACTIVE, UNVERIFIED]);
 
     const buttons = buttonsLabelled("Invite again");
     expect(buttons).toHaveLength(1);
@@ -169,13 +202,9 @@ describe("UsersAdmin re-invite action", () => {
   });
 
   it("invites the row's own address without the admin retyping it", async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (String(url).endsWith("/invite")) {
-        return new Response(JSON.stringify({ ok: true, reinvited: true }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubInviteFetch(
+      () => new Response(JSON.stringify({ ok: true, reinvited: true }), { status: 200 }),
+    );
     mount([ORPHAN]);
 
     await click(buttonsLabelled("Invite again")[0]);
@@ -189,14 +218,39 @@ describe("UsersAdmin re-invite action", () => {
     );
     expect(container.querySelector(".error")).toBeNull();
     expect(container.textContent).toContain("Invitation to invitee@example.com sent again.");
+    // Says the earlier link died, or the admin has no reason to connect this
+    // click to the invitee reporting a dead link afterwards.
+    expect(container.textContent).toContain("The earlier link no longer works.");
+    // The row may have been activated or deleted since the page loaded.
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/users");
   });
 
-  it("reports a failure rather than claiming the mail went out", async () => {
+  it("does nothing when the admin cancels the confirmation", async () => {
+    // Revoking a live link on a misclick has no undo.
+    const fetchMock = stubInviteFetch(
+      () => new Response(JSON.stringify({ ok: true, reinvited: true }), { status: 200 }),
+    );
+    vi.stubGlobal("confirm", vi.fn(() => false));
+    mount([ORPHAN]);
+
+    await click(buttonsLabelled("Invite again")[0]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("sent again");
+  });
+
+  it("disables the action while a request is in flight", async () => {
+    // Two clicks send two mails, and the second revokes the first token — so the
+    // invitee ends up holding two invitations of which the older one is silently
+    // dead, the exact confusion this feature exists to end.
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).endsWith("/invite")) {
-        return new Response(JSON.stringify({ error: "The invitation could not be delivered." }), {
-          status: 500,
-        });
+        await pending;
+        return new Response(JSON.stringify({ ok: true, reinvited: true }), { status: 200 });
       }
       return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
     });
@@ -204,10 +258,50 @@ describe("UsersAdmin re-invite action", () => {
     mount([ORPHAN]);
 
     await click(buttonsLabelled("Invite again")[0]);
+    expect(buttonsLabelled("Invite again")[0].disabled).toBe(true);
+
+    await act(async () => {
+      release();
+      await pending;
+    });
+    expect(buttonsLabelled("Invite again")[0].disabled).toBe(false);
+  });
+
+  it("reports a failure rather than claiming the mail went out", async () => {
+    stubInviteFetch(
+      () =>
+        new Response(JSON.stringify({ error: "The invitation could not be sent." }), {
+          status: 500,
+        }),
+    );
+    mount([ORPHAN]);
+
+    await click(buttonsLabelled("Invite again")[0]);
 
     expect(container.querySelector(".error")?.textContent).toBe(
-      "The invitation could not be delivered.",
+      "The invitation could not be sent.",
     );
     expect(container.textContent).not.toContain("sent again");
+  });
+
+  it("reports a rejected request instead of leaving the button dead", async () => {
+    // No response means neither branch runs. Without the try/finally `busy` would
+    // stay true and every button on the page would be stuck, with nothing said.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith("/invite")) throw new TypeError("Failed to fetch");
+        return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
+      }),
+    );
+    mount([ORPHAN]);
+
+    await click(buttonsLabelled("Invite again")[0]);
+
+    expect(container.querySelector(".error")?.textContent).toBe("Invitation failed.");
+    expect(buttonsLabelled("Invite again")[0].disabled).toBe(false);
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
   });
 });
