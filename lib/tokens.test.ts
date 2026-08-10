@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { create, findUnique, deleteOne, maybePurge } = vi.hoisted(() => ({
+const { create, findUnique, deleteMany, maybePurge } = vi.hoisted(() => ({
   create: vi.fn(),
   findUnique: vi.fn(),
-  deleteOne: vi.fn(),
+  deleteMany: vi.fn(),
   maybePurge: vi.fn(),
 }));
 
 vi.mock("./db", () => ({
   prisma: {
-    verificationToken: { create, delete: deleteOne, findUnique },
+    verificationToken: { create, deleteMany, findUnique },
   },
 }));
 vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
@@ -23,7 +23,8 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   create.mockResolvedValue({});
-  deleteOne.mockResolvedValue({});
+  // One row removed = this call is the one that claimed the token.
+  deleteMany.mockResolvedValue({ count: 1 });
   maybePurge.mockResolvedValue(null);
 });
 
@@ -71,7 +72,7 @@ describe("consumeToken", () => {
     findUnique.mockResolvedValue(row);
 
     await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({ userId: "user-1" });
-    expect(deleteOne).toHaveBeenCalledWith({ where: { token: "abc" } });
+    expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "EMAIL_VERIFY" } });
   });
 
   it("removes an expired row and refuses it", async () => {
@@ -80,14 +81,65 @@ describe("consumeToken", () => {
     findUnique.mockResolvedValue({ ...row, expiresAt: new Date(NOW - 1) });
 
     await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toBeNull();
-    expect(deleteOne).toHaveBeenCalledWith({ where: { token: "abc" } });
+    expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "EMAIL_VERIFY" } });
   });
 
   it("refuses a token issued for another purpose without deleting it", async () => {
     findUnique.mockResolvedValue({ ...row, type: "INVITE" });
 
     await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toBeNull();
-    expect(deleteOne).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("lets exactly one of two concurrent redemptions win", async () => {
+    // The property the old code silently lacked. Both calls read the row before
+    // either deletes, so read-then-delete is not a claim: the loser's delete
+    // threw P2025 into an empty catch and it returned a userId anyway. For an
+    // INVITE — a password-setting link — that means two people setting the
+    // password on one account, each believing they were the only one.
+    findUnique.mockResolvedValue(row);
+    deleteMany
+      .mockResolvedValueOnce({ count: 1 }) // winner: the row was there
+      .mockResolvedValueOnce({ count: 0 }); // loser: already gone
+
+    const results = await Promise.all([
+      consumeToken("abc", "EMAIL_VERIFY"),
+      consumeToken("abc", "EMAIL_VERIFY"),
+    ]);
+
+    expect(results.filter(Boolean)).toEqual([{ userId: "user-1" }]);
+  });
+
+  it("refuses a token whose row was already gone, without calling it an error", async () => {
+    // Losing the race is ordinary. Only a genuine failure deserves the log, or
+    // an operator learns nothing from it.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockResolvedValue({ count: 0 });
+
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toBeNull();
+
+    expect(logged).not.toHaveBeenCalled();
+    logged.mockRestore();
+  });
+
+  it("refuses the token and says so when the delete fails outright", async () => {
+    // A role without delete rights, a lock timeout, SQLITE_BUSY. The old code
+    // swallowed all of them and returned the userId, leaving a single-use link
+    // live for up to seven days with nothing in the log. Refusing is the safe
+    // direction: the holder can ask for a new link, and the operator gets a
+    // line naming the cause.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue(row);
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toBeNull();
+
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("[tokens]"),
+      expect.any(Error),
+    );
+    logged.mockRestore();
   });
 
   it("refuses an unknown token", async () => {

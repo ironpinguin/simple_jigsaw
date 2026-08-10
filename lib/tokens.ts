@@ -25,8 +25,28 @@ export async function createToken(userId: string, type: TokenKind): Promise<stri
 }
 
 /**
- * Look up a token, delete it (single-use), and return its userId if it is valid
+ * Look up a token, claim it (single-use), and return its userId if it is valid
  * and unexpired for the given type. Returns null otherwise.
+ *
+ * The delete *is* the claim, and its result decides the answer. Reading the row
+ * and then deleting it is not a claim: two redemptions of the same link both
+ * read it before either delete lands, so both used to be told they had spent
+ * it. Deleting by `{ token, type }` is atomic, so exactly one caller can see a
+ * count of 1 — everyone else loses the race and is refused.
+ *
+ * A failed delete is refused rather than swallowed. It used to return the
+ * userId anyway, which left a single-use link live until it expired: 24 h for
+ * EMAIL_VERIFY, 7 days for INVITE. That one matters most, because an invite is
+ * a password-setting link — anyone still holding the mail could set the
+ * password again after the legitimate recipient had activated the account.
+ * The causes are ordinary (a role without delete rights, a lock timeout,
+ * SQLITE_BUSY), which is exactly why they must not pass silently.
+ *
+ * Refusing costs a legitimate holder a new link and gains an operator a log
+ * line; granting on an unconsumed token is the security bug. `null` is what
+ * both callers already render as a translated "link is invalid" (verifyInvalid
+ * / inviteInvalid), so no route has to learn anything new — and neither may
+ * proceed on a token that was never actually spent.
  */
 export async function consumeToken(
   token: string,
@@ -35,8 +55,19 @@ export async function consumeToken(
   const row = await prisma.verificationToken.findUnique({ where: { token } });
   if (!row || row.type !== type) return null;
 
-  // Single-use: remove it regardless of expiry outcome.
-  await prisma.verificationToken.delete({ where: { token } }).catch(() => {});
+  let claimed: number;
+  try {
+    // Single-use, regardless of expiry outcome: an expired link that does get
+    // clicked leaves nothing behind either.
+    ({ count: claimed } = await prisma.verificationToken.deleteMany({ where: { token, type } }));
+  } catch (error) {
+    console.error("[tokens] could not consume the token; refusing it:", error);
+    return null;
+  }
+
+  // Nothing removed means somebody else got there first, or the row went in
+  // the retention sweep. Ordinary, so no log — only a real failure gets one.
+  if (claimed === 0) return null;
 
   if (isExpired(row.expiresAt, Date.now())) return null;
   return { userId: row.userId };

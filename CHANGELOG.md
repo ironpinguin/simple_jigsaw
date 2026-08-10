@@ -166,6 +166,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notification. (#22)
 
 ### Security
+- A confirmation or invite link now stops working the moment it is redeemed,
+  even when the deletion that consumes it fails or two redemptions arrive at
+  once. `consumeToken` read the row and then deleted it, discarding the
+  delete's outcome, so a failed delete still reported success and both halves
+  of a concurrent redemption were told they had spent the token. The row
+  survived and the link kept working until it expired — 24 hours for a
+  confirmation link, seven days for an invite, which is the sharper case
+  because an invite sets a password: anyone still holding that mail could set
+  it again after the recipient had activated the account. The delete is now the
+  claim, so exactly one redemption can win, and a delete that genuinely fails
+  refuses the link and is logged instead of passing silently. (#46)
 - Three high-severity advisories in transitive dependencies are cleared by
   patch bumps of `brace-expansion`, `js-yaml` and `nanoid`. Only `nanoid` is in
   runtime scope and so actually ships in the image; the other two stay in the
