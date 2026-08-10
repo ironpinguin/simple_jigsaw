@@ -53,7 +53,7 @@
     "negotiator": "^1.0.0",
     "prisma": "^6.2.1",
     "typescript": "^5.7.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.10"
   },
   "//overrides": "Transitive security fixes the parent package cannot pull in itself: next pins postcss to an exact 8.4.31 and its optional sharp to ^0.34.3, @eslint/eslintrc still resolves the 1.x line of brace-expansion via minimatch@3, and @auth/core's nodemailer peer range (^7.0.7 || ^8.0.5) predates the 9.0.1 fix — safe to force here because we only register the Credentials provider, so @auth/core never loads nodemailer (our own SMTP code in lib/mail.ts does). Drop an entry once the parent ships a patched range.",
   "overrides": {
