@@ -95,7 +95,8 @@
     "resetView": "Reimposta vista",
     "zoomLevel": "Livello di zoom attuale",
     "zoomPercent": "{percent}%",
-    "minimap": "Panoramica del tavolo — clicca o usa i tasti freccia per spostarti in una zona"
+    "minimap": "Panoramica del tavolo — clicca o usa i tasti freccia per spostarti in una zona",
+    "reviewPending": "Questo puzzle è per ora privato ed è in corso una verifica. Al termine potrai renderlo pubblico."
   },
   "my": {
     "title": "I miei puzzle",
@@ -215,7 +216,8 @@
     "categoryNSFW": "Contenuto esplicito",
     "categoryILLEGAL": "Violenza o contenuto illegale",
     "categoryCOPYRIGHT": "Violazione del diritto d’autore",
-    "categoryOTHER": "Altro"
+    "categoryOTHER": "Altro",
+    "categoryAUTO_NSFW": "Rilevato automaticamente"
   },
   "legal": {
     "imprintTitle": "Note legali",
@@ -245,6 +247,8 @@
     "puzzlesText": "Per ogni puzzle conserviamo il titolo, l'immagine caricata, le sue dimensioni, il numero di pezzi, il valore iniziale del taglio casuale, a chi appartiene, se è pubblico e quando è stato creato.",
     "imagesTitle": "Immagini caricate",
     "imagesText": "Ogni immagine viene ricodificata in WebP al momento del caricamento e ridotta a un massimo di 2000 pixel sul lato più lungo. Nel processo si perdono tutti i metadati dell'originale, comprese le coordinate GPS: conserviamo quindi solo i pixel, non i dati di scatto della tua fotocamera.",
+    "imagesVerdictText": "Per ogni immagine caricata conserviamo anche un esito di classificazione automatica — un'etichetta, un punteggio e quale modello lo ha prodotto — indipendentemente dal fatto che la classificazione sia attiva su questa istanza; se è disattivata, ogni immagine riceve semplicemente lo stesso esito neutro. Non viene mai mostrato né a te né ad altri utenti; se un'immagine viene trattenuta per la revisione, gli admin dell'istanza la vedono nella coda di moderazione.",
+    "imagesClassificationText": "Questa istanza analizza automaticamente le immagini caricate alla ricerca di contenuti che potrebbero non essere adatti al sito. Se un'immagine viene segnalata, o se il controllo fallisce o va in timeout, il puzzle viene creato privato e inserito nella coda di revisione degli admin invece di essere pubblicato — non puoi pubblicarlo tu stesso finché un admin non ha deciso sulla revisione, e ti avvisiamo che è in attesa di revisione.",
     "imagesPublicText": "Attenzione: le immagini dei puzzle pubblici vengono servite senza accesso, perché un link condiviso funzioni anche senza account. Chi conosce l'indirizzo di un'immagine può recuperarla, e le cache possono conservarne copie. Lo stesso vale per i dati del puzzle stesso: titolo, dimensioni, numero di pezzi e data di creazione dei puzzle pubblici sono recuperabili senza accedere. Non caricare quindi nulla che non debba essere pubblico.",
     "localTitle": "Avanzamento nel browser",
     "localText": "L'avanzamento della risoluzione è conservato nella memoria locale del tuo browser, così puoi riprendere un puzzle più tardi. Questi dati non lasciano il tuo dispositivo e si possono cancellare dalle impostazioni del browser.",
@@ -256,13 +260,15 @@
     "recipientsMailSelf": "Le e-mail transazionali — conferma, invito, notifica di una segnalazione ricevuta e avviso di rimozione di un puzzle — vengono inviate tramite un server di posta gestito da noi. Il tuo indirizzo non viene comunicato a terzi per questo scopo.",
     "recipientsMailExternal": "Le e-mail transazionali — conferma, invito, notifica di una segnalazione ricevuta e avviso di rimozione di un puzzle — vengono inviate tramite {provider}. Questo servizio riceve il tuo indirizzo e-mail e, per le ultime due, il titolo del puzzle interessato. Tratta questi dati per conto nostro in qualità di responsabile del trattamento (art. 28 del GDPR).",
     "recipientsStorageSelf": "Le immagini caricate risiedono su uno spazio di archiviazione gestito da noi e non vengono trasmesse a terzi.",
+    "recipientsStorageSelfClassified": "Le immagini caricate risiedono su uno spazio di archiviazione gestito da noi.",
     "recipientsStorageExternal": "Le immagini caricate risiedono presso {provider}, che le conserva per conto nostro in qualità di responsabile del trattamento (art. 28 del GDPR).",
+    "recipientsClassifierExternal": "Le immagini caricate vengono inoltre inviate a {provider} per la verifica di contenuti espliciti, che le tratta per conto nostro in qualità di responsabile del trattamento (art. 28 del GDPR).",
     "recipientsOther": "Al di là di questo non comunichiamo i tuoi dati, salvo obbligo di legge.",
     "hostingTitle": "6. Hosting",
     "hostingTextRegion": "Il servizio è gestito in {region}.",
     "hostingTextUnknown": "In questa informativa non è indicato dove viene gestita questa istanza. La persona indicata nelle note legali fornisce l'informazione su richiesta.",
     "retentionTitle": "7. Periodo di conservazione",
-    "retentionText": "I dati dell'account sono conservati per tutto il tempo in cui l'account esiste. Quando viene eliminato, lo rimuoviamo insieme ai tuoi puzzle e alle relative immagini. I link di conferma e di invito scompaiono quando vengono utilizzati; i link scaduti vengono eliminati automaticamente e non sono conservati oltre. Le voci di blocco restano finché il blocco è valido.",
+    "retentionText": "I dati dell'account sono conservati per tutto il tempo in cui l'account esiste. Quando viene eliminato, lo rimuoviamo insieme ai tuoi puzzle e alle relative immagini. L'esito di classificazione di un'immagine viene eliminato automaticamente non appena l'immagine non appartiene più a nessun puzzle. I link di conferma e di invito scompaiono quando vengono utilizzati; i link scaduti vengono eliminati automaticamente e non sono conservati oltre. Le voci di blocco restano finché il blocco è valido.",
     "rightsTitle": "8. I tuoi diritti",
     "rightsText": "Hai diritto di accesso (art. 15), rettifica (art. 16), cancellazione (art. 17), limitazione del trattamento (art. 18), portabilità dei dati (art. 20) e opposizione (art. 21 del GDPR). Basta un messaggio all'indirizzo indicato nelle note legali; non è richiesta alcuna forma particolare.",
     "rightsComplaint": "Puoi inoltre presentare reclamo a un'autorità di controllo per la protezione dei dati: quella del tuo luogo di residenza o quella competente per il titolare del trattamento.",
@@ -324,7 +330,8 @@
     "tooManyReports": "Troppe segnalazioni in poco tempo. Riprova più tardi.",
     "tooManyRequests": "Troppe richieste in poco tempo. Riprova più tardi.",
     "storageFailed": "L’archivio immagini non è al momento raggiungibile. Riprova.",
-    "reportNotFound": "Segnalazione non trovata."
+    "reportNotFound": "Segnalazione non trovata.",
+    "awaitingReview": "Questo puzzle è ancora in verifica e non può essere reso pubblico per ora."
   },
   "email": {
     "verifySubject": "Conferma la tua e-mail — Jigsaw",
@@ -338,12 +345,15 @@
     "reportSubject": "Un puzzle è stato segnalato",
     "reportIntro": "Il puzzle “{title}” è stato segnalato ({category}).",
     "reportAction": "Esamina la segnalazione nell’area admin:",
+    "autoReportSubject": "Un puzzle è stato trattenuto dal controllo automatico",
+    "autoReportIntro": "Il puzzle “{title}” è stato trattenuto dal controllo automatico ({category}). Resta privato finché un amministratore non risolve la voce: chi lo ha caricato non può pubblicarlo da sé.",
     "takedownSubject": "Il tuo puzzle è stato rimosso",
     "takedownIntro": "Il tuo puzzle “{title}” è stato rimosso da un amministratore in seguito a una segnalazione ({category}).",
     "takedownIntroNoReport": "Il tuo puzzle “{title}” è stato rimosso da un amministratore dopo una verifica.",
     "categoryNSFW": "Contenuto esplicito",
     "categoryILLEGAL": "Violenza o contenuto illegale",
     "categoryCOPYRIGHT": "Violazione del diritto d’autore",
-    "categoryOTHER": "Altro"
+    "categoryOTHER": "Altro",
+    "categoryAUTO_NSFW": "Contenuto esplicito"
   }
 }

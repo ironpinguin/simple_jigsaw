@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_REPORT_CATEGORIES,
   isReportCategory,
   isReportStatus,
   REPORT_CATEGORIES,
@@ -40,5 +41,27 @@ describe("isReportStatus", () => {
     expect(isReportStatus("RESOLVED")).toBe(false);
     expect(isReportStatus("open")).toBe(false);
     expect(isReportStatus("")).toBe(false);
+  });
+});
+
+describe("machine-generated categories", () => {
+  it("keeps AUTO_NSFW out of what a user can pick", () => {
+    // ReportDialog renders one radio per REPORT_CATEGORIES entry; a machine
+    // verdict is not something a person reports.
+    expect(REPORT_CATEGORIES).not.toContain("AUTO_NSFW");
+  });
+
+  it("accepts AUTO_NSFW when reading a row back", () => {
+    // The admin queue narrows every stored category before translating it.
+    expect(isReportCategory("AUTO_NSFW")).toBe(true);
+  });
+
+  it("still accepts the user categories and rejects nonsense", () => {
+    expect(isReportCategory("NSFW")).toBe(true);
+    expect(isReportCategory("SOMETHING_ELSE")).toBe(false);
+  });
+
+  it("names exactly one machine category", () => {
+    expect(AUTO_REPORT_CATEGORIES).toEqual(["AUTO_NSFW"]);
   });
 });

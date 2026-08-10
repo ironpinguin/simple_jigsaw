@@ -23,7 +23,7 @@ vi.mock("next-intl/server", () => ({
   },
 }));
 
-import { sendReportNotification, sendTakedownNotice } from "./mail";
+import { sendAutoReportNotification, sendReportNotification, sendTakedownNotice } from "./mail";
 
 // Puzzle titles are user input interpolated into mail bodies — the escaping
 // asserted here is the only thing between an owner-authored title like
@@ -52,6 +52,35 @@ describe("sendReportNotification", () => {
   });
 });
 
+describe("sendAutoReportNotification", () => {
+  it("escapes the puzzle title in the HTML body but not in the text body", async () => {
+    await sendAutoReportNotification("admin@example.com", HOSTILE_TITLE, "AUTO_NSFW", "en");
+    const mail = sendMailMock.mock.calls[0][0];
+    expect(mail.html).toContain(ESCAPED_TITLE);
+    expect(mail.html).not.toContain(HOSTILE_TITLE);
+    expect(mail.text).toContain(HOSTILE_TITLE);
+  });
+
+  it("does not tell the admin somebody reported the puzzle", async () => {
+    // The whole reason this exists rather than reusing sendReportNotification:
+    // /api/puzzles files this finding with no reporter at all, deliberately, so
+    // a mail saying it "was reported" would attribute a judgement to a person
+    // who never made one. Same reasoning as takedownIntroNoReport.
+    await sendAutoReportNotification("admin@example.com", "Beach", "AUTO_NSFW", "en");
+    const mail = sendMailMock.mock.calls[0][0];
+    expect(mail.subject).not.toMatch(/reported/i);
+    expect(mail.text).not.toMatch(/was reported/i);
+    expect(mail.text).toMatch(/automatic check/i);
+  });
+
+  it("labels the category and links the queue", async () => {
+    await sendAutoReportNotification("admin@example.com", "Beach", "AUTO_NSFW", "en");
+    const mail = sendMailMock.mock.calls[0][0];
+    expect(mail.text).toContain("Explicit content");
+    expect(mail.text).toContain("/en/admin/reports");
+  });
+});
+
 describe("sendTakedownNotice", () => {
   it("escapes the puzzle title in the HTML body but not in the text body", async () => {
     await sendTakedownNotice("owner@example.com", HOSTILE_TITLE, "NSFW", "en");
@@ -71,5 +100,12 @@ describe("sendTakedownNotice", () => {
     await sendTakedownNotice("owner@example.com", "Beach", null, "en");
     const mail = sendMailMock.mock.calls[0][0];
     expect(mail.text).toBe("Your puzzle “Beach” was removed by an administrator after a review.");
+  });
+
+  it("includes machine-generated categories in the takedown notice", async () => {
+    await sendTakedownNotice("owner@example.com", "Beach", "AUTO_NSFW", "en");
+    const mail = sendMailMock.mock.calls[0][0];
+    expect(mail.text).toContain("Beach");
+    expect(mail.text).toContain("removed");
   });
 });

@@ -5,6 +5,7 @@ const {
   findFirst,
   updateMany,
   deleteMany,
+  reportFindFirst,
   deleteObjectMock,
   copyObjectMock,
   getSessionViewerMock,
@@ -14,6 +15,7 @@ const {
   findFirst: vi.fn(),
   updateMany: vi.fn(),
   deleteMany: vi.fn(),
+  reportFindFirst: vi.fn(),
   deleteObjectMock: vi.fn(),
   copyObjectMock: vi.fn(),
   getSessionViewerMock: vi.fn(),
@@ -21,7 +23,10 @@ const {
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { puzzle: { findUnique, findFirst, updateMany, deleteMany } },
+  prisma: {
+    puzzle: { findUnique, findFirst, updateMany, deleteMany },
+    report: { findFirst: reportFindFirst },
+  },
 }));
 vi.mock("@/lib/auth", () => ({
   getSessionViewer: getSessionViewerMock,
@@ -78,6 +83,7 @@ beforeEach(() => {
   findFirst.mockResolvedValue(null);
   updateMany.mockResolvedValue({ count: 1 });
   deleteMany.mockResolvedValue({ count: 1 });
+  reportFindFirst.mockResolvedValue(null);
   deleteObjectMock.mockResolvedValue(undefined);
   copyObjectMock.mockResolvedValue(undefined);
 });
@@ -133,25 +139,35 @@ describe("PATCH /api/puzzles/[id]", () => {
     expect(updateMany).not.toHaveBeenCalled();
   });
 
-  it("answers 404 for a non-owner so it does not confirm the puzzle exists", async () => {
+  it("answers 404 for a non-owner so it does not confirm the puzzle exists, without ever writing", async () => {
+    // The ownership pre-check intercepts before updateMany is reached — a
+    // non-owner must not be able to tell, from the response, whether the
+    // puzzle even exists.
     getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
-    updateMany.mockResolvedValue({ count: 0 });
     const res = await callPatch({ isPublic: true });
     expect(res.status).toBe(404);
-    expect(updateMany).toHaveBeenCalledWith({
-      where: { id: "p1", ownerId: "stranger" },
-      data: { isPublic: true },
-    });
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it("answers 404 to an admin who does not own the puzzle — visibility is the owner's call", async () => {
     getSessionUserMock.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
-    updateMany.mockResolvedValue({ count: 0 });
     const res = await callPatch({ isPublic: true });
     expect(res.status).toBe(404);
+    expect(updateMany).not.toHaveBeenCalled();
   });
 
   it("answers 404 for a missing puzzle", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    findUnique.mockResolvedValue(null);
+    const res = await callPatch({ isPublic: true });
+    expect(res.status).toBe(404);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a missing puzzle when only the update itself races to zero", async () => {
+    // Belt and braces: the ownerId scope on updateMany is the real
+    // authorisation, not the read above, so a concurrent delete between the
+    // two must still 404 rather than report success.
     getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
     updateMany.mockResolvedValue({ count: 0 });
     const res = await callPatch({ isPublic: true });
@@ -167,6 +183,79 @@ describe("PATCH /api/puzzles/[id]", () => {
       where: { id: "p1", ownerId: "owner-1" },
       data: { isPublic: true },
     });
+  });
+});
+
+describe("publishing a puzzle held for review", () => {
+  beforeEach(() => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+  });
+
+  it("refuses while an automatic report is still open", async () => {
+    // Otherwise the uploader clears their own hold before an admin ever sees
+    // the queue entry, and the classifier is decorative.
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await callPatch({ isPublic: true });
+
+    expect(res.status).toBe(409);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("looks only for an unresolved machine finding on this puzzle", async () => {
+    // A user report does not block publishing — that is #22's behaviour and
+    // this feature must not change it — and a resolved one is spent. The
+    // category filter is `in` a list, not `equals` a literal, so a second
+    // machine category added later is covered without touching this check.
+    await callPatch({ isPublic: true });
+
+    expect(reportFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { puzzleId: "p1", category: { in: ["AUTO_NSFW"] }, status: "OPEN" },
+      }),
+    );
+  });
+
+  it("gives a non-owner the same 404 whether or not the puzzle is held — no existence or moderation-state oracle", async () => {
+    // Before the ownership pre-check, a stranger sending an arbitrary id
+    // could distinguish "not mine" (404) from "held" (409) — leaking both
+    // that the puzzle exists and that it is under moderation. The hold
+    // lookup must never even run for a non-owner.
+    getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await callPatch({ isPublic: true });
+
+    expect(res.status).toBe(404);
+    expect(reportFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("gives a non-owner admin the same 404, held or not — visibility is the owner's call", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "admin-1", role: "ADMIN" });
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await callPatch({ isPublic: true });
+
+    expect(res.status).toBe(404);
+    expect(reportFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("publishes normally when nothing is holding it", async () => {
+    reportFindFirst.mockResolvedValue(null);
+
+    const res = await callPatch({ isPublic: true });
+
+    expect(res.status).toBe(200);
+    expect(updateMany).toHaveBeenCalled();
+  });
+
+  it("never blocks making a puzzle private", async () => {
+    // A hold must not trap someone into keeping their own puzzle public.
+    reportFindFirst.mockResolvedValue({ id: "r1" });
+
+    const res = await callPatch({ isPublic: false });
+
+    expect(res.status).toBe(200);
   });
 });
 

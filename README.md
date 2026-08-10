@@ -108,7 +108,10 @@ im Code, siehe `lib/roles.ts`).
   - Ob das Aufräumen tatsächlich läuft, sagt `/api/health/ready`: meldet es
     `"retention": "stale"`, sind mehrere Läufe hintereinander fehlgeschlagen —
     etwa fehlende Löschrechte oder eine volle Platte. Lesende Abfragen
-    funktionieren dann weiter, der Container gilt weiter als gesund.
+    funktionieren dann weiter, der Container gilt weiter als gesund. Gemeldet
+    werden beide Läufe, Tokens und verwaiste Klassifizierungsergebnisse; welcher
+    davon klemmt, steht im Log. Die beiden hängen nicht voneinander ab: schlägt
+    einer fehl, läuft der andere trotzdem.
 - **Registrierung abschalten**: `REGISTRATION_ENABLED=false` setzen — die
   öffentliche Selbst-Registrierung ist dann deaktiviert (die Registrierungsseite
   zeigt einen Hinweis, die Links verschwinden). Einladungen, Admin-Anlage und die
@@ -122,13 +125,29 @@ im Code, siehe `lib/roles.ts`).
 Für Produktion echtes SMTP setzen (`SMTP_HOST/PORT/USER/PASS/FROM`), `APP_URL`
 auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
 
+- **Bildklassifizierung (NSFW)**: optional und standardmäßig aus
+  (`NSFW_MODE=off`). `local` prüft mit einem lokalen ONNX-Modell im Container
+  (`NSFW_MODEL_PATH`) — bewertet werden dabei explizite *und* Gewaltdarstellungen,
+  die das Modell getrennt ausweist. `external` schickt jedes hochgeladene Bild an
+  einen Dienst unter `NSFW_API_URL`/`NSFW_API_KEY` — das macht ihn zu einem
+  Auftragsverarbeiter, siehe [docs/data-processors.md](docs/data-processors.md),
+  wo auch der erwartete HTTP-Kontrakt steht (der Dienst muss ihn sprechen; die
+  APIs kommerzieller Anbieter tun das nicht ohne Adapter davor).
+  Ein als möglicherweise problematisch erkanntes oder nicht klassifizierbares Bild wird
+  trotzdem gespeichert, das Puzzle bleibt aber privat, landet in der
+  Admin-Warteschlange und kann von der hochladenden Person nicht selbst
+  veröffentlicht werden, bis ein Admin die Meldung entschieden hat; sie wird
+  darauf hingewiesen. `.env.example` dokumentiert alle `NSFW_*`-Variablen.
 - **Rechtliche Seiten**: `LEGAL_NAME`, `LEGAL_ADDRESS` und `LEGAL_EMAIL` sind
   Pflicht, bevor die Instanz öffentlich erreichbar ist — sonst zeigt
   `/legal/imprint` statt eines Impressums einen Hinweis auf die fehlenden
-  Variablen. Läuft Mail oder Bild-Speicher bei einem externen Anbieter, muss
-  `LEGAL_MAIL_PROCESSOR` bzw. `LEGAL_STORAGE_PROCESSOR` ihn benennen, sonst
-  behauptet die Datenschutzerklärung Eigenbetrieb. `.env.example` erklärt alle
-  `LEGAL_*`-Variablen im Detail.
+  Variablen. Läuft Mail, Bild-Speicher oder die Bildklassifizierung
+  (`NSFW_MODE=external`) bei einem externen Anbieter, muss
+  `LEGAL_MAIL_PROCESSOR`, `LEGAL_STORAGE_PROCESSOR` bzw.
+  `LEGAL_CLASSIFIER_PROCESSOR` ihn benennen, sonst behauptet die
+  Datenschutzerklärung Eigenbetrieb oder verschweigt einen echten
+  Auftragsverarbeiter. `.env.example` erklärt alle `LEGAL_*`-Variablen im
+  Detail.
 - **Auftragsverarbeitung**: Welche personenbezogenen Daten die Instanz überhaupt
   verlassen und was pro externem Dienst zu klären ist (AV-Vertrag, Drittland),
   steht in [docs/data-processors.md](docs/data-processors.md) — mit einer

@@ -20,7 +20,7 @@
 // de-opts the whole segment anyway, so nothing else would notice its removal.
 
 /** The date the privacy policy text last changed. Rendered per locale. */
-export const PRIVACY_UPDATED = "2026-08-09";
+export const PRIVACY_UPDATED = "2026-08-10";
 
 /**
  * The current terms-of-use version, as the ISO date of the last substantive
@@ -68,6 +68,15 @@ export interface LegalProcessors {
    * unset. Same caveat as `mail`: set it whenever S3_ENDPOINT is not your own.
    */
   storage: string | null;
+  /**
+   * External NSFW classification service, or null when
+   * LEGAL_CLASSIFIER_PROCESSOR is unset. Unlike `mail` and `storage`, unset
+   * has no "self-hosted" claim to make: `NSFW_MODE=off` (the default) and
+   * `=local` never send the image anywhere, so the page simply omits the
+   * paragraph instead of asserting self-operation. Set this whenever
+   * `NSFW_MODE=external` names a real service.
+   */
+  classifier: string | null;
 }
 
 export interface LegalInstance {
@@ -162,6 +171,7 @@ export function legalProcessors(env: Env = process.env): LegalProcessors {
   return {
     mail: text(env.LEGAL_MAIL_PROCESSOR),
     storage: text(env.LEGAL_STORAGE_PROCESSOR),
+    classifier: text(env.LEGAL_CLASSIFIER_PROCESSOR),
   };
 }
 

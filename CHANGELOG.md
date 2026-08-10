@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Optional NSFW classification of uploaded images (`NSFW_MODE`, off by
+  default). In `local` mode the score covers gore as well as explicit content —
+  the model reports them as separate classes and both count, so a violent image
+  is held even though its explicit score is low. A flagged image still uploads,
+  but the puzzle is created private
+  and appears in the admin review queue instead of being published, and its
+  owner cannot publish it themselves until an admin has resolved the entry.
+  Every admin is emailed about it, as for a user report, but with wording that
+  does not claim a person reported it;
+  a classifier that fails or times out is treated the same way, as is an
+  image whose classification result is no longer on file — because the upload
+  sat unclaimed for more than a week, or because the image is being re-used and
+  the puzzles that already use it are all private. An image a public puzzle
+  already shows is published as before. The uploader is told their puzzle is
+  awaiting review. A classifier that was switched on but cannot run — an
+  unknown `NSFW_MODE`, or `external` without its credentials — also holds
+  uploads rather than quietly publishing them unchecked; leaving `NSFW_MODE`
+  unset or `off` keeps publishing them as before. Operators can run a local
+  model or
+  an external service — the latter is an Art. 28 processor, name it in
+  `LEGAL_CLASSIFIER_PROCESSOR` so the privacy policy discloses it, see
+  `docs/data-processors.md`. (#23)
 - Logged-in users can download their own data from *Meine Puzzles* (GDPR
   Art. 15, and Art. 20 portability): account fields and every puzzle's
   metadata as one JSON file. Images are referenced by URL rather than
@@ -85,7 +107,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled therefore keeps its promise from the privacy policy too, and issuing
   a token no longer means a table-wide delete. `/api/health/ready` reports
   `"retention": "stale"` if several sweeps in a row fail, so a sweep that has
-  quietly stopped working is visible without reading the log. (#44)
+  quietly stopped working is visible without reading the log — covering the
+  cleanup of orphaned classification verdicts too, which runs independently of
+  the token sweep rather than being skipped when that one fails. (#44, #23)
 - The privacy policy no longer says that an expired, never-redeemed link is
   kept until the account is deleted — it is now removed automatically, and the
   two paragraphs that described the old behaviour say so. (#20)

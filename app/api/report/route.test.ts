@@ -24,7 +24,13 @@ vi.mock("@/lib/db", () => ({
     user: { findMany: userFindMany },
   },
 }));
-vi.mock("@/lib/mail", () => ({ sendReportNotification: sendReportNotificationMock }));
+// Both, because the route now notifies through lib/report-notify, which picks
+// the wording from the report's origin. A user report must still take the
+// sendReportNotification branch — that is what the assertions below pin.
+vi.mock("@/lib/mail", () => ({
+  sendReportNotification: sendReportNotificationMock,
+  sendAutoReportNotification: vi.fn(),
+}));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
 }));
@@ -107,6 +113,15 @@ describe("POST /api/report", () => {
   it("rejects a too-short message and an unknown category", async () => {
     expect((await callPost({ ...VALID, message: "short" })).status).toBe(400);
     expect((await callPost({ ...VALID, category: "SPAM" })).status).toBe(400);
+    expect(reportCreate).not.toHaveBeenCalled();
+  });
+
+  it("rejects machine-generated categories that a user cannot pick", async () => {
+    // AUTO_NSFW is valid in the database but users cannot submit it — the
+    // server writes it directly when it detects NSFW content. Accepting it
+    // from the API would let an attacker forge a machine verdict.
+    const res = await callPost({ ...VALID, category: "AUTO_NSFW" });
+    expect(res.status).toBe(400);
     expect(reportCreate).not.toHaveBeenCalled();
   });
 

@@ -54,3 +54,8 @@ next-env.d.ts
 
 # ignore local docker compose to overwrite e.g. port conflicts
 docker-compose.local.yml
+
+# The ONNX classifier model (13 MB). The Dockerfile fetches and checksums it
+# into the production image; a host copy is only for trying NSFW_MODE=local in
+# the dev stack, where the bind mount shadows the image's /app/models.
+/models/

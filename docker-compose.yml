@@ -54,8 +54,26 @@ services:
       LEGAL_PHONE: ${LEGAL_PHONE:-}
       LEGAL_MAIL_PROCESSOR: ${LEGAL_MAIL_PROCESSOR:-}
       LEGAL_STORAGE_PROCESSOR: ${LEGAL_STORAGE_PROCESSOR:-}
+      LEGAL_CLASSIFIER_PROCESSOR: ${LEGAL_CLASSIFIER_PROCESSOR:-}
       LEGAL_HOSTING_REGION: ${LEGAL_HOSTING_REGION:-}
       LEGAL_PRIVATE_SERVICE: ${LEGAL_PRIVATE_SERVICE:-}
+      # Local NSFW classification (NSFW_MODE=local): where the Dockerfile bakes
+      # the model into the production image. Templated like the rest, because a
+      # literal here silently ignores the NSFW_MODEL_PATH an operator sets in
+      # .env — and .env.example documents it as overridable.
+      NSFW_MODEL_PATH: ${NSFW_MODEL_PATH:-/app/models/nsfw.onnx}
+      # Image classification on upload — off (default) | local | external; see
+      # .env.example for what each variable does. Templated like every other
+      # operator-settable variable above rather than commented out: a literal
+      # commented line here would do nothing even after being uncommented in
+      # .env, since compose only injects variables it declares in this block.
+      # NSFW_API_KEY is a secret, so — like AUTH_SECRET, S3_SECRET_ACCESS_KEY
+      # and SMTP_PASS — it is read through ${...}, never written inline.
+      NSFW_MODE: ${NSFW_MODE:-off}
+      NSFW_THRESHOLD: ${NSFW_THRESHOLD:-0.85}
+      NSFW_TIMEOUT_MS: ${NSFW_TIMEOUT_MS:-5000}
+      NSFW_API_URL: ${NSFW_API_URL:-}
+      NSFW_API_KEY: ${NSFW_API_KEY:-}
     # start_period covers `npm run db:push`, which the container's CMD runs
     # before `next start`; docker-compose.override.yml replaces that with
     # `prisma generate` + `next dev`, which is slower, so raise it if the dev

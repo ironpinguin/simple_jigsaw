@@ -1,0 +1,117 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createExternalClassifier } from "./external";
+
+const config = {
+  mode: "external" as const,
+  threshold: 0.85,
+  timeoutMs: 5000,
+  apiUrl: "https://classifier.example/check",
+  apiKey: "secret",
+};
+
+afterEach(() => vi.unstubAllGlobals());
+
+function respondWith(init: { ok: boolean; status?: number; body?: unknown }) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: init.ok,
+      status: init.status ?? (init.ok ? 200 : 500),
+      json: async () => init.body,
+    })),
+  );
+}
+
+describe("createExternalClassifier", () => {
+  it("turns the service's score into a verdict", async () => {
+    respondWith({ ok: true, body: { score: 0.91 } });
+
+    const verdict = await createExternalClassifier(config).classify(Buffer.from("x"));
+
+    expect(verdict.label).toBe("FLAGGED");
+    expect(verdict.score).toBe(0.91);
+  });
+
+  it("judges against the configured threshold, not a baked-in one", async () => {
+    // Same score, both directions, so no literal can satisfy this — see the
+    // matching test in local.test.ts. The two modes share `labelFor` but plumb
+    // the threshold to it separately, so each needs its own.
+    respondWith({ ok: true, body: { score: 0.6 } });
+
+    const lenient = await createExternalClassifier({ ...config, threshold: 0.85 })
+      .classify(Buffer.from("x"));
+    const strict = await createExternalClassifier({ ...config, threshold: 0.5 })
+      .classify(Buffer.from("x"));
+
+    expect(lenient.label).toBe("CLEAN");
+    expect(strict.label).toBe("FLAGGED");
+  });
+
+  it("sends the key and the bytes to the configured url", async () => {
+    respondWith({ ok: true, body: { score: 0.1 } });
+
+    const imageBytes = Buffer.from([0x52, 0x49, 0x46, 0x46]); // "RIFF" header, recognizable
+    await createExternalClassifier(config).classify(imageBytes);
+
+    const [url, init] = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://classifier.example/check");
+    expect(init.headers.Authorization).toBe("Bearer secret");
+    expect(init.method).toBe("POST");
+    expect(init.headers["Content-Type"]).toBe("image/webp");
+    expect(new Uint8Array(init.body)).toEqual(new Uint8Array(imageBytes));
+  });
+
+  it("throws on a refusal, so the guard can hold the image", async () => {
+    // Not a silent CLEAN: a service that is down must not publish everything.
+    respondWith({ ok: false, status: 503 });
+
+    await expect(
+      createExternalClassifier(config).classify(Buffer.from("x")),
+    ).rejects.toThrow();
+  });
+
+  it("throws on a response without a usable score", async () => {
+    respondWith({ ok: true, body: { verdict: "probably fine" } });
+
+    await expect(
+      createExternalClassifier(config).classify(Buffer.from("x")),
+    ).rejects.toThrow();
+  });
+
+  it.each([1.5, -0.2])("throws on the out-of-range score %s instead of holding silently", async (score) => {
+    // labelFor would turn this into UNKNOWN, which holds the image — safe, but
+    // wordless. A service answering 1.5 to everything would then queue every
+    // upload with nothing in the log to explain it. Throwing puts it through
+    // the guard's console.error like every other classifier failure.
+    respondWith({ ok: true, body: { score } });
+
+    await expect(
+      createExternalClassifier(config).classify(Buffer.from("x")),
+    ).rejects.toThrow(String(score));
+  });
+
+  it("gives the request its own deadline, so a hang does not outlive the answer", async () => {
+    // The guard's timeout only stops waiting for the promise; without a signal
+    // the request itself keeps a socket and this request's context alive for
+    // however long the service takes.
+    const signals: (AbortSignal | undefined)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: { signal?: AbortSignal }) => {
+        signals.push(init.signal);
+        return { ok: true, status: 200, json: async () => ({ score: 0.1 }) };
+      }),
+    );
+
+    await createExternalClassifier({ ...config, timeoutMs: 5 }).classify(Buffer.from("x"));
+
+    const signal = signals[0];
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(false);
+
+    // Past the configured budget the signal fires on its own — it is wired to
+    // timeoutMs, not merely present.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(signal?.aborted).toBe(true);
+  });
+});

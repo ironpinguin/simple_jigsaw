@@ -68,7 +68,7 @@ export default function CreateForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t("createFailed"));
 
-      router.push(`/puzzle/${data.id}`);
+      router.push(data.pendingReview ? `/puzzle/${data.id}?review=1` : `/puzzle/${data.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("genericFail"));
       setBusy(false);

@@ -136,7 +136,7 @@ describe("operator completeness", () => {
 
 describe("legal processors", () => {
   it("reports no external processor when nothing is declared", () => {
-    expect(legalProcessors({})).toEqual({ mail: null, storage: null });
+    expect(legalProcessors({})).toEqual({ mail: null, storage: null, classifier: null });
   });
 
   it("names declared processors", () => {
@@ -144,8 +144,21 @@ describe("legal processors", () => {
       legalProcessors({
         LEGAL_MAIL_PROCESSOR: " Example Mail GmbH ",
         LEGAL_STORAGE_PROCESSOR: "Example Storage",
+        LEGAL_CLASSIFIER_PROCESSOR: "Example Classifier Inc.",
       }),
-    ).toEqual({ mail: "Example Mail GmbH", storage: "Example Storage" });
+    ).toEqual({
+      mail: "Example Mail GmbH",
+      storage: "Example Storage",
+      classifier: "Example Classifier Inc.",
+    });
+  });
+
+  it("names a declared classifier processor on its own", () => {
+    // NSFW_MODE=external is the only mode where this variable matters, and it
+    // can be set independently of the mail/storage processors.
+    expect(legalProcessors({ LEGAL_CLASSIFIER_PROCESSOR: " Example Classifier Inc. " }).classifier).toBe(
+      "Example Classifier Inc.",
+    );
   });
 });
 

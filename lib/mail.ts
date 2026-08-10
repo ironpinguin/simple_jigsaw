@@ -110,6 +110,37 @@ export async function sendReportNotification(
   });
 }
 
+/**
+ * The machine counterpart to sendReportNotification, with its own subject and
+ * intro rather than reusing that one's.
+ *
+ * `reportSubject`/`reportIntro` say the puzzle "was reported", and /api/puzzles
+ * files this finding with no reporter at all — deliberately, because putting a
+ * person's name on a judgement nobody made is worse than an extra string. Same
+ * reasoning as takedownIntroNoReport below. `reportAction` is shared: both
+ * point the admin at the same queue.
+ */
+export async function sendAutoReportNotification(
+  to: string,
+  puzzleTitle: string,
+  category: ReportCategory,
+  locale?: string,
+): Promise<void> {
+  const loc = resolveLocale(locale);
+  const t = await getTranslations({ locale: loc, namespace: "email" });
+  const url = `${appUrl()}/${loc}/admin/reports`;
+  const categoryLabel = t(`category${category}`);
+  const text = t("autoReportIntro", { title: puzzleTitle, category: categoryLabel });
+  const html = t("autoReportIntro", { title: escapeHtml(puzzleTitle), category: categoryLabel });
+  await transport().sendMail({
+    from: FROM,
+    to,
+    subject: t("autoReportSubject"),
+    text: `${text}\n\n${t("reportAction")}\n${url}`,
+    html: `<p>${html}</p><p>${t("reportAction")}</p><p><a href="${url}">${url}</a></p>`,
+  });
+}
+
 // category null = no canonical reported category exists (takedown without an
 // open report): the notice then cites a review instead of inventing a reason.
 export async function sendTakedownNotice(

@@ -4,6 +4,8 @@ import sharp from "sharp";
 import { getSessionUser } from "@/lib/auth";
 import { putObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
+import { prisma } from "@/lib/db";
+import { getClassifier } from "@/lib/nsfw";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_BYTES = 15 * 1024 * 1024; // 15 MB upload cap
@@ -47,7 +49,35 @@ export async function POST(request: Request) {
   }
 
   const imageKey = `puzzles/${randomUUID()}.webp`;
+
+  // Judge the re-encoded bytes, before they are stored: what gets served is
+  // what gets judged. The guard in lib/nsfw turns any failure into UNKNOWN,
+  // so this never throws and never blocks the upload.
+  const verdict = await getClassifier().classify(output);
+
   await putObject(imageKey, output, "image/webp");
 
+  try {
+    await prisma.imageVerdict.create({
+      data: {
+        imageKey,
+        label: verdict.label,
+        score: verdict.score,
+        model: verdict.model,
+      },
+    });
+  } catch (error) {
+    // The bytes are already stored, so failing here would lose an image that
+    // exists — preferred over a 500 on an upload that otherwise worked. The
+    // image is not waved through: /api/puzzles only reads a missing verdict as
+    // clean for a key a public puzzle already references, and at this point
+    // in the upload the key has no reference at all, so claiming it holds the
+    // puzzle for review instead (except with classification off, where
+    // nothing is judged in the first place).
+    console.error(`[nsfw] could not record the verdict for ${imageKey}:`, error);
+  }
+
+  // The verdict is deliberately absent from the response: a client that learns
+  // the score learns the threshold.
   return NextResponse.json({ imageKey, width, height }, { status: 201 });
 }

@@ -30,6 +30,13 @@ export default defineConfig({
         extends: true,
         test: { name: "api", environment: "node", include: ["app/api/**/*.test.ts"] },
       },
+      {
+        // Server Components under app/[locale] are plain async functions —
+        // same node/mock style as the api project, just a different route
+        // under app/ that wasn't covered by any existing glob.
+        extends: true,
+        test: { name: "pages", environment: "node", include: ["app/[locale]/**/*.test.tsx"] },
+      },
     ],
   },
 });
