@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-10
+
 ### Added
 - Optional NSFW classification of uploaded images (`NSFW_MODE`, off by
   default). In `local` mode the score covers gore as well as explicit content —
@@ -339,7 +341,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.5.0...main
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.6.0...main
+[0.6.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.6.0
 [0.5.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.4.0
 [0.3.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.3.0
