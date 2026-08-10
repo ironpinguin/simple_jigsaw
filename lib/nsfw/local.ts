@@ -9,12 +9,14 @@ import { labelFor } from "./verdict";
 const MODEL_ID = "local:image-safety-classifier-xs@54f4560";
 
 const MODEL_INPUT_SIZE = 224;
-// Class order is fixed by the model's own config.json (pretrained_cfg.label_names);
-// index 1 (NSFW) is the explicit-content score this module returns.
-const NSFW_CLASS_INDEX = 1;
 // The head this module was written against: [NSFL, NSFW, SFW], under this name.
+// Class order is fixed by the model's own config.json (pretrained_cfg.label_names).
 const MODEL_OUTPUT_NAME = "probabilities";
 const EXPECTED_CLASS_COUNT = 3;
+// Both classes that mean "do not publish this". NSFL is gore and violence, NSFW
+// is explicit content; the score this module returns is the probability the
+// image is either, which is what the threshold is compared against.
+const UNSAFE_CLASS_INDICES = [0, 1] as const;
 
 /** Returns the probability that `bytes` is explicit, in 0..1. */
 type Score = (bytes: Buffer) => Promise<number>;
@@ -109,17 +111,39 @@ function scoreFrom(outputs: Record<string, { data: ArrayLike<unknown> } | undefi
     );
   }
 
-  const value = data[NSFW_CLASS_INDEX];
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`model returned ${String(value)}, not a usable score`);
-  }
-  if (value < 0 || value > 1) {
-    throw new Error(
-      `model returned a score outside 0..1: ${value} — logits rather than probabilities?`,
-    );
+  // Both unsafe classes, not just NSFW. The head is soft-maxed across three
+  // classes, so a pure-gore image puts its mass on NSFL and leaves NSFW *low*:
+  // reading index 1 alone scored [0.9, 0.05, 0.05] as 0.05 and published it.
+  // A moderation feature that ships past gore is not doing the job.
+  //
+  // Added rather than maxed, because the two are alternatives and the question
+  // is whether the image is unsafe at all: on [0.5, 0.45, 0.05] the model is
+  // 95% sure it is one or the other and only unsure which, and `max` would read
+  // 0.5 and publish it. Equivalent to 1 - SFW, written as the sum so the two
+  // indices that matter are the ones named.
+  //
+  // Every class is validated, not only the ones summed, because an implausible
+  // SFW value means the same broken model as an implausible NSFL one.
+  let unsafe = 0;
+  for (let index = 0; index < EXPECTED_CLASS_COUNT; index++) {
+    const value = data[index];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new Error(`model returned ${String(value)} for class ${index}, not a usable score`);
+    }
+    if (value < 0 || value > 1) {
+      throw new Error(
+        `model returned a class ${index} score outside 0..1: ${value} ` +
+          "— logits rather than probabilities?",
+      );
+    }
+    if ((UNSAFE_CLASS_INDICES as readonly number[]).includes(index)) unsafe += value;
   }
 
-  return value;
+  // float32 soft-max does not sum to exactly 1, so the unsafe half can land a
+  // hair over it. Clamping keeps a legitimate answer out of labelFor's range
+  // check, which would otherwise hold an ordinary image as UNKNOWN. Only the
+  // rounding error is absorbed: a genuinely out-of-range class threw above.
+  return Math.min(1, unsafe);
 }
 
 let sessionPromise: Promise<InferenceSession> | undefined;

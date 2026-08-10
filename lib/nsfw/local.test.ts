@@ -144,7 +144,7 @@ describe("the session cache", () => {
     );
     const verdict = await roomy.classify(bytes);
 
-    expect(verdict.score).toBe(0.2);
+    expect(verdict.score).toBeCloseTo(0.3, 5);
     expect(loadSession).toHaveBeenCalledTimes(2);
   }, 2000);
 
@@ -161,7 +161,7 @@ describe("the session cache", () => {
     await expect(classifier.classify(bytes)).rejects.toThrow("disk hiccup");
     const verdict = await classifier.classify(bytes);
 
-    expect(verdict.score).toBe(0.2);
+    expect(verdict.score).toBeCloseTo(0.3, 5);
     expect(loadSession).toHaveBeenCalledTimes(2);
   });
 });
@@ -213,7 +213,7 @@ describe("the inference budget", () => {
 
     const verdict = await classifier.classify(bytes);
 
-    expect(verdict.score).toBe(0.2);
+    expect(verdict.score).toBeCloseTo(0.3, 5);
     expect(session.run).toHaveBeenCalledTimes(1);
   });
 });
@@ -240,6 +240,70 @@ describe("the model's output", () => {
     })) as unknown as LoadSession;
     return createLocalClassifier(config, undefined, loadSession).classify(bytes);
   }
+
+  it("holds gore that the NSFW class alone calls clean", async () => {
+    // The gap this closes. The head is [NSFL, NSFW, SFW] and soft-maxed, so a
+    // pure-gore image puts its mass on NSFL and leaves NSFW *low*: reading
+    // index 1 alone scored this 0.05 and published it. Both unsafe classes
+    // count now — a moderation feature that ships past gore is not doing the
+    // job the issue asked for.
+    const verdict = await classifyWith({ probabilities: { data: [0.9, 0.05, 0.05] } });
+
+    expect(verdict.label).toBe("FLAGGED");
+    expect(verdict.score).toBeCloseTo(0.95, 5);
+  });
+
+  it("adds the unsafe classes rather than taking the larger one", async () => {
+    // Split evidence: the model is 95% sure the image is unsafe and only
+    // unsure which kind. `max` would read 0.5 and publish it at the default
+    // threshold; the sum is the probability that actually matters.
+    const verdict = await classifyWith({ probabilities: { data: [0.5, 0.45, 0.05] } });
+
+    expect(verdict.label).toBe("FLAGGED");
+    expect(verdict.score).toBeCloseTo(0.95, 5);
+  });
+
+  it("still publishes an image the model calls safe", async () => {
+    // The other direction, so the change above cannot be satisfied by holding
+    // everything: a confident SFW answer must stay CLEAN.
+    const verdict = await classifyWith({ probabilities: { data: [0.01, 0.02, 0.97] } });
+
+    expect(verdict.label).toBe("CLEAN");
+    expect(verdict.score).toBeCloseTo(0.03, 5);
+  });
+
+  // NSFL is load-bearing now, so a broken value there has to be as loud as a
+  // broken NSFW one. Before, index 0 was never looked at. One case per test:
+  // the session is cached module-wide, so a second classify() inside the same
+  // test would be answered by the first test case's fake session.
+  it("rejects a non-numeric NSFL score, not only a non-numeric NSFW one", async () => {
+    await expect(
+      classifyWith({ probabilities: { data: [Number.NaN, 0.02, 0.97] } }),
+    ).rejects.toThrow(/class 0, not a usable score/);
+  });
+
+  it("rejects an out-of-range NSFL score", async () => {
+    await expect(classifyWith({ probabilities: { data: [1.4, 0.02, 0.97] } })).rejects.toThrow(
+      /class 0 score outside 0\.\.1/,
+    );
+  });
+
+  it("rejects an implausible SFW score too, though it is not summed", async () => {
+    // Same broken model, and the sum would silently look fine.
+    await expect(classifyWith({ probabilities: { data: [0.01, 0.02, 4.2] } })).rejects.toThrow(
+      /class 2 score outside 0\.\.1/,
+    );
+  });
+
+  it("clamps a sum that floats just past 1 instead of refusing it", async () => {
+    // float32 soft-max does not sum to exactly 1. Without the clamp the range
+    // check would throw on a legitimate answer, and the guard would hold a
+    // perfectly ordinary image as UNKNOWN.
+    const verdict = await classifyWith({ probabilities: { data: [0.5, 0.5000001, 0] } });
+
+    expect(verdict.score).toBe(1);
+    expect(verdict.label).toBe("FLAGGED");
+  });
 
   it("rejects a head with the wrong number of classes", async () => {
     // The quiet catastrophe: a 2-class [NSFW, SFW] head makes index 1 the
@@ -280,15 +344,20 @@ describe("the model's output", () => {
   it("accepts the shape the real model produces", async () => {
     const verdict = await classifyWith({ probabilities: { data: [0.1, 0.2, 0.7] } });
 
-    expect(verdict.score).toBe(0.2);
+    expect(verdict.score).toBeCloseTo(0.3, 5);
   });
 
-  it.each([0, 1])("accepts the boundary probability %s", async (score) => {
+  it.each([
+    { data: [0, 0, 1], expected: 0, what: "wholly safe" },
+    { data: [1, 0, 0], expected: 1, what: "wholly NSFL" },
+    { data: [0, 1, 0], expected: 1, what: "wholly NSFW" },
+  ])("accepts the boundary case: $what", async ({ data, expected }) => {
     // labelFor deliberately accepts both ends, so the range check must not be
-    // stricter than the thing it is protecting.
-    const verdict = await classifyWith({ probabilities: { data: [0.1, score, 0.7] } });
+    // stricter than the thing it is protecting — at either end of the combined
+    // score, not just of a single class.
+    const verdict = await classifyWith({ probabilities: { data } });
 
-    expect(verdict.score).toBe(score);
+    expect(verdict.score).toBe(expected);
   });
 });
 
@@ -369,11 +438,15 @@ describe("the input tensor", () => {
     expect(data[3 * plane - 1]).toBe(raw[lastPixel * 3 + 2]);
   });
 
-  it("reads the NSFW class from the output, not NSFL or SFW", async () => {
+  it("combines the two unsafe classes and excludes SFW", async () => {
     // `probabilities` is [NSFL, NSFW, SFW], fixed by the model's own
-    // config.json (pretrained_cfg.label_names). Index 0 or 2 would still be a
-    // plausible-looking probability while measuring something else entirely —
-    // SFW in particular is near 1 for exactly the images that must be held.
+    // config.json (pretrained_cfg.label_names). The index the score comes from
+    // is the whole ballgame: SFW is near 1 for exactly the images that must be
+    // held, so reading index 2 would invert the feature, and reading index 1
+    // alone — what this did originally — publishes gore.
+    //
+    // 0.11 + 0.22 = 0.33, which is none of the three individual values, so this
+    // fails for any single-index implementation as well as for SFW.
     const { createLocalClassifier } = await import("./local");
     const session = fakeSession([0.11, 0.22, 0.67]);
     const classifier = createLocalClassifier(
@@ -384,6 +457,6 @@ describe("the input tensor", () => {
 
     const verdict = await classifier.classify(await tinyImage());
 
-    expect(verdict.score).toBe(0.22);
+    expect(verdict.score).toBeCloseTo(0.33, 5);
   });
 });

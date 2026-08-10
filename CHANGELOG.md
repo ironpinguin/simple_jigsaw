@@ -9,7 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Optional NSFW classification of uploaded images (`NSFW_MODE`, off by
-  default). A flagged image still uploads, but the puzzle is created private
+  default). In `local` mode the score covers gore as well as explicit content —
+  the model reports them as separate classes and both count, so a violent image
+  is held even though its explicit score is low. A flagged image still uploads,
+  but the puzzle is created private
   and appears in the admin review queue instead of being published, and its
   owner cannot publish it themselves until an admin has resolved the entry.
   Every admin is emailed about it, as for a user report, but with wording that

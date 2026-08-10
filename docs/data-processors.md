@@ -72,6 +72,68 @@ model in the app process (`NSFW_MODEL_PATH`) — in both cases the image never
 leaves for this purpose, regardless of where object storage or mail happen to
 be.
 
+#### The endpoint contract
+
+`external` speaks a deliberately small HTTP contract of this repo's own, so that
+what a processor receives is exactly one thing and easy to state in the Art. 30
+record. Per upload, `lib/nsfw/external.ts` sends:
+
+```http
+POST <NSFW_API_URL>
+Authorization: Bearer <NSFW_API_KEY>
+Content-Type: image/webp
+
+<the re-encoded WebP bytes, as the raw body — no multipart, no JSON envelope>
+```
+
+and expects, on `200`:
+
+```json
+{ "score": 0.07 }
+```
+
+`score` is the probability that the image is unsafe, `0..1`, compared against
+`NSFW_THRESHOLD`. Nothing else in the body is read, so a service may return more
+fields. Anything that is not a usable answer — a non-2xx status, a missing or
+non-numeric `score`, a number outside `0..1` — is treated as a classifier
+failure: it is logged, the verdict becomes `UNKNOWN`, and the puzzle is held for
+review rather than published. The request carries its own timeout
+(`NSFW_TIMEOUT_MS`), and a timeout is handled the same way.
+
+**This is not any vendor's API.** Commercial moderation services take their own
+request shapes — multipart, base64, or a reference to an object you upload first
+— authenticate their own way, and answer with a set of per-category labels
+rather than one number. Pointing `NSFW_API_URL` straight at one will produce a
+non-2xx or an unreadable body, which fails closed: every upload held, nothing
+published. Two workable shapes:
+
+- **Your own inference endpoint**, which is what the contract is sized for — the
+  same ONNX model `local` uses, or a larger one, behind whatever runtime you
+  like. Nothing leaves your infrastructure and no Art. 28 processor is involved,
+  so `LEGAL_CLASSIFIER_PROCESSOR` stays empty.
+- **A thin adapter in front of a commercial service**, translating this contract
+  into theirs and collapsing their label set into one `score`. The processor you
+  name in `LEGAL_CLASSIFIER_PROCESSOR` is then the *upstream service*, not your
+  adapter, because that is who actually receives the image.
+
+A minimal compatible endpoint is about as long as its own error handling:
+
+```js
+// POST /classify — Express; reads the raw body, answers one number.
+app.post("/classify", express.raw({ type: "image/webp", limit: "15mb" }), async (req, res) => {
+  if (req.get("authorization") !== `Bearer ${process.env.SHARED_KEY}`) {
+    return res.sendStatus(401);
+  }
+  try {
+    res.json({ score: await scoreTheImage(req.body) }); // 0..1
+  } catch {
+    // 500 rather than a guessed score: the caller holds the image for review,
+    // which is the safe direction. Answering 0 would publish it.
+    res.sendStatus(500);
+  }
+});
+```
+
 ## What deliberately does *not* leave the instance
 
 Worth writing down, because these are the ones an auditor asks about and a

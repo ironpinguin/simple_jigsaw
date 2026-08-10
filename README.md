@@ -127,10 +127,13 @@ auf die öffentliche URL, und `ADMIN_EMAILS` passend wählen.
 
 - **Bildklassifizierung (NSFW)**: optional und standardmäßig aus
   (`NSFW_MODE=off`). `local` prüft mit einem lokalen ONNX-Modell im Container
-  (`NSFW_MODEL_PATH`), `external` schickt jedes hochgeladene Bild an einen
-  Dienst unter `NSFW_API_URL`/`NSFW_API_KEY` — das macht ihn zu einem
-  Auftragsverarbeiter, siehe [docs/data-processors.md](docs/data-processors.md).
-  Ein als möglicherweise explizit erkanntes oder nicht klassifizierbares Bild wird
+  (`NSFW_MODEL_PATH`) — bewertet werden dabei explizite *und* Gewaltdarstellungen,
+  die das Modell getrennt ausweist. `external` schickt jedes hochgeladene Bild an
+  einen Dienst unter `NSFW_API_URL`/`NSFW_API_KEY` — das macht ihn zu einem
+  Auftragsverarbeiter, siehe [docs/data-processors.md](docs/data-processors.md),
+  wo auch der erwartete HTTP-Kontrakt steht (der Dienst muss ihn sprechen; die
+  APIs kommerzieller Anbieter tun das nicht ohne Adapter davor).
+  Ein als möglicherweise problematisch erkanntes oder nicht klassifizierbares Bild wird
   trotzdem gespeichert, das Puzzle bleibt aber privat, landet in der
   Admin-Warteschlange und kann von der hochladenden Person nicht selbst
   veröffentlicht werden, bis ein Admin die Meldung entschieden hat; sie wird
