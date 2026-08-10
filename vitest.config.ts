@@ -16,7 +16,17 @@ export default defineConfig({
     projects: [
       {
         extends: true,
-        test: { name: "lib", environment: "node", include: ["lib/**/*.test.ts"] },
+        test: {
+          name: "lib",
+          environment: "node",
+          // Deliberately not UTC. CI runners are UTC, and a helper that formats
+          // dates in the *runtime's* zone is indistinguishable from one that
+          // pins UTC when the runtime already is UTC — which is how the
+          // hydration bug in #38 stayed invisible to a green suite. Anything
+          // that leans on the ambient zone now fails here first.
+          env: { TZ: "America/New_York" },
+          include: ["lib/**/*.test.ts"],
+        },
       },
       {
         extends: true,

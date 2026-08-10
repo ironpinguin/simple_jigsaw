@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { formatDateUtc } from "@/lib/dates";
 
 export interface UserRow {
   id: string;
@@ -303,7 +304,7 @@ export default function UsersAdmin({
                       ? t("statusUnverified")
                       : t("statusInvited")}
                 </td>
-                <td className="muted">{new Date(u.createdAt).toLocaleDateString(locale)}</td>
+                <td className="muted">{formatDateUtc(u.createdAt, locale)}</td>
                 <td>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
