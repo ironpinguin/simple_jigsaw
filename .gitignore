@@ -51,3 +51,6 @@ next-env.d.ts
 
 # Kubernetes example — filled-in secrets, never committed
 /deploy/kubernetes/secret.yaml
+
+# ignore local docker compose to overwrite e.g. port conflicts
+docker-compose.local.yml
