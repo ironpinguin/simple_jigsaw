@@ -95,22 +95,30 @@ export default async function PrivacyPage({
           : t("recipientsMailSelf")}
       </p>
       {/* recipientsStorageSelf asserts images reach no third party at all —
-          true only when there is also no named classifier. With one named,
-          the very next paragraph says the opposite, so the self-hosted
-          variant has to drop that clause rather than merely add to it: two
-          adjacent paragraphs making opposite claims about the same images
-          would make the older sentence the false one. */}
+          true only when there is also no classifier route. Gating on
+          `processors.classifier` alone left two false-statement directions
+          open: NSFW_MODE=external with the legal variable left unset would
+          still print the exclusivity claim while every upload actually
+          leaves, and the legal variable set with NSFW_MODE=off/local would
+          drop the (still true) claim and imply a transfer that never
+          happens. Checking both keeps every combination truthful — the
+          claim is dropped whenever either variable suggests a third party is
+          or might be involved, and the classifier paragraph below only
+          names one when both agree it is real. */}
       <p>
         {processors.storage
           ? t("recipientsStorageExternal", { provider: processors.storage })
-          : processors.classifier
+          : processors.classifier || nsfw.mode === "external"
             ? t("recipientsStorageSelfClassified")
             : t("recipientsStorageSelf")}
       </p>
       {/* Unlike mail/storage there is no "self-hosted" half: off and local
           never send the image anywhere, so an unset processor means nothing
-          to disclose rather than a claim to make. */}
-      {processors.classifier && (
+          to disclose rather than a claim to make. Requiring both conditions
+          (not just a named processor) means a stray LEGAL_CLASSIFIER_PROCESSOR
+          left over from a mode change never claims a transfer that mode=off
+          or =local no longer makes. */}
+      {processors.classifier && nsfw.mode === "external" && (
         <p>{t("recipientsClassifierExternal", { provider: processors.classifier })}</p>
       )}
       <p>{t("recipientsOther")}</p>
