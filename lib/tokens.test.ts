@@ -14,7 +14,7 @@ vi.mock("./db", () => ({
 }));
 vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
 
-import { consumeToken, createToken, tokenClaimStatus } from "./tokens";
+import { consumeToken, createToken, revokeTokens, tokenClaimStatus } from "./tokens";
 import { tokenExpiry } from "./token-ttl";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
@@ -77,6 +77,28 @@ describe("createToken", () => {
     await createToken("user-1", "EMAIL_VERIFY");
 
     expect(maybePurge).toHaveBeenCalledWith(NOW);
+  });
+});
+
+describe("revokeTokens", () => {
+  it("deletes only that user's tokens of that kind, and reports how many", async () => {
+    // Scoped both ways on purpose, and neither guarantee is visible any other
+    // way: without `type` a caller superseding one kind of link would silently
+    // take out the user's other kinds too, and without `userId` it would take out
+    // every user's. The count is what tells a caller how many live links it just
+    // destroyed.
+    deleteMany.mockResolvedValue({ count: 2 });
+
+    await expect(revokeTokens("user-1", "INVITE")).resolves.toBe(2);
+    expect(deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1", type: "INVITE" } });
+  });
+
+  it("lets a failure through to the caller", async () => {
+    // Unlike a claim, this one has somebody to report to: the admin route turns
+    // it into a translated error rather than sending a second live link.
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await expect(revokeTokens("user-1", "INVITE")).rejects.toThrow("permission denied");
   });
 });
 
