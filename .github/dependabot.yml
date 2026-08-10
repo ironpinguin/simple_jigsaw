@@ -2,9 +2,10 @@
 # exists: three of the advisories closed in 0.5.0 sat in transitive dependencies
 # where nothing would have surfaced them without an alert.
 #
-# Everything is grouped and weekly on purpose — the quality gates (lint · test ·
+# Weekly, and grouped where grouping helps — the quality gates (lint · test ·
 # build · sast) run on every one of these PRs, so a daily ungrouped schedule
-# would spend more CI time than the updates are worth.
+# would spend more CI time than the updates are worth. Majors are the exception
+# and get their own PR each; see the npm block.
 version: 2
 updates:
   # ---------------------------------------------------------------------------
@@ -13,17 +14,24 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Doubles as the throttle on ungrouped majors: they queue rather than all
+    # opening at once, and the next one appears as one is merged or closed.
     open-pull-requests-limit: 5
     groups:
       # Patch and minor bumps are the boring majority; one PR a week for the lot
       # keeps them reviewable together and keeps the lockfile churn in one place.
       minor-and-patch:
         update-types: [minor, patch]
-      # Majors land on their own — Next.js, Prisma and Auth.js majors have
-      # migration notes, and reviewing one of those next to twelve patch bumps
-      # is how a breaking change gets waved through.
-      major:
-        update-types: [major]
+      # Majors are deliberately NOT grouped. Anything left out of a group gets
+      # its own pull request, which is what we want here: Next.js, Prisma and
+      # Auth.js majors carry migration notes, and they need to be reviewed —
+      # and revertable — one at a time.
+      #
+      # An earlier revision did group them, on the theory that it kept a
+      # breaking change from being waved through next to twelve patch bumps.
+      # The first run disproved it: thirteen accumulated majors arrived as a
+      # single PR (#61), which is not reviewable at all. Grouping majors only
+      # looks tidy while there are none pending.
     labels: [dependencies]
 
   # ---------------------------------------------------------------------------
