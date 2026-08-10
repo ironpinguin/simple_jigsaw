@@ -73,10 +73,11 @@ export async function purgeExpiredTokens(now: number = Date.now()): Promise<numb
  * A week, far more than the minutes a create form takes, because deleting one
  * early is not free: /api/puzzles holds a key whose verdict has vanished for
  * review rather than publishing it (that is what stops a flagged upload being
- * laundered by outwaiting this sweep), so an honest user who uploads, leaves
- * the tab open over a long weekend and submits on Monday would land in the
- * moderation queue. Each row is a handful of bytes and only genuine orphans
- * are ever swept, so a generous window costs nothing and spares that user.
+ * laundered by outwaiting this sweep), so an API client that uploads well
+ * before it creates the puzzle — or retries a create after an earlier attempt
+ * failed — would land in the moderation queue even though its image passed
+ * cleanly. Each row is a handful of bytes and only genuine orphans are ever
+ * swept, so a generous window costs nothing and spares that caller.
  */
 export const VERDICT_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
