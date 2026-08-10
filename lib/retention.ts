@@ -184,9 +184,13 @@ export async function maybePurgeExpiredTokens(
     // of it beyond the absence of an error.
     if (count > 0) console.info(`[retention] deleted ${count} expired token(s)`);
 
-    // Housekeeping, not the promise the privacy policy makes: its failure is
-    // logged and swallowed here so it can never turn a successful token purge
-    // into a null, or throw past this function's no-throw contract.
+    // Subordinate to the token purge, not unimportant: the privacy policy now
+    // promises this deletion too (legal.retentionText), and this is the only
+    // code path that ever removes an ImageVerdict row. Its failure is logged
+    // and swallowed here so it can never turn a successful token purge into a
+    // null, or throw past this function's no-throw contract — but that also
+    // means it stays out of `state.failures`, so a verdict sweep failing every
+    // hour leaves /api/health/ready green. Worth wiring into retentionStatus.
     try {
       const orphans = await purgeOrphanedVerdicts(now);
       if (orphans > 0) console.info(`[retention] deleted ${orphans} unclaimed image verdict(s)`);

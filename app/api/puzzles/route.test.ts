@@ -332,6 +332,25 @@ describe("automatic moderation", () => {
     expect(message).toContain("unknown");
   });
 
+  it("holds an unclaimed key with no verdict when external classification is misconfigured", async () => {
+    // The composition the two rules either side of this one used to miss.
+    // `external` without credentials is degraded to `unavailable`, not to
+    // `off`, precisely so this carve-out stays shut: an instance that lost its
+    // API key would otherwise both score every upload CLEAN *and* publish
+    // every key whose verdict the sweep already took.
+    vi.stubEnv("NSFW_MODE", "external"); // no NSFW_API_URL, no NSFW_API_KEY
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    verdictFindUnique.mockResolvedValue(null);
+    puzzleFindMany.mockResolvedValue([]);
+
+    const res = await callPost({ ...BODY, isPublic: true });
+
+    expect(txCreate.mock.calls[0][0].data.isPublic).toBe(false);
+    expect(txReportCreate).toHaveBeenCalled();
+    await expect(res.json()).resolves.toEqual({ id: "p1", pendingReview: true });
+    warned.mockRestore();
+  });
+
   it("keeps publishing an unclaimed key with no verdict when classification is off", async () => {
     // Nothing is judged in `off` mode, so holding here would hold every
     // upload on an instance that deliberately runs without a classifier.

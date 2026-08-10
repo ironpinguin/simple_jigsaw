@@ -160,7 +160,10 @@ describe("classification", () => {
 
   it("still stores the image when writing the verdict fails", async () => {
     // The bytes are already in storage; failing the upload now would lose an
-    // image that exists. /api/puzzles treats a missing row as clean.
+    // image that exists. The image is not waved through either: /api/puzzles
+    // only reads a missing row as clean for a key a public puzzle already
+    // references, and this key has no reference at all yet, so claiming it
+    // holds the puzzle for review.
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     verdictCreate.mockRejectedValue(new Error("db down"));
 

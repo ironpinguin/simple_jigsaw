@@ -6,6 +6,19 @@ describe("readNsfwConfig", () => {
     expect(readNsfwConfig({}).mode).toBe("off");
   });
 
+  it("stays off for an operator who never asked for classification", () => {
+    // The distinction that makes `unavailable` below safe: unset, empty and an
+    // explicit `off` are all "no classifier wanted", and must never hold an
+    // upload. An empty value is worth pinning because `NSFW_MODE=` is how a
+    // compose file usually says "leave this alone".
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(readNsfwConfig({ NSFW_MODE: "off" }).mode).toBe("off");
+    expect(readNsfwConfig({ NSFW_MODE: "" }).mode).toBe("off");
+    expect(readNsfwConfig({ NSFW_MODE: "   " }).mode).toBe("off");
+    expect(warned).not.toHaveBeenCalled();
+    warned.mockRestore();
+  });
+
   it("carries the defaults for threshold and timeout", () => {
     const config = readNsfwConfig({});
     expect(config.threshold).toBe(0.85);
@@ -16,20 +29,29 @@ describe("readNsfwConfig", () => {
     expect(readNsfwConfig({ NSFW_MODE: "local" }).mode).toBe("local");
   });
 
-  it("falls back to off and warns on a mode it does not know", () => {
-    // A typo must not break uploading for a feature that is optional.
+  it("becomes unavailable, not off, on a mode it does not know", () => {
+    // `NSFW_MODE=locel` is an operator who asked for classification and would
+    // silently not get it. Falling back to `off` is the one fail-open path in
+    // this feature, and it opens two holes at once: every upload scores CLEAN,
+    // and app/api/puzzles/route.ts reads a *missing* verdict as clean too.
+    // Uploading still works — `unavailable` holds images for review rather
+    // than rejecting them — so an optional feature still cannot break a POST.
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(readNsfwConfig({ NSFW_MODE: "locel" }).mode).toBe("off");
+    expect(readNsfwConfig({ NSFW_MODE: "locel" }).mode).toBe("unavailable");
     expect(warned).toHaveBeenCalled();
     warned.mockRestore();
   });
 
-  it("falls back to off and warns when external has no url or key", () => {
+  it("becomes unavailable, not off, when external has no url or key", () => {
+    // The likelier half of the same bug: a rotated secret or an unmounted
+    // variable on an instance that has classification deliberately switched
+    // on. `local` has no equivalent — a missing model fails inside classify(),
+    // where the guard already turns it into UNKNOWN.
     const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
-    expect(readNsfwConfig({ NSFW_MODE: "external" }).mode).toBe("off");
+    expect(readNsfwConfig({ NSFW_MODE: "external" }).mode).toBe("unavailable");
     expect(
       readNsfwConfig({ NSFW_MODE: "external", NSFW_API_URL: "https://x.example" }).mode,
-    ).toBe("off");
+    ).toBe("unavailable");
     expect(warned).toHaveBeenCalled();
     warned.mockRestore();
   });

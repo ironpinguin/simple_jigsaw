@@ -17,7 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sat unclaimed for more than a week, or because the image is being re-used and
   the puzzles that already use it are all private. An image a public puzzle
   already shows is published as before. The uploader is told their puzzle is
-  awaiting review. Operators can run a local model or
+  awaiting review. A classifier that was switched on but cannot run — an
+  unknown `NSFW_MODE`, or `external` without its credentials — also holds
+  uploads rather than quietly publishing them unchecked; leaving `NSFW_MODE`
+  unset or `off` keeps publishing them as before. Operators can run a local
+  model or
   an external service — the latter is an Art. 28 processor, name it in
   `LEGAL_CLASSIFIER_PROCESSOR` so the privacy policy discloses it, see
   `docs/data-processors.md`. (#23)

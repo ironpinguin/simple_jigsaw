@@ -1,9 +1,11 @@
 import type { Classifier } from "./types";
 
 /**
- * The failure policy, in exactly one place: every mode is wrapped in this, so
- * `local.ts` and `external.ts` need no error handling of their own and cannot
- * drift apart on what a failure means.
+ * The failure policy, in exactly one place: every mode that can fail is
+ * wrapped in this, so `local.ts` and `external.ts` need no error handling of
+ * their own and cannot drift apart on what a failure means. (`off` and
+ * `unavailable` are constants that cannot throw, so index.ts returns them
+ * unwrapped.)
  *
  * A timeout or a throw becomes UNKNOWN, which `requiresReview` treats like a
  * hit — the upload still succeeds, but the puzzle is held for review. Logged,

@@ -171,10 +171,12 @@ processor — so pointing `SMTP_HOST`, `S3_ENDPOINT` or `NSFW_API_URL` (with
 variable is empty publishes a false claim immediately. Nothing cross-checks
 the two; that is on the operator — though `readNsfwConfig`
 (`lib/nsfw/config.ts`) does log a warning when `NSFW_MODE=external` is set
-without a matching `LEGAL_CLASSIFIER_PROCESSOR`, the same way it already warns
-about a missing `NSFW_API_URL`/`NSFW_API_KEY`. Classification itself is not
-disabled by the missing variable — only the disclosure is missing, and that is
-a legal problem rather than a functional one.
+without a matching `LEGAL_CLASSIFIER_PROCESSOR`. It warns and nothing more:
+classification still runs, only the disclosure is missing, which is a legal
+problem rather than a functional one. That is the opposite of a missing
+`NSFW_API_URL`/`NSFW_API_KEY`, which also warns but leaves the classifier
+unable to run, so uploads are held for review instead of being published
+unchecked.
 
 **One exception to "everything is environment":** the database provider is
 baked. `Dockerfile` takes `ARG DATABASE_PROVIDER=postgresql` and the generated

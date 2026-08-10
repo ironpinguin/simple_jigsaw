@@ -73,9 +73,12 @@ export default async function PrivacyPage({
           below it is. */}
       <p>{t("imagesVerdictText")}</p>
       {/* Same wording covers local and external: both actually scan the
-          image, so a data subject needs to know either way. Only `off` skips
-          this paragraph, matching that mode's classifier never being asked
-          anything (lib/nsfw/off.ts). */}
+          image, so a data subject needs to know either way. `unavailable`
+          keeps it too — nothing is scanned there, but the paragraph's
+          operative promise to the reader is what happens to their upload, and
+          a held-for-review puzzle is exactly what they get. Only `off` skips
+          it, matching that mode's classifier never being asked anything
+          (lib/nsfw/off.ts). */}
       {nsfw.mode !== "off" && <p>{t("imagesClassificationText")}</p>}
       <p>{t("imagesPublicText")}</p>
 
@@ -96,15 +99,22 @@ export default async function PrivacyPage({
       </p>
       {/* recipientsStorageSelf asserts images reach no third party at all —
           true only when there is also no classifier route. Gating on
-          `processors.classifier` alone left two false-statement directions
-          open: NSFW_MODE=external with the legal variable left unset would
-          still print the exclusivity claim while every upload actually
-          leaves, and the legal variable set with NSFW_MODE=off/local would
-          drop the (still true) claim and imply a transfer that never
-          happens. Checking both keeps every combination truthful — the
-          claim is dropped whenever either variable suggests a third party is
-          or might be involved, and the classifier paragraph below only
-          names one when both agree it is real. */}
+          `processors.classifier` alone left a false statement open:
+          NSFW_MODE=external with the legal variable unset would still print
+          the exclusivity claim while every upload actually leaves. Adding the
+          mode closes that.
+          The two gates then err in opposite, deliberate directions. This one
+          is conservative: a stale LEGAL_CLASSIFIER_PROCESSOR left over from a
+          mode change drops a claim that is still true, omitting something
+          rather than asserting something false. The classifier paragraph
+          below is strict: it needs both, so it never names a processor that
+          is not receiving anything. Note `unavailable` (lib/nsfw/config.ts)
+          is not `external` here, and correctly so — a classifier that cannot
+          run sends no images anywhere.
+          The one combination that states nothing false but still discloses
+          too little is mode=external with the variable unset: no processor is
+          named. readNsfwConfig warns about exactly that, and
+          docs/data-processors.md documents it. */}
       <p>
         {processors.storage
           ? t("recipientsStorageExternal", { provider: processors.storage })

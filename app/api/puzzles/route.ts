@@ -75,6 +75,12 @@ export async function GET() {
  * a held image would be the rule rather than the exception. `off` still writes
  * its own CLEAN/`model: "off"` row per upload, so a missing row there really
  * does mean an image from before this feature.
+ *
+ * That carve-out reads the *effective* mode, which is why a misconfigured
+ * classifier resolves to `unavailable` rather than `off` (lib/nsfw/config.ts):
+ * an instance that asked for classification and lost its API key would
+ * otherwise both score every upload CLEAN and reopen this carve-out, in the
+ * same moment and with only a log line to show for it.
  */
 function labelWithoutVerdict(referencedByAPublicPuzzle: boolean): VerdictLabel {
   if (referencedByAPublicPuzzle) return "CLEAN";
