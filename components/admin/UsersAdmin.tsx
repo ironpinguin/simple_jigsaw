@@ -58,15 +58,37 @@ export default function UsersAdmin({
     setBusy(false);
     const data = await res.json().catch(() => ({}));
     // The invite route creates the row before it sends, so a failure can still
-    // leave one behind — refresh either way, or the account the error message
-    // tells the admin to delete is not on screen.
+    // leave one behind — refresh either way, or the account the admin is being
+    // told to invite again is not on screen to invite.
     refresh();
     if (res.ok) {
-      flash(t("inviteSent", { email: inviteEmail }), null);
+      // The same form re-invites when the address belongs to an account that
+      // never activated, so which of the two happened comes from the route.
+      flash(t(data.reinvited ? "reinviteSent" : "inviteSent", { email: inviteEmail }), null);
       setInviteEmail("");
     } else {
       flash(null, data.error || t("inviteFailed"));
     }
+  }
+
+  // Sends a fresh invite to a row that never activated, so the admin does not
+  // have to retype an address that is already on screen — or delete the account
+  // to get it back, which was the only recovery before. The previous link stops
+  // working; the route revokes it.
+  async function reinvite(u: UserRow) {
+    setBusy(true);
+    const res = await fetch("/api/admin/users/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: u.email }),
+    });
+    setBusy(false);
+    const data = await res.json().catch(() => ({}));
+    refresh();
+    flash(
+      res.ok ? t("reinviteSent", { email: u.email }) : null,
+      res.ok ? null : data.error || t("inviteFailed"),
+    );
   }
 
   async function createDirect(e: React.FormEvent) {
@@ -205,6 +227,18 @@ export default function UsersAdmin({
                     <button className="button secondary" type="button" onClick={() => toggleRole(u)}>
                       {u.role === "ADMIN" ? t("removeAdmin") : t("makeAdmin")}
                     </button>
+                    {/* Only for a row that never activated: for anyone else the
+                        route answers 409, and offering it would be a lie. */}
+                    {!u.hasPassword && (
+                      <button
+                        className="button secondary"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => reinvite(u)}
+                      >
+                        {t("reinvite")}
+                      </button>
+                    )}
                     <button
                       className="button danger"
                       type="button"

@@ -125,6 +125,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pages, which affects every page, not just the legal ones.
 
 ### Fixed
+- An account that was invited but never activated can be invited again, from a
+  button in its own row in the user list. Such a row — the invite mail failed to
+  send, or the link expired before it was used — has no password, so it can
+  never be logged into, and yet it occupied the address for everyone: inviting it
+  again answered "email already taken", and the invitee's own attempt to register
+  answered "already registered" for an account they neither created nor could
+  reach. The only way out was for an admin to notice and delete the row. The
+  previous invitation link stops working when a new one is sent, so a password
+  can only ever be set through the newest mail. (#33)
 - API error messages and transactional mails now follow the visitor's browser
   language instead of falling back to German. They were German for exactly the
   visitors browsing in their own language — an English browser on `/en`, an

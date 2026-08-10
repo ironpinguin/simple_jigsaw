@@ -74,10 +74,20 @@ async function submitInvite() {
   });
 }
 
+function buttonsLabelled(label: string) {
+  return [...container.querySelectorAll("button")].filter((b) => b.textContent === label);
+}
+
+async function click(button: HTMLButtonElement) {
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
 describe("UsersAdmin invite form", () => {
   it("reloads the list when the invite fails, so the stranded row is visible", async () => {
     // The route creates the row before it sends, so a 500 still leaves an
-    // account behind — and deleting it is the only way to re-invite.
+    // account behind — the admin needs it on screen to invite it again.
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).endsWith("/invite")) {
         return new Response(JSON.stringify({ error: "Invitation could not be delivered." }), {
@@ -117,5 +127,87 @@ describe("UsersAdmin invite form", () => {
     expect(container.querySelector(".error")).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/api/admin/users");
     expect(container.querySelector<HTMLInputElement>("#inviteEmail")!.value).toBe("");
+  });
+
+  it("says the invitation was re-sent when the address was already invited", async () => {
+    // Typing an already-invited address into the form re-invites rather than
+    // failing, so the flash must not claim a first invitation went out.
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith("/invite")) {
+        return new Response(JSON.stringify({ ok: true, reinvited: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    mount();
+    typeInvite("invitee@example.com");
+    await submitInvite();
+
+    expect(container.textContent).toContain("Invitation to invitee@example.com sent again.");
+    expect(container.textContent).not.toContain("Invitation sent to invitee@example.com.");
+  });
+});
+
+describe("UsersAdmin re-invite action", () => {
+  // An account with a password activated successfully; offering to re-invite it
+  // would promise something the route answers 409 to.
+  const ACTIVE: UserRow = {
+    ...ORPHAN,
+    id: "user-2",
+    email: "active@example.com",
+    verified: true,
+    hasPassword: true,
+  };
+
+  it("offers the action only on a row that never activated", () => {
+    mount([ORPHAN, ACTIVE]);
+
+    const buttons = buttonsLabelled("Invite again");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].closest("tr")!.textContent).toContain("invitee@example.com");
+  });
+
+  it("invites the row's own address without the admin retyping it", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith("/invite")) {
+        return new Response(JSON.stringify({ ok: true, reinvited: true }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mount([ORPHAN]);
+
+    await click(buttonsLabelled("Invite again")[0]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/admin/users/invite",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ email: "invitee@example.com" }),
+      }),
+    );
+    expect(container.querySelector(".error")).toBeNull();
+    expect(container.textContent).toContain("Invitation to invitee@example.com sent again.");
+  });
+
+  it("reports a failure rather than claiming the mail went out", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith("/invite")) {
+        return new Response(JSON.stringify({ error: "The invitation could not be delivered." }), {
+          status: 500,
+        });
+      }
+      return new Response(JSON.stringify({ users: [ORPHAN] }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mount([ORPHAN]);
+
+    await click(buttonsLabelled("Invite again")[0]);
+
+    expect(container.querySelector(".error")?.textContent).toBe(
+      "The invitation could not be delivered.",
+    );
+    expect(container.textContent).not.toContain("sent again");
   });
 });

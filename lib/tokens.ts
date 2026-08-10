@@ -85,6 +85,23 @@ export async function createToken(userId: string, type: TokenKind): Promise<stri
 }
 
 /**
+ * Delete every outstanding token of one kind for a user, and report how many
+ * went. For the case where a fresh link is meant to supersede the old one —
+ * re-inviting an account that never activated — so that the newest link is the
+ * only one that works. Two valid password-setting links sitting in two
+ * different mailboxes is a worse outcome than making an admin send one more.
+ *
+ * Deliberately not folded into `createToken`: registration mints the first token
+ * for a brand-new row and has nothing to revoke, and a caller that supersedes an
+ * existing link should have to say so rather than inherit a delete it never
+ * asked for.
+ */
+export async function revokeTokens(userId: string, type: TokenKind): Promise<number> {
+  const { count } = await prisma.verificationToken.deleteMany({ where: { userId, type } });
+  return count;
+}
+
+/**
  * Look up a token and claim it (single-use), reporting whether the caller may
  * act on it. `ok` is true only when this call's own delete removed the row, so
  * whatever the caller does next happens at most once per link.

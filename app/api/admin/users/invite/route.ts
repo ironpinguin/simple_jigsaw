@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
-import { createToken } from "@/lib/tokens";
+import { createToken, revokeTokens } from "@/lib/tokens";
 import { sendInviteEmail } from "@/lib/mail";
 import { getErrorT, resolveRequestLocale } from "@/lib/i18n-server";
 
@@ -27,32 +27,55 @@ export async function POST(request: Request) {
   if (await checkEmailBanned(email)) {
     return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
   }
-  if (await prisma.user.findUnique({ where: { email } })) {
+  // The existence of a row is not the question — whether it belongs to a usable
+  // account is. `passwordHash` is set only by app/api/invite/route.ts, when the
+  // invitee actually redeems their link, so a null hash is a reliable "this
+  // invite never completed": the mail failed to send, or the token expired
+  // first. Such a row can never be used (auth rejects a null hash) and yet it
+  // occupies the address globally, so that the invitee's own attempt to register
+  // answers 409 for an account they neither created nor can reach. Re-inviting
+  // it is the way out; deleting the row and starting over used to be the only
+  // one, and nothing in the UI said so.
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, passwordHash: true },
+  });
+  if (existing && existing.passwordHash !== null) {
     return NextResponse.json({ error: t("emailTaken") }, { status: 409 });
   }
 
-  const user = await prisma.user.create({
-    data: { email, passwordHash: null, role: "USER", emailVerified: null },
-    select: { id: true },
-  });
+  const reinvited = existing !== null;
+  const user =
+    existing ??
+    (await prisma.user.create({
+      data: { email, passwordHash: null, role: "USER", emailVerified: null },
+      select: { id: true },
+    }));
 
   // Resolving the locale is unrelated to delivery — keep it out of the catch
   // below so it cannot be reported as a failed invite.
   const locale = await resolveRequestLocale();
 
   try {
+    // Supersede the previous link rather than adding a second one: an invite
+    // sets a password, and two live ones in two mailboxes is the worse failure.
+    if (reinvited) await revokeTokens(user.id, "INVITE");
     const token = await createToken(user.id, "INVITE");
     await sendInviteEmail(email, token, locale);
   } catch (error) {
-    // The password-less row already exists here, so a plain retry only yields
-    // the 409 above and the row cannot log in (auth rejects a null hash). There
-    // is no resend action in the admin UI, so the message points at the only
-    // recovery there is — delete the row and invite again — instead of letting
-    // the throw escape as a bare 500. Either the token write or the send lands
-    // here, so the log names the invite, not the mail; the error says which.
+    // A password-less row exists at this point either way — created just above,
+    // or left behind by the earlier attempt — and it cannot log in. Sending
+    // again is now the recovery, which is what the message says; it used to have
+    // to tell the admin to delete the row first. Letting the throw escape as a
+    // bare 500 would say neither. Any of the revoke, the token write or the send
+    // lands here, so the log names the invite and the error says which.
     console.error(`[admin-invite] invite for user ${user.id} failed:`, error);
     return NextResponse.json({ error: t("inviteEmailFailed") }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true }, { status: 201 });
+  // 200 rather than 201 on the re-invite path: a link was sent, but nothing was
+  // created. `reinvited` is what lets the admin UI say which of the two happened
+  // — the invite form reaches this route too, so it cannot tell from the button
+  // the admin pressed.
+  return NextResponse.json({ ok: true, reinvited }, { status: reinvited ? 200 : 201 });
 }

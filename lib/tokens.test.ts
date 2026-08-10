@@ -14,7 +14,7 @@ vi.mock("./db", () => ({
 }));
 vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
 
-import { consumeToken, createToken, tokenClaimStatus } from "./tokens";
+import { consumeToken, createToken, revokeTokens, tokenClaimStatus } from "./tokens";
 import { tokenExpiry } from "./token-ttl";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
@@ -77,6 +77,31 @@ describe("createToken", () => {
     await createToken("user-1", "EMAIL_VERIFY");
 
     expect(maybePurge).toHaveBeenCalledWith(NOW);
+  });
+});
+
+describe("revokeTokens", () => {
+  it("deletes only that user's tokens of that kind, and reports how many", async () => {
+    // Scoped both ways on purpose: a re-invite must not revoke the invitee's
+    // pending email confirmation, nor anybody else's invitation.
+    deleteMany.mockResolvedValue({ count: 2 });
+
+    await expect(revokeTokens("user-1", "INVITE")).resolves.toBe(2);
+    expect(deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1", type: "INVITE" } });
+  });
+
+  it("reports zero when there was nothing outstanding", async () => {
+    deleteMany.mockResolvedValue({ count: 0 });
+
+    await expect(revokeTokens("user-1", "INVITE")).resolves.toBe(0);
+  });
+
+  it("lets a failure through to the caller", async () => {
+    // Unlike a claim, this one has somebody to report to: the admin route turns
+    // it into a translated error rather than sending a second live link.
+    deleteMany.mockRejectedValue(new Error("permission denied for table"));
+
+    await expect(revokeTokens("user-1", "INVITE")).rejects.toThrow("permission denied");
   });
 });
 

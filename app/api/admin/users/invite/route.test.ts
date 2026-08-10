@@ -1,21 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { requireAdminMock, userFindUnique, userCreate, checkEmailBannedMock, createTokenMock, sendInviteEmailMock } =
-  vi.hoisted(() => ({
-    requireAdminMock: vi.fn(),
-    userFindUnique: vi.fn(),
-    userCreate: vi.fn(),
-    checkEmailBannedMock: vi.fn(),
-    createTokenMock: vi.fn(),
-    sendInviteEmailMock: vi.fn(),
-  }));
+const {
+  requireAdminMock,
+  userFindUnique,
+  userCreate,
+  checkEmailBannedMock,
+  createTokenMock,
+  revokeTokensMock,
+  sendInviteEmailMock,
+} = vi.hoisted(() => ({
+  requireAdminMock: vi.fn(),
+  userFindUnique: vi.fn(),
+  userCreate: vi.fn(),
+  checkEmailBannedMock: vi.fn(),
+  createTokenMock: vi.fn(),
+  revokeTokensMock: vi.fn(),
+  sendInviteEmailMock: vi.fn(),
+}));
 
 vi.mock("@/lib/auth", () => ({ requireAdmin: requireAdminMock }));
 vi.mock("@/lib/db", () => ({
   prisma: { user: { findUnique: userFindUnique, create: userCreate } },
 }));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: checkEmailBannedMock }));
-vi.mock("@/lib/tokens", () => ({ createToken: createTokenMock }));
+vi.mock("@/lib/tokens", () => ({
+  createToken: createTokenMock,
+  revokeTokens: revokeTokensMock,
+}));
 vi.mock("@/lib/mail", () => ({ sendInviteEmail: sendInviteEmailMock }));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
@@ -44,6 +55,7 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue(null);
   userCreate.mockResolvedValue({ id: "user-1" });
   createTokenMock.mockResolvedValue("tok");
+  revokeTokensMock.mockResolvedValue(0);
   sendInviteEmailMock.mockResolvedValue(undefined);
 });
 
@@ -59,11 +71,94 @@ describe("POST /api/admin/users/invite", () => {
     expect(userCreate).not.toHaveBeenCalled();
   });
 
-  it("answers 409 for an email that already has a row", async () => {
-    userFindUnique.mockResolvedValue({ id: "user-0" });
+  it("answers 409 for an email that belongs to a usable account", async () => {
+    // A password means somebody activated it. Re-inviting would mint a
+    // password-setting link for an account in use.
+    userFindUnique.mockResolvedValue({ id: "user-0", passwordHash: "$2b$hash" });
     const res = await callPost({ email: "taken@example.com" });
     expect(res.status).toBe(409);
     expect(userCreate).not.toHaveBeenCalled();
+    expect(sendInviteEmailMock).not.toHaveBeenCalled();
+  });
+
+  describe("a row that never activated", () => {
+    // passwordHash === null: the first invite's mail failed, or the token expired
+    // before it was redeemed. The row cannot log in and it occupies the address
+    // globally, so this used to be recoverable only by deleting the account.
+    const ORPHAN = { id: "user-0", passwordHash: null };
+
+    it("sends a fresh invite instead of answering 409", async () => {
+      userFindUnique.mockResolvedValue(ORPHAN);
+
+      const res = await callPost({ email: "invited@example.com" });
+
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toEqual({ ok: true, reinvited: true });
+      expect(sendInviteEmailMock).toHaveBeenCalledWith("invited@example.com", "tok", "it");
+    });
+
+    it("reuses the existing row rather than creating a second one", async () => {
+      // A create would fail on the unique email anyway; the point is that the
+      // invitee keeps the id anything else already references.
+      userFindUnique.mockResolvedValue(ORPHAN);
+
+      await callPost({ email: "invited@example.com" });
+
+      expect(userCreate).not.toHaveBeenCalled();
+      expect(createTokenMock).toHaveBeenCalledWith("user-0", "INVITE");
+    });
+
+    it("revokes the previous link before minting the new one", async () => {
+      // Otherwise both mails work, and an invite is a password-setting link:
+      // whoever still holds the older one can set the password too.
+      userFindUnique.mockResolvedValue(ORPHAN);
+
+      await callPost({ email: "invited@example.com" });
+
+      expect(revokeTokensMock).toHaveBeenCalledWith("user-0", "INVITE");
+      expect(revokeTokensMock.mock.invocationCallOrder[0]).toBeLessThan(
+        createTokenMock.mock.invocationCallOrder[0],
+      );
+    });
+
+    it("reports a failed re-invite mail the way the create path does", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      userFindUnique.mockResolvedValue(ORPHAN);
+      sendInviteEmailMock.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const res = await callPost({ email: "invited@example.com" });
+
+      expect(res.status).toBe(500);
+      await expect(res.json()).resolves.toEqual({ error: "inviteEmailFailed" });
+      expect(logged).toHaveBeenCalled();
+    });
+
+    it("does not leave the account without a link when the revoke fails", async () => {
+      // The old link is either still valid or already gone, but no new mail went
+      // out — so this must not read as a sent invitation.
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      userFindUnique.mockResolvedValue(ORPHAN);
+      revokeTokensMock.mockRejectedValue(new Error("db down"));
+
+      const res = await callPost({ email: "invited@example.com" });
+
+      expect(res.status).toBe(500);
+      expect(createTokenMock).not.toHaveBeenCalled();
+      expect(sendInviteEmailMock).not.toHaveBeenCalled();
+      expect(logged).toHaveBeenCalled();
+    });
+
+    it("still refuses a banned address", async () => {
+      // The ban check sits before all of this, and a never-activated row must not
+      // become a way around it.
+      userFindUnique.mockResolvedValue(ORPHAN);
+      checkEmailBannedMock.mockResolvedValue(true);
+
+      const res = await callPost({ email: "invited@example.com" });
+
+      expect(res.status).toBe(403);
+      expect(sendInviteEmailMock).not.toHaveBeenCalled();
+    });
   });
 
   it("creates the row and sends the invite", async () => {
