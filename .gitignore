@@ -51,3 +51,8 @@ next-env.d.ts
 
 # Kubernetes example — filled-in secrets, never committed
 /deploy/kubernetes/secret.yaml
+
+# The ONNX classifier model (13 MB). The Dockerfile fetches and checksums it
+# into the production image; a host copy is only for trying NSFW_MODE=local in
+# the dev stack, where the bind mount shadows the image's /app/models.
+/models/

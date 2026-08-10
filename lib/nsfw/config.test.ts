@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { readNsfwConfig } from "./config";
 
@@ -110,5 +111,40 @@ describe("readNsfwConfig", () => {
     expect(readNsfwConfig({ NSFW_THRESHOLD: "0" }).threshold).toBe(0.85);
     expect(readNsfwConfig({ NSFW_THRESHOLD: "1.5" }).threshold).toBe(0.85);
     expect(readNsfwConfig({ NSFW_THRESHOLD: "0.6" }).threshold).toBe(0.6);
+  });
+});
+
+// Reading the variables correctly is worth nothing if the deployment never
+// passes them in. Both compose files list env explicitly, so a literal value
+// there silently overrides whatever the operator put in .env — which is how
+// NSFW_MODEL_PATH came to be documented as overridable in .env.example while
+// being impossible to override in either stack. Scanned rather than enumerated,
+// so a future NSFW_* variable added as a literal is caught too.
+describe("the compose files pass every NSFW_* variable through", () => {
+  it.each(["docker-compose.yml", "docker-compose.sqlite.yml"])("%s", (file) => {
+    const literals = readFileSync(file, "utf8")
+      .split("\n")
+      .map((line) => line.match(/^\s+(NSFW_[A-Z_]+):\s*(.+?)\s*$/))
+      .filter((m): m is RegExpMatchArray => m !== null)
+      .filter(([, , value]) => !value.includes("${"))
+      .map(([, key]) => key);
+
+    expect(literals).toEqual([]);
+  });
+
+  it("passes through every variable readNsfwConfig and local.ts actually read", () => {
+    // The other direction: a variable the code reads but compose never mentions
+    // is just as invisible to an operator as a hardcoded one.
+    const compose = readFileSync("docker-compose.yml", "utf8");
+    for (const key of [
+      "NSFW_MODE",
+      "NSFW_THRESHOLD",
+      "NSFW_TIMEOUT_MS",
+      "NSFW_API_URL",
+      "NSFW_API_KEY",
+      "NSFW_MODEL_PATH",
+    ]) {
+      expect(compose, `${key} missing from docker-compose.yml`).toContain(`${key}:`);
+    }
   });
 });
