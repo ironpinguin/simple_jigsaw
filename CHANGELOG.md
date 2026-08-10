@@ -129,9 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   list — are shown in UTC and in the language of the page, instead of in
   whatever timezone and format the machine rendering them happened to use. The
   server and the browser disagreed about the same timestamp for every admin
-  outside UTC, which made the report queue throw a hydration error and render
-  itself twice; the ban and user lists disagreed about the day for rows created
-  near midnight, and an Italian or German page could show US-style dates. The
+  outside UTC, which made the report queue throw a hydration error, render
+  itself twice, and show US-style dates on an Italian or German page; the ban
+  and user lists disagreed about the day for rows created near midnight. The
   times are the server's rather than the reader's, so the report queue labels
   them `UTC` and the two date columns say so in their header. (#38)
 - An account that was invited but never activated can be invited again, from a
