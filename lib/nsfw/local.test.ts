@@ -127,6 +127,80 @@ describe("the session cache", () => {
   });
 });
 
+// The other end of the same concern: what the model hands *back*. The input
+// tensor tests below pin what this module puts in; these pin that it refuses to
+// believe an answer that cannot have come from this model. NSFW_MODEL_PATH is
+// operator-settable and the Dockerfile's sha256 only covers the copy baked into
+// the image, so a model that loads but is not this one is reachable — and it
+// answers with a plausible number rather than an error.
+describe("the model's output", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  async function classifyWith(outputs: unknown) {
+    const { createLocalClassifier } = await import("./local");
+    const bytes = await tinyImage();
+    // Through `unknown`: the fake session only implements the one method
+    // createDefaultRun calls, so it does not overlap InferenceSession enough
+    // for a direct cast.
+    const loadSession = vi.fn(async () => ({
+      run: vi.fn(async () => outputs),
+    })) as unknown as LoadSession;
+    return createLocalClassifier(config, undefined, loadSession).classify(bytes);
+  }
+
+  it("rejects a head with the wrong number of classes", async () => {
+    // The quiet catastrophe: a 2-class [NSFW, SFW] head makes index 1 the
+    // *safe* probability, so every explicit image scores ~0.01 and publishes,
+    // for as long as the model stays in place, with nothing in the log.
+    await expect(classifyWith({ probabilities: { data: [0.01, 0.99] } })).rejects.toThrow(
+      /2 class/,
+    );
+  });
+
+  it("rejects logits where probabilities were expected", async () => {
+    // The dangerous sibling is a *small* logit like 0.4, which is in range and
+    // reads as CLEAN — undetectable from here. That is exactly why an
+    // out-of-range value has to be loud instead of quietly held as UNKNOWN:
+    // the same broken model produces both, and only one of them is visible.
+    await expect(classifyWith({ probabilities: { data: [1.2, 4.2, -3.1] } })).rejects.toThrow(
+      /outside 0\.\.1/,
+    );
+  });
+
+  it("rejects a non-numeric score rather than passing NaN on", async () => {
+    // NaN reaches labelFor, holds as UNKNOWN, then Prisma rejects the row and
+    // /api/upload logs "could not record the verdict" — pointing the operator
+    // at their database for what is really the wrong model.
+    await expect(
+      classifyWith({ probabilities: { data: [0.1, Number.NaN, 0.7] } }),
+    ).rejects.toThrow(/not a usable score/);
+  });
+
+  it("rejects a model whose output is named something else", async () => {
+    // Without this the destructure throws a bare TypeError, which the guard
+    // logs as "Cannot read properties of undefined" — true, and useless.
+    await expect(classifyWith({ logits: { data: [0.1, 0.2, 0.7] } })).rejects.toThrow(
+      /probabilities/,
+    );
+  });
+
+  it("accepts the shape the real model produces", async () => {
+    const verdict = await classifyWith({ probabilities: { data: [0.1, 0.2, 0.7] } });
+
+    expect(verdict.score).toBe(0.2);
+  });
+
+  it.each([0, 1])("accepts the boundary probability %s", async (score) => {
+    // labelFor deliberately accepts both ends, so the range check must not be
+    // stricter than the thing it is protecting.
+    const verdict = await classifyWith({ probabilities: { data: [0.1, score, 0.7] } });
+
+    expect(verdict.score).toBe(score);
+  });
+});
+
 // What the model is actually handed. Nothing asserted this before: the fake
 // session received the feeds and dropped them, so a refactor that scaled to
 // 0..1, applied ImageNet mean/std or emitted BGR or HWC would pass every test

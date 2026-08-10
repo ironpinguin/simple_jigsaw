@@ -12,6 +12,9 @@ const MODEL_INPUT_SIZE = 224;
 // Class order is fixed by the model's own config.json (pretrained_cfg.label_names);
 // index 1 (NSFW) is the explicit-content score this module returns.
 const NSFW_CLASS_INDEX = 1;
+// The head this module was written against: [NSFL, NSFW, SFW], under this name.
+const MODEL_OUTPUT_NAME = "probabilities";
+const EXPECTED_CLASS_COUNT = 3;
 
 /** Returns the probability that `bytes` is explicit, in 0..1. */
 type Score = (bytes: Buffer) => Promise<number>;
@@ -25,6 +28,62 @@ const defaultLoadSession: LoadSession = async () => {
   const ort = await import("onnxruntime-web");
   return ort.InferenceSession.create(process.env.NSFW_MODEL_PATH ?? "./models/nsfw.onnx");
 };
+
+/**
+ * The output boundary, checked the way external.ts checks the service's — and
+ * for the same reason, which was never carried over here: NSFW_MODEL_PATH is
+ * operator-settable and the Dockerfile's sha256 only covers the copy baked into
+ * the image, so a model that loads but is not *this* model is reachable. It
+ * does not throw; it answers with a plausible number. `as number` then waved
+ * that straight into `labelFor`:
+ *
+ * - a 2-class [NSFW, SFW] head makes index 1 the *safe* probability, so every
+ *   explicit image scores ~0.01 and publishes — silently, indefinitely, with
+ *   nothing in the log because nothing failed;
+ * - a head emitting logits puts 0.4 where a probability belonged (CLEAN),
+ *   while its larger logits fall outside 0..1 and read as an intermittently
+ *   flaky classifier rather than a wrong one;
+ * - a shorter output makes `data[1]` undefined, which becomes NaN, which
+ *   `labelFor` holds as UNKNOWN and Prisma then rejects — surfacing as
+ *   /api/upload's "could not record the verdict" and pointing the operator at
+ *   their database.
+ *
+ * Each condition throws separately so the guard's console.error names the one
+ * that fired. Throwing rather than returning UNKNOWN here is what gets it
+ * logged at all (guard.ts), and it is the difference between an operator
+ * learning the model is wrong and watching the queue fill up.
+ *
+ * What this cannot catch: a 3-class head in a *different order*. The arity is
+ * right and the value is a probability, so only the pinned sha256 stands
+ * between that and a confidently wrong verdict.
+ */
+function scoreFrom(outputs: Record<string, { data: ArrayLike<unknown> } | undefined>): number {
+  const tensor = outputs[MODEL_OUTPUT_NAME];
+  if (!tensor) {
+    const names = Object.keys(outputs).join(", ") || "none";
+    throw new Error(`model has no "${MODEL_OUTPUT_NAME}" output (found: ${names})`);
+  }
+
+  const { data } = tensor;
+  if (data.length !== EXPECTED_CLASS_COUNT) {
+    throw new Error(
+      `model returned ${data.length} class scores, expected ${EXPECTED_CLASS_COUNT} ` +
+        `— NSFW_MODEL_PATH is probably not ${MODEL_ID}`,
+    );
+  }
+
+  const value = data[NSFW_CLASS_INDEX];
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`model returned ${String(value)}, not a usable score`);
+  }
+  if (value < 0 || value > 1) {
+    throw new Error(
+      `model returned a score outside 0..1: ${value} — logits rather than probabilities?`,
+    );
+  }
+
+  return value;
+}
 
 let sessionPromise: Promise<InferenceSession> | undefined;
 
@@ -81,8 +140,9 @@ function createDefaultRun(loadSession: LoadSession): Score {
     const input = new ort.Tensor("float32", chw, [1, 3, MODEL_INPUT_SIZE, MODEL_INPUT_SIZE]);
     const outputs = await session.run({ image: input });
 
-    // Already soft-maxed by the graph; no further normalisation needed.
-    return outputs.probabilities.data[NSFW_CLASS_INDEX] as number;
+    // Already soft-maxed by the graph; no further normalisation needed — but
+    // not taken on trust either, see scoreFrom.
+    return scoreFrom(outputs);
   };
 }
 
