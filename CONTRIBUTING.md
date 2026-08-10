@@ -48,6 +48,10 @@ grouping) is unit-tested and easy to extend.
 - Planning lives on a private GitHub Project board — see
   [docs/github-project.md](docs/github-project.md) for the status lifecycle and
   the `gh project` commands (maintainer access required).
+- **Without board access, work from the issues.** The board only adds planning
+  metadata on top of them; everything actionable is in the issue itself. Open an
+  issue before a larger change so the design can be agreed there rather than in
+  a finished pull request — small fixes can go straight to a PR.
 - Work on a feature branch and open a pull request against `main`.
 - The CI workflow (lint · sast · test · build) must be green before merging.
 - Keep commits focused with a clear, descriptive message (imperative mood).
