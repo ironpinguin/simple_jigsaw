@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and appears in the admin review queue instead of being published, and its
   owner cannot publish it themselves until an admin has resolved the entry;
   a classifier that fails or times out is treated the same way, as is an
-  upload whose classification result is no longer on file because it sat
-  unclaimed for more than a week. The uploader is told their puzzle is
+  image whose classification result is no longer on file — because the upload
+  sat unclaimed for more than a week, or because the image is being re-used and
+  the puzzles that already use it are all private. An image a public puzzle
+  already shows is published as before. The uploader is told their puzzle is
   awaiting review. Operators can run a local model or
   an external service — the latter is an Art. 28 processor, name it in
   `LEGAL_CLASSIFIER_PROCESSOR` so the privacy policy discloses it, see

@@ -58,11 +58,14 @@ function callPost(body: unknown) {
   );
 }
 
-/** The single read the route makes about who already references the key. */
+/**
+ * The single read the route makes about who already references the key, and
+ * publicly or not. Both columns are load-bearing: `ownerId` for the
+ * foreign-owner rejection, `isPublic` for what a missing verdict means.
+ */
 const REFERENCE_LOOKUP = {
   where: { imageKey: BODY.imageKey },
-  select: { ownerId: true },
-  distinct: ["ownerId"],
+  select: { ownerId: true, isPublic: true },
 };
 
 beforeEach(() => {
@@ -99,7 +102,7 @@ describe("POST /api/puzzles", () => {
   });
 
   it("rejects an imageKey already referenced by another user's puzzle", async () => {
-    puzzleFindMany.mockResolvedValue([{ ownerId: "someone-else" }]);
+    puzzleFindMany.mockResolvedValue([{ ownerId: "someone-else", isPublic: true }]);
     const res = await callPost(BODY);
     expect(res.status).toBe(400);
     const json = await res.json();
@@ -111,14 +114,17 @@ describe("POST /api/puzzles", () => {
   it("still rejects when the caller also owns a puzzle using that key", async () => {
     // The read is no longer filtered to foreign owners, so a caller who
     // already uses the key must not shadow the stranger who also does.
-    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1" }, { ownerId: "someone-else" }]);
+    puzzleFindMany.mockResolvedValue([
+      { ownerId: "owner-1", isPublic: true },
+      { ownerId: "someone-else", isPublic: true },
+    ]);
     const res = await callPost(BODY);
     expect(res.status).toBe(400);
     expect(transaction).not.toHaveBeenCalled();
   });
 
   it("allows reusing an imageKey across the caller's own puzzles", async () => {
-    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1" }]);
+    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1", isPublic: true }]);
     const res = await callPost(BODY);
     expect(res.status).toBe(201);
     expect(puzzleFindMany).toHaveBeenCalledWith(REFERENCE_LOOKUP);
@@ -257,13 +263,14 @@ describe("automatic moderation", () => {
     expect(txReportCreate).toHaveBeenCalled();
   });
 
-  it("treats an image with no verdict as clean when a puzzle already uses it", async () => {
+  it("treats an image with no verdict as clean when a public puzzle already uses it", async () => {
     // The case the rule exists for: an image uploaded before this feature.
     // Such an image is always already attached to the puzzle it was uploaded
-    // for, which is what tells it apart from an unclaimed key below.
+    // for, and it went public without ever being held — which is what tells it
+    // apart from a key whose only reference the claimant created below.
     vi.stubEnv("NSFW_MODE", "local");
     verdictFindUnique.mockResolvedValue(null);
-    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1" }]);
+    puzzleFindMany.mockResolvedValue([{ ownerId: "owner-1", isPublic: true }]);
 
     await callPost({ ...BODY, isPublic: true });
 
@@ -279,6 +286,33 @@ describe("automatic moderation", () => {
     vi.stubEnv("NSFW_MODE", "local");
     verdictFindUnique.mockResolvedValue(null);
     puzzleFindMany.mockResolvedValue([]);
+
+    const res = await callPost({ ...BODY, isPublic: true });
+
+    expect(txCreate.mock.calls[0][0].data.isPublic).toBe(false);
+    expect(txReportCreate).toHaveBeenCalled();
+    await expect(res.json()).resolves.toEqual({ id: "p1", pendingReview: true });
+  });
+
+  it("holds a key with no verdict whose only puzzles are private", async () => {
+    // A private reference proves nothing, because the claimant can create it:
+    // the first claim of a swept key is held, and that held puzzle then
+    // references the key. If any reference counted, a second POST with the same
+    // key would publish the image with no report at all (see
+    // app/api/puzzles/laundering.test.ts for the full sequence). Only a public
+    // reference earns the carve-out, and a held puzzle can never become one —
+    // create forces `isPublic && !pendingReview`, and PATCH to public answers
+    // 409 while the AUTO_NSFW report is open.
+    //
+    // The accepted cost: a pre-feature image whose only puzzle is private is
+    // held when its key is claimed again. A false positive in the safe
+    // direction, one admin glance to clear — do not "fix" this back.
+    vi.stubEnv("NSFW_MODE", "local");
+    verdictFindUnique.mockResolvedValue(null);
+    puzzleFindMany.mockResolvedValue([
+      { ownerId: "owner-1", isPublic: false },
+      { ownerId: "owner-1", isPublic: false },
+    ]);
 
     const res = await callPost({ ...BODY, isPublic: true });
 

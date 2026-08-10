@@ -32,25 +32,27 @@ const { store, prismaFake, getSessionUserMock } = vi.hoisted(() => {
   };
 
   // Only the operations these two modules actually issue, behaving the way the
-  // real client does — in particular `distinct`, which the route relies on to
-  // answer both of its questions with one read.
+  // real client does — including honouring `select`, since the route and the
+  // sweep read different columns of the same table and the route's decision
+  // turns on one of them (isPublic).
   const prismaFake = {
     puzzle: {
       findMany: async ({
         where,
-        distinct,
+        select,
       }: {
         where: { imageKey: string | { in: string[] } };
-        distinct?: string[];
+        select: Partial<Record<keyof StoredPuzzle, true>>;
       }) => {
         const key = where.imageKey;
         const rows = store.puzzles.filter((puzzle) =>
           typeof key === "string" ? puzzle.imageKey === key : key.in.includes(puzzle.imageKey),
         );
-        if (!distinct) return rows.map(({ imageKey }) => ({ imageKey }));
-        const owners = new Set<string>();
-        for (const row of rows) owners.add(row.ownerId);
-        return [...owners].map((ownerId) => ({ ownerId }));
+        return rows.map((row) =>
+          Object.fromEntries(
+            Object.keys(select).map((field) => [field, row[field as keyof StoredPuzzle]]),
+          ),
+        );
       },
       create: async ({ data }: { data: StoredPuzzle }) => {
         const created = {
@@ -179,6 +181,46 @@ describe("claiming a key whose verdict the sweep already removed", () => {
     expect(store.puzzles[0].isPublic).toBe(false);
     expect(store.reports).toHaveLength(1);
     expect(store.reports[0]).toMatchObject({ puzzleId: "p1", category: "AUTO_NSFW" });
+  });
+
+  it("holds a second claim of the same key just as hard, with its own report", async () => {
+    // The way round the first fix. Holding the first claim leaves a puzzle
+    // referencing the key, and the claimant owns it — so if *any* reference
+    // were proof that the image predates this feature, the attacker could
+    // simply POST again with no waiting at all:
+    //
+    //   first claim  -> {"id":"p1","pendingReview":true}   isPublic:false, 1 report
+    //   second claim -> {"id":"p2","pendingReview":false}  isPublic:true,  still 1 report
+    //
+    // p2 was public, carried no report of its own (so it never reached the
+    // moderation queue — the publish hold in app/api/puzzles/[id]/route.ts is
+    // scoped `where: { puzzleId: id }`, so p1's report does not cover it), and
+    // made an admin takedown of p1 skip deleteObject, because that cleanup is
+    // reference-counted and p2 still referenced the key. Only a *public*
+    // reference earns the carve-out now, and a held puzzle can never be one.
+    store.verdicts.push({
+      imageKey: KEY,
+      label: "FLAGGED",
+      score: 0.97,
+      model: "local:image-safety-classifier-xs@54f4560",
+      createdAt: new Date(UPLOADED_AT),
+    });
+    await expect(purgeOrphanedVerdicts(UPLOADED_AT + VERDICT_GRACE_MS + 60_000)).resolves.toBe(1);
+
+    const first = await createPuzzle();
+    await expect(first.json()).resolves.toEqual({ id: "p1", pendingReview: true });
+
+    const second = await createPuzzle();
+
+    expect(second.status).toBe(201);
+    await expect(second.json()).resolves.toEqual({ id: "p2", pendingReview: true });
+    expect(store.puzzles.map((puzzle) => puzzle.isPublic)).toEqual([false, false]);
+    // Its own queue entry, not p1's: the hold that keeps a puzzle private is
+    // per-puzzle, so a second puzzle with no report of its own could be
+    // published by its owner the moment they asked.
+    expect(store.reports).toHaveLength(2);
+    expect(store.reports.map((report) => report.puzzleId)).toEqual(["p1", "p2"]);
+    expect(store.reports[1]).toMatchObject({ category: "AUTO_NSFW" });
   });
 
   it("leaves the ordinary flow — claim before the sweep — publishing as before", async () => {

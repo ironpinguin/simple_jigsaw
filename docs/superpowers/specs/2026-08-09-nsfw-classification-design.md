@@ -261,16 +261,27 @@ since it is a property of the bytes.
 **`POST /api/puzzles`** — reads the verdict for the submitted `imageKey`:
 
 - `CLEAN`: `isPublic: true`, nothing else happens.
-- **No verdict row at all:** what that means depends on whether any puzzle
-  already references the key — the same read that rejects a key owned by
-  someone else answers this, so it costs no extra query.
-  - *Referenced:* an image uploaded before this feature, which is always
-    already attached to the puzzle it was uploaded for. Treated as `CLEAN`.
-  - *Unreferenced:* the verdict was swept as an orphan (see Cleanup) or its
-    write failed after `putObject`. Nothing deletes the stored object in
+- **No verdict row at all:** what that means depends on whether a **public**
+  puzzle already references the key — the same read that rejects a key owned by
+  someone else answers this, so it costs no extra query (one extra column).
+  - *Referenced by a public puzzle:* an image uploaded before this feature,
+    which is always already attached to the puzzle it was uploaded for. Treated
+    as `CLEAN`.
+  - *No public reference:* the verdict was swept as an orphan (see Cleanup) or
+    its write failed after `putObject`. Nothing deletes the stored object in
     either case, so reading this as clean would let a flagged upload be
     laundered — never claim the key, wait out the grace period, then create
     the puzzle. Treated as `UNKNOWN`, i.e. held for review.
+  - *Amended during implementation:* the condition is a **public** reference,
+    not any reference. Any reference is forgeable by the claimant — the first
+    claim of a swept key produces a held (private) puzzle that itself
+    references the key, so a second `POST` with the same key would find a
+    reference it created and publish the image with no report at all. A public
+    reference cannot be forged: a held puzzle is created with
+    `isPublic && !pendingReview` and `PATCH` to public answers 409 while its
+    `AUTO_NSFW` report is open. Accepted cost: a pre-feature image whose only
+    puzzle is *private* is held when its key is claimed again — a false
+    positive in the safe direction.
   - Both cases stay `CLEAN` when `NSFW_MODE` is `off`: nothing is judged
     there, so holding would hold everything.
 - `FLAGGED` or `UNKNOWN`: `isPublic: false`, plus one `Report` row —
@@ -293,8 +304,8 @@ classification runs on the downscaled WebP.
 A `putObject` failure leaves no verdict row. A verdict write failure after a
 successful `putObject` is logged and the upload still succeeds — the
 alternative is failing an upload whose bytes are already stored. It is not a
-hole: the key is unreferenced at that moment, so `/api/puzzles` holds the
-puzzle for review when it is claimed (unless the mode is `off`).
+hole: no public puzzle references the key at that moment, so `/api/puzzles`
+holds the puzzle for review when it is claimed (unless the mode is `off`).
 
 ## Cleanup
 
@@ -334,13 +345,18 @@ No test touches a real model or the network.
   the assertion that the response body never carries the verdict.
 - Puzzles route — flagged verdict produces `isPublic: false` and exactly one
   `AUTO_NSFW` report with null reporter fields; clean verdict produces a public
-  puzzle and no report; a missing verdict row behaves like clean when a puzzle
-  already references the key, and is held when none does (except in `off`).
+  puzzle and no report; a missing verdict row behaves like clean when a *public*
+  puzzle already references the key, and is held when none does — including when
+  the only references are private, which is the claimant's own held puzzle
+  (except in `off`).
 - Retention step — a verdict with no puzzle and past the grace period is
   deleted, one with a puzzle is kept, and a young orphan is kept.
 - The two together — a verdict exists, the sweep deletes it as an orphan, the
   key is then claimed: the puzzle must be held and a report filed. Each half is
-  correct alone, which is exactly why the combination needs its own test.
+  correct alone, which is exactly why the combination needs its own test. The
+  sequence runs one step further: a *second* claim of the same key, whose only
+  reference is the held puzzle the first claim produced, must be held and get
+  its own report too.
 - Local preprocessing — the tensor name, dtype and `[1, 3, 224, 224]` shape,
   the HWC→CHW transposition, RGB plane order, raw 0-255 values (no `/255`, no
   mean/std), and that the score read is the NSFW class index.
