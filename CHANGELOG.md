@@ -100,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-commercial note for operators for whom it holds.
 
 ### Changed
+- Clicking a confirmation or invitation link while the database will not let the
+  server consume it now says the link could not be redeemed just now and to try
+  again in a moment, instead of claiming it is invalid or expired: the link is
+  still good, and a retry may well work. `/api/health/ready` reports
+  `"tokens": "degraded"` after any such failure, because a role that may read
+  but not delete leaves every link in the instance unredeemable while the
+  database still answers `SELECT 1` — and neither link type can be reissued
+  without an operator. (#46)
 - Expired confirmation and invitation links are now deleted whenever the
   container runs — at startup and hourly after that, with a readiness check
   able to bring the next sweep forward inside the same hourly budget — instead
@@ -166,17 +174,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notification. (#22)
 
 ### Security
-- A confirmation or invite link now stops working the moment it is redeemed,
-  even when the deletion that consumes it fails or two redemptions arrive at
-  once. `consumeToken` read the row and then deleted it, discarding the
-  delete's outcome, so a failed delete still reported success and both halves
-  of a concurrent redemption were told they had spent the token. The row
-  survived and the link kept working until it expired — 24 hours for a
-  confirmation link, seven days for an invite, which is the sharper case
-  because an invite sets a password: anyone still holding that mail could set
-  it again after the recipient had activated the account. The delete is now the
-  claim, so exactly one redemption can win, and a delete that genuinely fails
-  refuses the link and is logged instead of passing silently. (#46)
+- A confirmation or invite link is now granted to exactly one redemption.
+  `consumeToken` read the row and then deleted it, discarding the delete's
+  outcome, so two redemptions arriving at once were both told they had spent the
+  token, and a delete that failed outright reported success while the row — and
+  the working link — stayed behind until it expired. An invite is the sharper
+  case, because it sets a password: anyone still holding that mail could set it
+  again after the recipient had activated the account. The delete is now the
+  claim and only the redemption that removes the row is granted, so neither a
+  race nor a failed delete can hand out a second use. (#46)
 - Three high-severity advisories in transitive dependencies are cleared by
   patch bumps of `brace-expansion`, `js-yaml` and `nanoid`. Only `nanoid` is in
   runtime scope and so actually ships in the image; the other two stay in the

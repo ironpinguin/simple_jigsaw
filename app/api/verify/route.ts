@@ -13,13 +13,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t("invalidRequest") }, { status: 400 });
   }
 
-  const result = await consumeToken(parsed.data.token, "EMAIL_VERIFY");
-  if (!result) {
-    return NextResponse.json({ error: t("verifyInvalid") }, { status: 400 });
+  const claim = await consumeToken(parsed.data.token, "EMAIL_VERIFY");
+  if (!claim.ok) {
+    // A claim that could not be attempted is not a bad link: the row is still
+    // there and a retry may work, so this answers 503 rather than telling the
+    // holder their link has expired and sending them to re-register. It is also
+    // the status an operator's monitoring already watches. See lib/tokens.ts.
+    return claim.reason === "unavailable"
+      ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
+      : NextResponse.json({ error: t("verifyInvalid") }, { status: 400 });
   }
 
   await prisma.user.update({
-    where: { id: result.userId },
+    where: { id: claim.userId },
     data: { emailVerified: new Date() },
   });
 

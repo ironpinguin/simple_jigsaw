@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { queryRaw, maybePurge, status } = vi.hoisted(() => ({
+const { queryRaw, maybePurge, status, claimStatus } = vi.hoisted(() => ({
   queryRaw: vi.fn(),
   maybePurge: vi.fn(),
   status: vi.fn(),
+  claimStatus: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { $queryRaw: queryRaw } }));
@@ -11,6 +12,7 @@ vi.mock("@/lib/retention", () => ({
   maybePurgeExpiredTokens: maybePurge,
   retentionStatus: status,
 }));
+vi.mock("@/lib/tokens", () => ({ tokenClaimStatus: claimStatus }));
 
 import { GET, dynamic } from "./route";
 
@@ -19,6 +21,12 @@ beforeEach(() => {
   queryRaw.mockResolvedValue([{ one: 1 }]);
   maybePurge.mockResolvedValue(null);
   status.mockReturnValue({ lastSuccessAt: null, failures: 0, stale: false });
+  claimStatus.mockReturnValue({
+    failures: 0,
+    lastFailureAt: null,
+    lost: 0,
+    degraded: false,
+  });
 });
 
 describe("GET /api/health/ready", () => {
@@ -26,7 +34,12 @@ describe("GET /api/health/ready", () => {
     const res = await GET();
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ ok: true, db: "up", retention: "ok" });
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      db: "up",
+      retention: "ok",
+      tokens: "ok",
+    });
     expect(maybePurge).toHaveBeenCalled();
   });
 
@@ -81,7 +94,35 @@ describe("GET /api/health/ready", () => {
     const res = await GET();
 
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ ok: true, db: "up", retention: "stale" });
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      db: "up",
+      retention: "stale",
+      tokens: "ok",
+    });
+  });
+
+  it("says so when links can no longer be redeemed, without failing the probe", async () => {
+    // The other write `SELECT 1` cannot vouch for. A role that may read but not
+    // delete leaves every confirmation and invitation link in the instance
+    // unredeemable while the database looks healthy — and a restart would not
+    // fix a missing grant, so this must not take the pod out of the Service.
+    claimStatus.mockReturnValue({
+      failures: 2,
+      lastFailureAt: 1,
+      lost: 0,
+      degraded: true,
+    });
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      ok: true,
+      db: "up",
+      retention: "ok",
+      tokens: "degraded",
+    });
   });
 
   it("puts no error detail in the response", async () => {

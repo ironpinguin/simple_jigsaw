@@ -320,6 +320,7 @@
     "userNotFound": "Utente non trovato.",
     "verifyInvalid": "Il link di conferma non è valido o è scaduto.",
     "inviteInvalid": "Il link di invito non è valido o è scaduto.",
+    "linkUnavailable": "Il link non può essere riscattato in questo momento. Riprova tra un attimo.",
     "accountNotFound": "Account non trovato.",
     "lastAdminDemote": "L'ultimo admin non può essere declassato.",
     "lastAdminDelete": "L'ultimo admin non può essere eliminato.",
