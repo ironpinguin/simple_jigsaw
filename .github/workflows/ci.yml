@@ -27,11 +27,30 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
   NPM_CONFIG_FUND: "false"
   NPM_CONFIG_AUDIT: "false"
+  # The npm the Node jobs install over the one bundled with Node 22 (10.9.x).
+  # Raise this when Dependabot's own npm moves past it; see the jobs comment.
+  NPM_VERSION: "11"
 
 jobs:
   # Node jobs share the same shape: setup-node caches the npm download folder
-  # keyed on package-lock.json, and `npm ci` also runs `prisma generate` via the
-  # postinstall hook.
+  # keyed on package-lock.json, then npm itself is upgraded to $NPM_VERSION, and
+  # `npm ci` also runs `prisma generate` via the postinstall hook.
+  #
+  # The upgrade is not cosmetic. Node 22 bundles npm 10.9.x, which expects
+  # nested optional peer entries that npm 11 and later prune when they write a
+  # lockfile — for us `node_modules/next-intl/node_modules/@swc/helpers`, an
+  # optional peer of the @swc/core under next-intl. Dependabot regenerates
+  # package-lock.json with a current npm, so npm 10 read every Dependabot
+  # lockfile as out of sync and `npm ci` refused to install at all:
+  #
+  #   npm error `npm ci` can only install packages when your package.json and
+  #   package-lock.json ... are in sync.
+  #   npm error Missing: @swc/helpers@0.5.23 from lock file
+  #
+  # That failed the gates on nine open Dependabot PRs for a reason none of them
+  # introduced. npm 11 accepts both shapes of the lockfile, so pinning the npm
+  # major here fixes it without changing the Node version the gates test —
+  # which stays deliberately matched to the Dockerfile (see #62).
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -40,6 +59,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+      - run: npm i -g npm@${{ env.NPM_VERSION }}
       - run: npm ci
       - run: npm run lint
 
@@ -51,6 +71,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+      - run: npm i -g npm@${{ env.NPM_VERSION }}
       - run: npm ci
       - run: npx vitest run --reporter=default --reporter=junit --outputFile=junit.xml
       - name: Upload JUnit report
@@ -68,6 +89,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+      - run: npm i -g npm@${{ env.NPM_VERSION }}
       - run: npm ci
       - run: npm run build
 
