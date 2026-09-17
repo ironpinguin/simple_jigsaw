@@ -26,7 +26,7 @@ RUN npm ci
 # Not committed to git (see lib/nsfw/local.ts) — fetched here and baked into
 # the runner image instead, pinned to the exact commit the design's spike
 # verified, with the sha256 checked so an upstream change to the file can't
-# silently change what ships. node:22-alpine already carries busybox wget
+# silently change what ships. node:26-alpine already carries busybox wget
 # (the compose healthcheck uses it too), so no extra package is needed.
 FROM base AS model
 RUN wget -q -O /tmp/nsfw.onnx \
