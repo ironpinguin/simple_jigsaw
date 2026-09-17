@@ -10,6 +10,15 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
   },
   test: {
+    // Node 26 is the first release to expose its own `localStorage` global by
+    // default (22 and 24 did not). It reads as `undefined` unless
+    // `--localstorage-file` is given, and it wins over the one jsdom installs —
+    // so on Node 26 `window.localStorage` was undefined and all 27 component
+    // tests that touch storage failed. Turning Node's Web Storage off hands the
+    // global back to jsdom, whose `Storage.prototype` those tests spy on; a
+    // replacement Storage from a second JSDOM would be a different realm's
+    // class and would break the spy instead. See #75.
+    poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] } },
     // Split by directory rather than per-file docblocks: a component test that
     // forgets one fails confusingly, and the pure lib tests keep node's faster
     // startup.
