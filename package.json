@@ -30,7 +30,7 @@
     "next": "^15.5.25",
     "next-auth": "^5.0.0-beta.25",
     "next-intl": "^4.13.5",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^9.1.1",
     "onnxruntime-web": "^1.27.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
