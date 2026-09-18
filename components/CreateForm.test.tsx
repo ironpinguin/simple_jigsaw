@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,10 +23,14 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
 
-  // jsdom has no object URLs; the preview effect only needs it to not throw.
+  // jsdom has no object URLs. A *unique* one per call, as the browser gives:
+  // a constant would make any assertion about revoking the previous URL pass or
+  // fail for the wrong reason, since an effect keyed on the URL would never see
+  // it change.
+  let issued = 0;
   vi.stubGlobal("URL", {
     ...URL,
-    createObjectURL: vi.fn(() => "blob:jigsaw/preview"),
+    createObjectURL: vi.fn(() => `blob:jigsaw/preview-${++issued}`),
     revokeObjectURL: vi.fn(),
   });
 
@@ -81,6 +85,128 @@ async function submitForm() {
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
+
+/** Choose (or clear) the file input and let the effects settle. */
+async function chooseFile(file: File | null) {
+  const fileInput = container.querySelector<HTMLInputElement>("#file")!;
+  await act(async () => {
+    Object.defineProperty(fileInput, "files", {
+      value: file ? [file] : [],
+      configurable: true,
+    });
+    fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+const preview = () => container.querySelector<HTMLImageElement>("img");
+
+describe("CreateForm image preview", () => {
+  it("shows no preview before a file is chosen, and asks for no object URL", () => {
+    // The empty form is the first render every visitor sees; it must not create
+    // an object URL it would then have to revoke.
+    mount();
+    expect(preview()).toBeNull();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it("previews the chosen file through an object URL", async () => {
+    mount();
+    await chooseFile(new File(["data"], "photo.png", { type: "image/png" }));
+
+    expect(preview()?.getAttribute("src")).toBe("blob:jigsaw/preview-1");
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the preview and revokes the URL when the file is cleared", async () => {
+    // The leak this guards is not hypothetical: an object URL lives until it is
+    // revoked or the document goes away.
+    mount();
+    await chooseFile(new File(["data"], "photo.png", { type: "image/png" }));
+    await chooseFile(null);
+
+    expect(preview()).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:jigsaw/preview-1");
+  });
+
+  it("revokes the previous URL when a second file replaces the first", async () => {
+    mount();
+    await chooseFile(new File(["a"], "one.png", { type: "image/png" }));
+    await chooseFile(new File(["b"], "two.png", { type: "image/png" }));
+
+    expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    expect(preview()).not.toBeNull();
+  });
+
+  it("revokes the URL when the form unmounts with a file still chosen", async () => {
+    mount();
+    await chooseFile(new File(["data"], "photo.png", { type: "image/png" }));
+
+    act(() => root.unmount());
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:jigsaw/preview-1");
+
+    // afterEach unmounts again; give it a live root to unmount.
+    root = createRoot(container);
+  });
+});
+
+describe("CreateForm object URL accounting", () => {
+  // The reason components/CreateForm.tsx carries a scoped disable for
+  // react-hooks/set-state-in-effect (#84). The rule wants the preview URL
+  // derived rather than set from an effect, and the obvious derivation —
+  //
+  //   const previewUrl = useMemo(() => file && URL.createObjectURL(file), [file]);
+  //
+  // lints clean and passes every other test in this file. It also leaks: React
+  // may run a memo more than once for a render it keeps only one result of, and
+  // the effect that revokes only ever sees the surviving value. Measured under
+  // StrictMode, which double-renders on purpose to surface exactly this, the
+  // memo version created 6 URLs and revoked 3.
+  //
+  // So this asserts the accounting rather than the implementation: every URL
+  // handed out is handed back. Anything that satisfies that is welcome to
+  // replace the effect.
+  it("revokes every URL it creates, including under StrictMode", async () => {
+    let issued = 0;
+    const created: string[] = [];
+    const revoked: string[] = [];
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => {
+        const url = `blob:jigsaw/strict-${++issued}`;
+        created.push(url);
+        return url;
+      }),
+      revokeObjectURL: vi.fn((url: string) => revoked.push(url)),
+    });
+
+    const strictRoot = createRoot(container);
+    act(() => {
+      strictRoot.render(
+        <StrictMode>
+          <NextIntlClientProvider locale="en" messages={messages}>
+            <CreateForm />
+          </NextIntlClientProvider>
+        </StrictMode>,
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>("#file")!;
+    for (const name of ["one.png", "two.png", "three.png"]) {
+      await act(async () => {
+        Object.defineProperty(input, "files", {
+          value: [new File(["d"], name, { type: "image/png" })],
+          configurable: true,
+        });
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    act(() => strictRoot.unmount());
+
+    expect(created.length).toBeGreaterThan(0);
+    expect(created.filter((url) => !revoked.includes(url))).toEqual([]);
+  });
+});
 
 describe("CreateForm success navigation", () => {
   it("sends the uploader to the review note when the puzzle is held back", async () => {
