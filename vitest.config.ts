@@ -2,10 +2,15 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  // Next compiles JSX itself, so tsconfig keeps `jsx: "preserve"`. esbuild
-  // cannot consume that and falls back to `React.createElement`, which nothing
-  // imports — the automatic runtime is what the components expect.
-  esbuild: { jsx: "automatic" },
+  // Next compiles JSX itself, so tsconfig keeps `jsx: "preserve"`. The
+  // transformer cannot consume that and would leave the JSX in place, so the
+  // automatic runtime the components expect has to be asked for here.
+  //
+  // This was `esbuild: { jsx: "automatic" }` until vitest 5, which brought
+  // Vite 8 and with it Rolldown/Oxc in place of esbuild: the `esbuild` key is
+  // gone, and Oxc takes `'preserve'` or a JsxOptions object rather than a bare
+  // string, so the runtime moves one level down.
+  oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: { "@": fileURLToPath(new URL(".", import.meta.url)) },
   },
@@ -18,7 +23,9 @@ export default defineConfig({
     // global back to jsdom, whose `Storage.prototype` those tests spy on; a
     // replacement Storage from a second JSDOM would be a different realm's
     // class and would break the spy instead. See #75.
-    poolOptions: { forks: { execArgv: ["--no-experimental-webstorage"] } },
+    //
+    // vitest 5 flattened `poolOptions.forks.execArgv` to a plain `execArgv`.
+    execArgv: ["--no-experimental-webstorage"],
     // Split by directory rather than per-file docblocks: a component test that
     // forgets one fails confusingly, and the pure lib tests keep node's faster
     // startup.
