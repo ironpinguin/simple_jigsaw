@@ -9,6 +9,7 @@ import { prisma } from "./db";
 import { checkEmailBanned } from "./moderation";
 import { isAdminEmail } from "./admin-emails";
 import { toViewer } from "./visibility";
+import { isSessionStale } from "./session-freshness";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -52,12 +53,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    jwt({ token, user }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id as string;
         token.role = (user as { role?: string }).role ?? "USER";
+        return token;
       }
-      return token;
+
+      // Every later call. Sessions are stateless JWTs, so a cookie taken before
+      // a password change would otherwise keep working until it expired — which
+      // is the whole reason this feature stamps passwordChangedAt. Returning
+      // null ends the session.
+      //
+      // This costs a user lookup per session resolution. Accepted: most
+      // protected routes already make one through getSessionUser, and a
+      // "log out other devices" guarantee that is only sometimes enforced is
+      // not a guarantee.
+      if (!token.id) return token;
+      const row = await prisma.user.findUnique({
+        where: { id: token.id as string },
+        select: { passwordChangedAt: true },
+      });
+      if (!row) return null;
+      return isSessionStale(token.iat, row.passwordChangedAt) ? null : token;
     },
     session({ session, token }) {
       if (token.id && session.user) {
