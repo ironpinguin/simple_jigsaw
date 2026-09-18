@@ -16,17 +16,21 @@ const eslintConfig = [
     ignores: ["node_modules/**", ".next/**", "lib/generated/**", "next-env.d.ts"],
   },
   {
-    // Three React Compiler rules arrive as errors with eslint-config-next 16 and
-    // fire on code that predates them — eight times, five of those inside
-    // PuzzleBoard, which has no test coverage at all (jsdom has no canvas).
+    // Scoped to the one file that still trips them (#87). Everywhere else these
+    // three are back to the errors eslint-config-next ships them as: #84 fixed
+    // VerifyPage outright, and CreateForm and PuzzleSolver each carry a
+    // one-line disable with a test behind it — in both of those the rule's
+    // preferred fix introduced a defect, a leaked object URL and a hydration
+    // mismatch respectively.
     //
-    // They are warnings here, not disabled: every one points at something real
-    // (cascading renders, refs read during render), and #84 tracks fixing them
-    // deliberately, with the board exercised in a browser. Turning them off
-    // would throw the findings away; leaving them as errors would mean
-    // refactoring untested canvas code inside a framework upgrade, which is how
-    // subtle board bugs ship. Drop this block once #84 closes.
-    name: "jigsaw/react-compiler-rules-pending-84",
+    // PuzzleBoard is different: its group model lives in a ref that Konva drag
+    // handlers mutate, with bump() forcing the re-render that reads it back.
+    // Four of the five findings are that escape hatch rather than a mistake,
+    // and the file has no test coverage — jsdom has no canvas — so the redesign
+    // needs its own change and its own browser verification. Delete this block
+    // when #87 closes.
+    name: "jigsaw/puzzleboard-react-compiler-rules-pending-87",
+    files: ["components/PuzzleBoard.tsx"],
     rules: {
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/refs": "warn",

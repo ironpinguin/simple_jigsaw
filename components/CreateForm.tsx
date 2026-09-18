@@ -17,13 +17,31 @@ export default function CreateForm() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
+    // Clearing belongs to the cleanup rather than to a no-file branch in the
+    // effect body, so the URL and the state pointing at it are created and torn
+    // down in one place (#84).
+    //
+    // The remaining setState is deliberate, and the disable below is the whole
+    // argument: react-hooks/set-state-in-effect wants this derived, and the
+    // obvious derivation — useMemo(() => URL.createObjectURL(file), [file]) —
+    // lints clean and leaks. React may run a memo more than once for a render
+    // it keeps one result of, and only the surviving URL ever reaches the
+    // effect that revokes it; under StrictMode the memo version created six
+    // object URLs and revoked three. Creating a handle that must be released is
+    // what the rule's own message calls synchronising with an external system,
+    // which is what effects are for.
+    //
+    // `CreateForm object URL accounting` in the test file holds this to the
+    // thing that actually matters — every URL handed out is handed back — so
+    // any implementation that keeps the books straight may replace this one.
+    if (!file) return;
     const url = URL.createObjectURL(file);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see above
     setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      setPreviewUrl(null);
+    };
   }, [file]);
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {

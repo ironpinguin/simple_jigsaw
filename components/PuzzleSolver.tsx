@@ -83,6 +83,12 @@ export default function PuzzleSolver({
 
   useEffect(() => {
     const saved = Number(withStorage((s) => s.getItem(storageKey), null));
+    // react-hooks/set-state-in-effect wants this read during render instead
+    // (#84) — which is exactly what the comment above says must not happen, and
+    // what "hydrates without a mismatch when a piece count was remembered" in
+    // the test file fails on: moving the read into the useState initialiser
+    // makes the first client render disagree with the server's.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see above
     if ((PIECE_PRESETS as readonly number[]).includes(saved)) setPieceCount(saved);
   }, [storageKey]);
 

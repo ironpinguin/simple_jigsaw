@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   // Next compiles JSX itself, so tsconfig keeps `jsx: "preserve"`. The
@@ -61,7 +61,25 @@ export default defineConfig({
         // same node/mock style as the api project, just a different route
         // under app/ that wasn't covered by any existing glob.
         extends: true,
-        test: { name: "pages", environment: "node", include: ["app/[locale]/**/*.test.tsx"] },
+        test: {
+          name: "pages",
+          environment: "node",
+          include: ["app/[locale]/**/*.test.tsx"],
+          // ...except the "use client" ones, which need a DOM. Same reasoning as
+          // the split above: the suffix decides, not a docblock someone forgets.
+          exclude: [...configDefaults.exclude, "**/*.client.test.tsx"],
+        },
+      },
+      {
+        // Not every page under app/ is a Server Component: a few are "use
+        // client" and need jsdom exactly like the components project. The
+        // `.client.test.tsx` suffix is what keeps them out of `pages` above.
+        extends: true,
+        test: {
+          name: "pages-client",
+          environment: "jsdom",
+          include: ["app/**/*.client.test.tsx"],
+        },
       },
     ],
   },
