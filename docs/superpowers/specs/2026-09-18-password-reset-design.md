@@ -113,9 +113,27 @@ and `sendVerificationEmail` exactly, including the locale prefix.
 ### `POST /api/account/password/reset-request`
 
 Probe counter, then eligibility, then per-email and per-IP token counts, then
-`revokeTokens(userId, "PASSWORD_RESET")` before `createToken`, so a second
-request supersedes the first rather than leaving two live keys in two mailboxes
-— the same reasoning the admin invite route already applies.
+`createToken`.
+
+**It deliberately does not revoke the previous token, unlike the admin invite
+route**, for two reasons.
+
+The first is that revoking would break the rate limiter. `revokeTokens` deletes
+the rows, and those same rows are what the durable limit counts — revoke on
+every request and the per-email count can never exceed one, so the limit is
+decorative. It would delete that user's rows from the per-IP count too.
+
+The second is that the invite route's reasoning does not transfer. It revokes
+because two live invitations can sit in two *different* mailboxes — an admin may
+re-invite a different address for the same row. Every reset link for an account
+goes to that account's own address, so extra links pile up in one inbox, the
+inbox of the person who asked for them. The risk that argument guards against
+is not present here.
+
+What keeps that safe is the rest of the design rather than revocation: the links
+are single-use (`consumeToken` deletes the row it claims), they live 2 hours,
+and the rate limits cap how many can exist at all. A user who clicks the oldest
+of three still gets exactly one reset.
 
 Every branch returns the identical 200.
 
