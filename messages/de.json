@@ -57,7 +57,8 @@
     "inviteLoading": "Wird aktiviert…",
     "inviteDoneTitle": "Konto aktiviert",
     "inviteDoneText": "Dein Passwort ist gesetzt. Du kannst dich jetzt anmelden.",
-    "inviteFailed": "Aktivierung fehlgeschlagen."
+    "inviteFailed": "Aktivierung fehlgeschlagen.",
+    "passwordChangedSignIn": "Dein Passwort wurde geändert. Bitte melde dich erneut an."
   },
   "create": {
     "title": "Neues Puzzle erstellen",
@@ -128,7 +129,14 @@
     "cancel": "Abbrechen",
     "deleting": "Konto wird gelöscht…",
     "deleteAccountFailed": "Konto konnte nicht gelöscht werden.",
-    "deletedButSignOutFailed": "Dein Konto wurde gelöscht, aber die Abmeldung ist fehlgeschlagen. Bitte schließe den Browser oder melde dich manuell ab."
+    "deletedButSignOutFailed": "Dein Konto wurde gelöscht, aber die Abmeldung ist fehlgeschlagen. Bitte schließe den Browser oder melde dich manuell ab.",
+    "passwordTitle": "Passwort",
+    "passwordIntro": "Wenn du dein Passwort änderst, wirst du überall sonst abgemeldet.",
+    "currentPassword": "Aktuelles Passwort",
+    "newPassword": "Neues Passwort (min. 8 Zeichen)",
+    "changePassword": "Passwort ändern",
+    "changingPassword": "Wird geändert…",
+    "changePasswordFailed": "Das Passwort konnte nicht geändert werden."
   },
   "report": {
     "reportLink": "Melden",

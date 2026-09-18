@@ -57,7 +57,8 @@
     "inviteLoading": "Attivazione…",
     "inviteDoneTitle": "Account attivato",
     "inviteDoneText": "La tua password è impostata. Ora puoi accedere.",
-    "inviteFailed": "Attivazione non riuscita."
+    "inviteFailed": "Attivazione non riuscita.",
+    "passwordChangedSignIn": "La tua password è stata cambiata. Accedi di nuovo."
   },
   "create": {
     "title": "Crea un nuovo puzzle",
@@ -128,7 +129,14 @@
     "cancel": "Annulla",
     "deleting": "Eliminazione account…",
     "deleteAccountFailed": "Impossibile eliminare l''account.",
-    "deletedButSignOutFailed": "Il tuo account è stato eliminato, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente."
+    "deletedButSignOutFailed": "Il tuo account è stato eliminato, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente.",
+    "passwordTitle": "Password",
+    "passwordIntro": "Cambiando la password verrai disconnesso da tutti gli altri dispositivi.",
+    "currentPassword": "Password attuale",
+    "newPassword": "Nuova password (min. 8 caratteri)",
+    "changePassword": "Cambia password",
+    "changingPassword": "Modifica in corso…",
+    "changePasswordFailed": "Non è stato possibile cambiare la password."
   },
   "report": {
     "reportLink": "Segnala",
