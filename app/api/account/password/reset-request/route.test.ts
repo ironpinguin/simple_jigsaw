@@ -141,6 +141,19 @@ describe("POST /api/account/password/reset-request", () => {
     expect(tokenCreate.mock.calls[0][0].data.requesterIpHash).toBe("ip-hash");
   });
 
+  it("answers the same, rather than 500, when the per-email rate-limit count throws", async () => {
+    // The realistic trigger: a rolling deploy where db:push has not yet added
+    // requesterIpHash. Reachable only for an address that exists, is unbanned
+    // and has a hash — so an uncaught throw here would 500 only for real
+    // accounts while unknown addresses still got 200, the same enumeration
+    // oracle the mail-send catch exists to close.
+    tokenCount.mockRejectedValueOnce(new Error("column requesterIpHash does not exist"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    await assertSameAnswer(await call({ email: "a@b.de" }));
+    expect(sendResetMock).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalled();
+  });
+
   it("answers the same when sending the mail fails, and does not revoke the token it already created", async () => {
     // Reachable only for an address that exists, is unbanned, has a hash and is
     // under its limit — exactly where a distinguishable response (even a 500)

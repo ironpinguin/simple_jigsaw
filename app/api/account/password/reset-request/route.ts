@@ -65,45 +65,58 @@ export async function POST(request: Request) {
   // completing the reset marks it verified.
   if (!user?.passwordHash) return answer();
 
-  const since = new Date(Date.now() - RESET_RATE_WINDOW_MS);
-  const forUser = await prisma.verificationToken.count({
-    where: { userId: user.id, type: "PASSWORD_RESET", createdAt: { gte: since } },
-  });
-  if (forUser >= RESET_PER_EMAIL_LIMIT) return answer();
-
-  // The per-IP durable count is only meaningful when x-forwarded-for can be
-  // trusted to identify a single client (lib/report-ip.ts). With the shipped
-  // default of no trusted proxy, every visitor hashes to the same "unknown"
-  // bucket, so counting it here would turn RESET_PER_IP_LIMIT into a
-  // deployment-wide cap: one visitor spending it would silently deny password
-  // recovery to everyone else, and — because the response never varies —
-  // nobody would ever learn why. The per-email count above stays unconditional
-  // because it is meaningful in every configuration.
-  if (hasTrustedProxy()) {
-    const forIp = await prisma.verificationToken.count({
-      where: { requesterIpHash: ipHash, type: "PASSWORD_RESET", createdAt: { gte: since } },
-    });
-    if (forIp >= RESET_PER_IP_LIMIT) return answer();
-  }
-
-  // Deliberately no revokeTokens here, unlike the admin invite route. Revoking
-  // deletes the rows the counts above read, so the per-address limit could never
-  // exceed one. The invite route's reasoning does not transfer either: its two
-  // live links can sit in two different mailboxes, where every reset link goes
-  // to the account's own address. Single use and a two-hour life are what keep
-  // the extras harmless.
-  const locale = await resolveRequestLocale();
+  // Starts here, not at the mail send below: every await from this line to
+  // the send — the per-email count, the per-IP count, locale resolution,
+  // minting the token, sending the mail — is reachable only for an address
+  // that exists, is unbanned and has a password hash, so a throw in any of
+  // them must get the same swallow-and-answer treatment as a mail failure.
+  // See the catch below for why.
   try {
+    const since = new Date(Date.now() - RESET_RATE_WINDOW_MS);
+    const forUser = await prisma.verificationToken.count({
+      where: { userId: user.id, type: "PASSWORD_RESET", createdAt: { gte: since } },
+    });
+    if (forUser >= RESET_PER_EMAIL_LIMIT) return answer();
+
+    // The per-IP durable count is only meaningful when x-forwarded-for can be
+    // trusted to identify a single client (lib/report-ip.ts). With the shipped
+    // default of no trusted proxy, every visitor hashes to the same "unknown"
+    // bucket, so counting it here would turn RESET_PER_IP_LIMIT into a
+    // deployment-wide cap: one visitor spending it would silently deny password
+    // recovery to everyone else, and — because the response never varies —
+    // nobody would ever learn why. The per-email count above stays unconditional
+    // because it is meaningful in every configuration.
+    if (hasTrustedProxy()) {
+      const forIp = await prisma.verificationToken.count({
+        where: { requesterIpHash: ipHash, type: "PASSWORD_RESET", createdAt: { gte: since } },
+      });
+      if (forIp >= RESET_PER_IP_LIMIT) return answer();
+    }
+
+    // Deliberately no revokeTokens here, unlike the admin invite route. Revoking
+    // deletes the rows the counts above read, so the per-address limit could never
+    // exceed one. The invite route's reasoning does not transfer either: its two
+    // live links can sit in two different mailboxes, where every reset link goes
+    // to the account's own address. Single use and a two-hour life are what keep
+    // the extras harmless.
+    const locale = await resolveRequestLocale();
     const token = await createToken(user.id, "PASSWORD_RESET", ipHash);
     await sendPasswordResetEmail(user.email, token, locale);
   } catch (error) {
     // Swallowed on purpose and never surfaced as anything but the identical
     // answer. This branch is reachable only for an address that exists, is
-    // unbanned, has a password hash and is under its limit — so letting an
-    // exception here escape as a 500 (an SMTP outage, a relay rejecting one
-    // recipient, a database blip) would make mail trouble an oracle telling
-    // the caller exactly which addresses have accounts.
-    console.error(`[reset-request] sending a reset email for user ${user.id} failed:`, error);
+    // unbanned and has a password hash — so letting an exception here escape
+    // as a 500 (a database blip on either rate-limit count, a locale lookup
+    // failing, an SMTP outage, a relay rejecting one recipient) would make the
+    // failure itself an oracle telling the caller exactly which addresses have
+    // accounts. The realistic trigger for the counts is a rolling deploy where
+    // db:push has not yet added requesterIpHash: the user lookup succeeds, the
+    // count throws, and without the try starting here that would 500 only for
+    // real accounts while unknown addresses still got 200. A swallowed
+    // rate-limit count therefore correctly means no mail sent rather than
+    // unlimited mail — the counts exist to cap mail, and failing open here
+    // would defeat them.
+    console.error(`[reset-request] processing the reset request for user ${user.id} failed:`, error);
   }
 
   // A token created just above may now exist even though the mail failed to
