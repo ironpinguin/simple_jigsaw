@@ -38,7 +38,9 @@ beforeAll(async () => {
 
 function uploadRequest(bytes: Buffer, options: { type?: string; filename?: string } = {}) {
   const form = new FormData();
-  const file = new File([bytes], options.filename ?? "photo.jpg", {
+  // A Buffer is typed over ArrayBufferLike, which admits SharedArrayBuffer and
+  // so is not a BlobPart. Copy into a plain view for the File constructor.
+  const file = new File([new Uint8Array(bytes)], options.filename ?? "photo.jpg", {
     type: options.type ?? "image/jpeg",
   });
   form.set("file", file);
