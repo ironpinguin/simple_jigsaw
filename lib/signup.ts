@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { passwordField } from "./password";
 
 // Validation shared by the two account-creation endpoints, `/api/register` and
 // `/api/invite`. It lives in lib/ so the terms gate — the record of consent the
@@ -14,7 +15,7 @@ const termsAccepted = z.literal(true);
 
 export const RegisterSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordField,
   name: z.string().trim().max(80).optional(),
   termsAccepted,
 });
@@ -22,7 +23,7 @@ export const RegisterSchema = z.object({
 /** Invited users accept the terms when they activate the account. */
 export const InviteSchema = z.object({
   token: z.string().min(1),
-  password: z.string().min(8),
+  password: passwordField,
   termsAccepted,
 });
 
