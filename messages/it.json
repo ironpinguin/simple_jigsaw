@@ -136,7 +136,8 @@
     "newPassword": "Nuova password (min. 8 caratteri)",
     "changePassword": "Cambia password",
     "changingPassword": "Modifica in corso…",
-    "changePasswordFailed": "Non è stato possibile cambiare la password."
+    "changePasswordFailed": "Non è stato possibile cambiare la password.",
+    "changedButSignOutFailed": "La tua password è stata cambiata, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente."
   },
   "report": {
     "reportLink": "Segnala",

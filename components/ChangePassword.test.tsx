@@ -129,4 +129,23 @@ describe("ChangePassword", () => {
     expect(text()).toContain(messages.my.changePasswordFailed);
     expect(signOutMock).not.toHaveBeenCalled();
   });
+
+  it("tells the user the password changed even when signing out fails", async () => {
+    // The server already confirmed the change. Leaving the form spinning
+    // with no message would strand the user looking signed in.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+    signOutMock.mockRejectedValue(new Error("offline"));
+
+    mount();
+    await submit("oldpassword", "newpassword");
+
+    expect(text()).toContain(messages.my.changedButSignOutFailed);
+    expect(
+      container.querySelector<HTMLButtonElement>("button[type=submit]")?.disabled,
+    ).toBe(false);
+  });
 });

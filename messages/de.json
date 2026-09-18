@@ -136,7 +136,8 @@
     "newPassword": "Neues Passwort (min. 8 Zeichen)",
     "changePassword": "Passwort ändern",
     "changingPassword": "Wird geändert…",
-    "changePasswordFailed": "Das Passwort konnte nicht geändert werden."
+    "changePasswordFailed": "Das Passwort konnte nicht geändert werden.",
+    "changedButSignOutFailed": "Dein Passwort wurde geändert, aber die Abmeldung ist fehlgeschlagen. Bitte schließe den Browser oder melde dich manuell ab."
   },
   "report": {
     "reportLink": "Melden",

@@ -47,7 +47,17 @@ export default function ChangePassword() {
     // what tells the user that was deliberate.
     setCurrentPassword("");
     setNewPassword("");
-    await signOut({ callbackUrl: `/${locale}/login?changed=1` });
+    try {
+      await signOut({ callbackUrl: `/${locale}/login?changed=1` });
+    } catch (err) {
+      // The password change already succeeded — the server confirmed it.
+      // Only the sign-out failed, and every other session is dead already,
+      // so this must not read as "nothing happened": it has to say the
+      // change went through and tell the user how to finish signing out.
+      console.error("[my] sign-out after password change failed:", err);
+      setError(t("changedButSignOutFailed"));
+      setBusy(false);
+    }
   }
 
   return (
