@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- The SQLite stack is now its own Compose project, `jigsaw-sqlite`. Both compose
+  files previously defaulted to the checkout's directory name and so shared one
+  project, which meant starting the SQLite stack in a checkout where
+  `docker compose up` was running adopted and tore down the Postgres stack's
+  containers rather than standing beside them — the opposite of what the file
+  said it did. **This renames the volume**, from `<directory>_sqlitedata` to
+  `jigsaw-sqlite_sqlitedata`, so an existing SQLite install will otherwise come
+  up with an empty database and no images. Either keep the old project name:
+
+  ```bash
+  docker compose -p <directory> -f docker-compose.sqlite.yml up -d
+  ```
+
+  or copy the data across once, replacing `<directory>` with the folder the
+  stack was started from:
+
+  ```bash
+  docker compose -f docker-compose.sqlite.yml down
+  docker volume create jigsaw-sqlite_sqlitedata
+  docker run --rm -v <directory>_sqlitedata:/from -v jigsaw-sqlite_sqlitedata:/to \
+    alpine sh -c 'cp -a /from/. /to/'
+  ```
+
+  The Postgres stack in `docker-compose.yml` is deliberately left alone: naming
+  it would rename `pgdata` and `rustfsdata` too, and no existing deployment
+  should have to migrate its database to fix a comment. (#78)
+
 ## [0.6.0] - 2026-08-10
 
 ### Added
