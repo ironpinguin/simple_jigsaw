@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { consumeTokenMock, userUpdate, hashMock } = vi.hoisted(() => ({
+const { consumeTokenMock, revokeTokensMock, userUpdate, hashMock } = vi.hoisted(() => ({
   consumeTokenMock: vi.fn(),
+  revokeTokensMock: vi.fn(),
   userUpdate: vi.fn(),
   hashMock: vi.fn(),
 }));
 
-vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
+vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock, revokeTokens: revokeTokensMock }));
 vi.mock("@/lib/db", () => ({ prisma: { user: { update: userUpdate } } }));
 vi.mock("bcryptjs", () => ({ default: { hash: hashMock } }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
@@ -31,6 +32,7 @@ describe("POST /api/account/password/reset", () => {
     consumeTokenMock.mockResolvedValue({ ok: true, userId: "u1" });
     hashMock.mockResolvedValue("$2b$new");
     userUpdate.mockResolvedValue({});
+    revokeTokensMock.mockResolvedValue(0);
   });
 
   it("sets the new password when the link is good", async () => {
@@ -82,5 +84,30 @@ describe("POST /api/account/password/reset", () => {
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "passwordMin" });
     expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("revokes the account's other outstanding reset links after a successful reset", async () => {
+    // Up to two more PASSWORD_RESET links can still be live (RESET_PER_EMAIL_LIMIT
+    // is 3); completing one answers the same question the others were sent for.
+    await call(VALID);
+    expect(revokeTokensMock).toHaveBeenCalledWith("u1", "PASSWORD_RESET");
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not revoke anything when the link itself is invalid", async () => {
+    consumeTokenMock.mockResolvedValue({ ok: false, reason: "invalid" });
+    await call(VALID);
+    expect(revokeTokensMock).not.toHaveBeenCalled();
+  });
+
+  it("still reports success when revoking the other reset links fails", async () => {
+    // The password write already happened by then, so a 500 here would tell
+    // the user the opposite of what actually happened.
+    revokeTokensMock.mockRejectedValue(new Error("db down"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await call(VALID);
+    expect(res.status).toBe(200);
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveBeenCalled();
   });
 });

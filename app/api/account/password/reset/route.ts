@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { consumeToken } from "@/lib/tokens";
+import { consumeToken, revokeTokens } from "@/lib/tokens";
 import { passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
 
@@ -45,6 +45,31 @@ export async function POST(request: Request) {
       emailVerified: now,
     },
   });
+
+  // Up to RESET_PER_EMAIL_LIMIT other PASSWORD_RESET links can still be live
+  // for this account — a reset mail still sitting in an inbox is a second
+  // key. Completing this one answers the same question the others were sent
+  // for just as deliberately as changing the password from inside the account
+  // does (app/api/account/password/route.ts), so it revokes for the same
+  // reason. After the update, not before: a failed write must not disarm
+  // links the user may still need.
+  //
+  // Swallowed rather than reported: the password has already been reset
+  // above, so a 500 here would tell the user the opposite of what happened.
+  // The cost of swallowing it is the other links surviving for up to their
+  // two-hour TTL — the reason this is logged rather than ignored. Unlike the
+  // request route's rate limiter, this cannot be ground down by an attacker:
+  // reaching this point already required clicking a mailed link, which
+  // implies the mailbox access the limiter exists to approximate.
+  try {
+    await revokeTokens(claim.userId, "PASSWORD_RESET");
+  } catch (error) {
+    console.error(
+      `[account-password-reset] revoking other PASSWORD_RESET links for user ${claim.userId} failed ` +
+        `after the password was already reset; another link may still work for up to its TTL:`,
+      error,
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
