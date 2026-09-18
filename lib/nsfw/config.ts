@@ -47,7 +47,15 @@ function positiveNumber(raw: string | undefined, fallback: number, max: number):
   return Number.isFinite(value) && value > 0 && value <= max ? value : fallback;
 }
 
-export function readNsfwConfig(env: NodeJS.ProcessEnv): NsfwConfig {
+/**
+ * Just what this function reads: an open map of environment variables.
+ * Deliberately not `NodeJS.ProcessEnv`, which requires `NODE_ENV` as of
+ * @types/node 26 — nothing here looks at it, and demanding it would make every
+ * caller carry an irrelevant field. `process.env` satisfies this.
+ */
+export type NsfwEnv = Readonly<Record<string, string | undefined>>;
+
+export function readNsfwConfig(env: NsfwEnv): NsfwConfig {
   // Empty counts as unset: `NSFW_MODE=` is how a compose file says "leave this
   // alone", and treating it as a typo would hold every upload on an instance
   // that wants no classifier at all.
@@ -76,8 +84,8 @@ export function readNsfwConfig(env: NodeJS.ProcessEnv): NsfwConfig {
   // every upload is about to leave for a named-nowhere third party, and
   // nothing else checks that LEGAL_CLASSIFIER_PROCESSOR (lib/legal.ts) was
   // set to match. Read directly off `env` rather than importing lib/legal.ts,
-  // since NodeJS.ProcessEnv already carries every variable regardless of
-  // which module declares it.
+  // since the env map carries every variable regardless of which module
+  // declares it.
   if (mode === "external" && !env.LEGAL_CLASSIFIER_PROCESSOR?.trim()) {
     console.warn(
       "[nsfw] NSFW_MODE=external is set but LEGAL_CLASSIFIER_PROCESSOR is not — uploads are being " +

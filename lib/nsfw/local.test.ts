@@ -25,7 +25,14 @@ const tinyImage = () =>
  * only needs to satisfy what `createDefaultRun` actually calls.
  */
 function fakeSession(probabilities: number[] = [0.1, 0.2, 0.7]) {
-  return { run: vi.fn(async () => ({ probabilities: { data: probabilities } })) };
+  // Typed through vi.fn's parameter rather than by declaring an argument the
+  // implementation ignores: the tensor assertions below read
+  // `run.mock.calls[0][0]`, and without a call signature that tuple is `[]`.
+  return {
+    run: vi.fn<(feeds: Record<string, unknown>) => Promise<{ probabilities: { data: number[] } }>>(
+      async () => ({ probabilities: { data: probabilities } }),
+    ),
+  };
 }
 
 type LoadSession = Parameters<typeof createLocalClassifier>[2];
@@ -81,7 +88,7 @@ describe("the session cache", () => {
     const bytes = await tinyImage();
     const session = fakeSession();
     const loadSession = vi.fn(async () => session);
-    const classifier = createLocalClassifier(config, undefined, loadSession as LoadSession);
+    const classifier = createLocalClassifier(config, undefined, loadSession as unknown as LoadSession);
 
     // Four uploads landing in the same tick right after a cold start — the
     // scenario the reviewer reproduced with the naive `session ??= await
@@ -101,7 +108,7 @@ describe("the session cache", () => {
     const bytes = await tinyImage();
     const session = fakeSession();
     const loadSession = vi.fn(async () => session);
-    const classifier = createLocalClassifier(config, undefined, loadSession as LoadSession);
+    const classifier = createLocalClassifier(config, undefined, loadSession as unknown as LoadSession);
 
     await classifier.classify(bytes);
     await classifier.classify(bytes);
@@ -156,7 +163,7 @@ describe("the session cache", () => {
       .fn()
       .mockRejectedValueOnce(new Error("disk hiccup"))
       .mockResolvedValueOnce(session);
-    const classifier = createLocalClassifier(config, undefined, loadSession as LoadSession);
+    const classifier = createLocalClassifier(config, undefined, loadSession as unknown as LoadSession);
 
     await expect(classifier.classify(bytes)).rejects.toThrow("disk hiccup");
     const verdict = await classifier.classify(bytes);
@@ -397,7 +404,7 @@ describe("the input tensor", () => {
     const classifier = createLocalClassifier(
       config,
       undefined,
-      (async () => session) as LoadSession,
+      (async () => session) as unknown as LoadSession,
     );
 
     await classifier.classify(png);
@@ -452,7 +459,7 @@ describe("the input tensor", () => {
     const classifier = createLocalClassifier(
       config,
       undefined,
-      (async () => session) as LoadSession,
+      (async () => session) as unknown as LoadSession,
     );
 
     const verdict = await classifier.classify(await tinyImage());

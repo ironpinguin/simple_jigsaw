@@ -45,7 +45,9 @@ afterEach(() => {
 function mount(
   store: ViewStore,
   groups: PieceGroup[] = [group(1, 0, 0, [pieceId(0, 0)])],
-  onJump = vi.fn(),
+  // Typed as the prop itself: defaulting to `vi.fn()` alone infers Mock<Procedure>,
+  // which then rejects the plain callback `wired()` passes.
+  onJump: (centre: { x: number; y: number }) => void = vi.fn(),
 ) {
   act(() => {
     root.render(

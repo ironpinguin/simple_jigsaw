@@ -1,13 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { pieceId, type PieceGroup } from "./groups";
 import type { Rect } from "./board";
-import {
-  groupMarkers,
-  minimapSize,
-  stagePositionFor,
-  visibleRect,
-  type StageView,
-} from "./minimap";
+import { groupMarkers, minimapSize, stagePositionFor, visibleRect } from "./minimap";
+// StageView is zoom.ts's type; minimap.ts only consumes it, so import it from
+// its owner rather than having minimap re-export what it does not define.
+import type { StageView } from "./zoom";
 
 const STAGE_W = 1200;
 const STAGE_H = 800;
