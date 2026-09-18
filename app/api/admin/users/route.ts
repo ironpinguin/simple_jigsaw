@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
 import { getErrorT } from "@/lib/i18n-server";
+import { toAdminUserView } from "@/lib/admin-users";
 
 export async function GET() {
   if (!(await requireAdmin())) {
@@ -25,13 +26,9 @@ export async function GET() {
     },
   });
 
-  // Never leak the hash; expose a boolean instead.
-  const safe = users.map(({ passwordHash, emailVerified, ...u }) => ({
-    ...u,
-    verified: emailVerified !== null,
-    hasPassword: passwordHash !== null,
-  }));
-  return NextResponse.json({ users: safe });
+  // Never leak the hash; expose booleans instead. Shared with the server
+  // component behind /admin/users so the two cannot drift (#52).
+  return NextResponse.json({ users: users.map(toAdminUserView) });
 }
 
 const CreateSchema = z.object({
