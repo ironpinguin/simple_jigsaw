@@ -11,6 +11,7 @@ export default function LoginPage() {
   const router = useRouter();
   const params = useSearchParams();
   const callbackUrl = params.get("callbackUrl") || "/my";
+  const passwordChanged = params.get("changed") === "1";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,6 +39,7 @@ export default function LoginPage() {
   return (
     <form className="form card" onSubmit={onSubmit}>
       <h1>{t("loginTitle")}</h1>
+      {passwordChanged && <p className="muted">{t("passwordChangedSignIn")}</p>}
       {error && <p className="error">{error}</p>}
       <div>
         <label htmlFor="email">{t("email")}</label>
