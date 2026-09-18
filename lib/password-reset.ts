@@ -17,11 +17,27 @@
 //
 // PROBE_LIMIT is keyed by ipHash, and hashReporterIp collapses every visitor to
 // one shared "unknown" bucket on a deployment with no trusted proxy (the
-// shipped default — see lib/report-ip.ts). On such a deployment this counter
-// is therefore collective, exactly like RESET_PER_IP_LIMIT: it has to stay
-// generous enough that ordinary shared use — an office, a campus, a carrier-
-// grade NAT — does not trip it and silently break recovery for everyone behind
-// it, since the response never varies to say that it happened.
+// shipped default — see lib/report-ip.ts). Enforcing it there would make it
+// exactly the deployment-wide lever RESET_PER_IP_LIMIT would be if the request
+// route consulted it in that configuration: one caller sustaining a low,
+// steady rate keeps the shared bucket permanently full, `recordProbe` then
+// returns false for everybody, and — because the response never varies —
+// password recovery goes silently dead site-wide for as long as they keep
+// going. No number fixes that: raising PROBE_LIMIT only raises how long it
+// takes one caller to fill a bucket everybody else also has to share.
+//
+// So the request route records into this counter unconditionally, to keep it
+// warm, but enforces it only when hasTrustedProxy() (lib/report-ip.ts) says the
+// hash identifies one real client — the same gate that route already applies
+// to the durable per-IP count, for the same reason. Without a trusted proxy
+// this file protects nothing on its own; what does the work in that
+// configuration is the per-email cap below (RESET_PER_EMAIL_LIMIT, 3/hour),
+// unconditional because it is keyed on the address rather than on an IP an
+// attacker can collapse. Leaving requests for non-existent addresses unmetered
+// there is an acceptable cost — each one is a couple of queries and no mail
+// sent — and the generic load concern that remains belongs at a real trusted
+// proxy, not a reason to hand any single caller a lever over everyone's
+// password recovery.
 
 /** Per account, per window. One person recovering one account needs very few. */
 export const RESET_PER_EMAIL_LIMIT = 3;
@@ -31,7 +47,10 @@ export const RESET_PER_IP_LIMIT = 10;
 
 export const RESET_RATE_WINDOW_MS = 60 * 60 * 1000;
 
-/** Every request from one IP, existing address or not. */
+/**
+ * Every request from one hashed IP, existing address or not — enforced only
+ * when hasTrustedProxy() confirms the hash identifies a single real client.
+ */
 export const PROBE_LIMIT = 60;
 export const PROBE_WINDOW_MS = 10 * 60 * 1000;
 

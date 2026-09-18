@@ -36,10 +36,16 @@ const answer = () => NextResponse.json(SAME_ANSWER);
 export async function POST(request: Request) {
   const ipHash = hashReporterIp(request.headers.get("x-forwarded-for"));
 
-  // Before anything that costs a query. This is the only limit that sees a
+  // Record unconditionally so the counter stays warm if the deployment later
+  // gains a trusted proxy; enforce only when the hash identifies one client.
+  // Before anything that costs a query — this is the only limit that sees a
   // request for an address with no account, because such a request creates no
-  // row for the database counts below to find.
-  if (!recordProbe(ipHash)) return answer();
+  // row for the database counts below to find. See lib/password-reset.ts for
+  // why enforcement is gated: without a trusted proxy, every visitor hashes to
+  // one shared bucket, and enforcing here would make this a lever one caller
+  // could hold over everyone's password recovery.
+  const withinProbeLimit = recordProbe(ipHash);
+  if (hasTrustedProxy() && !withinProbeLimit) return answer();
 
   const parsed = Schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return answer();

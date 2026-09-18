@@ -110,14 +110,30 @@ describe("POST /api/account/password/reset-request", () => {
     expect(sendResetMock).not.toHaveBeenCalled();
   });
 
-  it("stops a caller probing many unknown addresses", async () => {
+  it("stops a caller probing many unknown addresses, behind a trusted proxy", async () => {
     // The database count cannot see these: an unknown address creates no row.
+    // Enforcement requires a trusted proxy — see the next test for why it must
+    // not apply on the shipped default, where every visitor shares one bucket.
+    hasTrustedProxyMock.mockReturnValue(true);
     userFindUnique.mockResolvedValue(null);
     const attempts = PROBE_LIMIT + 5;
     for (let i = 0; i < attempts; i++) await call({ email: `probe-${i}@example.com` });
     // Still the same answer — being throttled must not be observable either.
     await assertSameAnswer(await call({ email: "probe-final@example.com" }));
     expect(userFindUnique.mock.calls.length).toBeLessThan(attempts);
+  });
+
+  it("does not let the probe counter deny service deployment-wide without a trusted proxy", async () => {
+    // With the shipped default (no trusted proxy), hashReporterIp collapses
+    // every visitor into one shared bucket. Enforcing PROBE_LIMIT there would
+    // let one caller sustaining a steady rate keep it permanently full and
+    // silently kill password recovery for everyone else behind it.
+    hasTrustedProxyMock.mockReturnValue(false);
+    const attempts = PROBE_LIMIT + 5;
+    for (let i = 0; i < attempts; i++) {
+      await assertSameAnswer(await call({ email: "a@b.de" }));
+    }
+    expect(sendResetMock).toHaveBeenCalledTimes(attempts);
   });
 
   it("records the requesting IP hash on the token it creates", async () => {
