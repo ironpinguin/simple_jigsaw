@@ -64,6 +64,7 @@ describe("POST /api/account/password/reset", () => {
     consumeTokenMock.mockResolvedValue({ ok: false, reason: "invalid" });
     const res = await call(VALID);
     expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "resetInvalid" });
     expect(userUpdate).not.toHaveBeenCalled();
   });
 

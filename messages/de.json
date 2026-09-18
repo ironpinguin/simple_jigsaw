@@ -335,6 +335,7 @@
     "userNotFound": "Nutzer nicht gefunden.",
     "verifyInvalid": "Der Bestätigungslink ist ungültig oder abgelaufen.",
     "inviteInvalid": "Der Einladungslink ist ungültig oder abgelaufen.",
+    "resetInvalid": "Der Link zum Zurücksetzen ist ungültig oder abgelaufen.",
     "linkUnavailable": "Der Link konnte gerade nicht eingelöst werden. Bitte versuche es in einem Moment erneut.",
     "accountNotFound": "Konto nicht gefunden.",
     "lastAdminDemote": "Der letzte Admin kann nicht herabgestuft werden.",

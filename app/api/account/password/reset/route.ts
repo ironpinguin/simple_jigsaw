@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     // the request loop for nothing. Mirrors app/api/invite/route.ts.
     return claim.reason === "unavailable"
       ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
-      : NextResponse.json({ error: t("verifyInvalid") }, { status: 400 });
+      : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
   }
 
   const now = new Date();

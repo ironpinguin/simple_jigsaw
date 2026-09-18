@@ -335,6 +335,7 @@
     "userNotFound": "User not found.",
     "verifyInvalid": "The confirmation link is invalid or has expired.",
     "inviteInvalid": "The invitation link is invalid or has expired.",
+    "resetInvalid": "The reset link is invalid or has expired.",
     "linkUnavailable": "The link could not be redeemed just now. Please try again in a moment.",
     "accountNotFound": "Account not found.",
     "lastAdminDemote": "The last admin cannot be demoted.",
