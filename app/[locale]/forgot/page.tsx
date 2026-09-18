@@ -16,16 +16,23 @@ export default function ForgotPage() {
     setFailed(false);
     setLoading(true);
     try {
-      await fetch("/api/account/password/reset-request", {
+      const res = await fetch("/api/account/password/reset-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
       // The endpoint answers 200 the same way for every outcome — unknown
       // address, banned address, rate-limited, mail sent — so this page must
-      // not branch on the body either; it only distinguishes "the request
-      // reached the server" from "it didn't".
-      setDone(true);
+      // not branch on the body: it never says more than the endpoint does.
+      // Branching on the status is still safe: every one of the route's
+      // return paths goes through the same `answer()` helper with the
+      // default 200, so a non-2xx can only come from infrastructure (a proxy
+      // 502, a framework 500), never from anything about the account.
+      if (res.ok) {
+        setDone(true);
+      } else {
+        setFailed(true);
+      }
     } catch {
       // fetch rejects without a response when the network fails.
       setFailed(true);

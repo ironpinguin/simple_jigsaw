@@ -99,4 +99,17 @@ describe("ResetPage", () => {
 
     expect(text()).toContain("Link expired");
   });
+
+  it("falls back to its own message when the refusal carries no body", async () => {
+    searchParams.value = new URLSearchParams({ token: "stale" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not json", { status: 500 })),
+    );
+
+    mount();
+    await submit("new-password");
+
+    expect(text()).toContain(messages.auth.resetFailed);
+  });
 });

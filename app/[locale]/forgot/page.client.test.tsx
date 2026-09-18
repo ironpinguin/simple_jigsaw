@@ -87,4 +87,17 @@ describe("ForgotPage", () => {
     expect(text()).toContain(messages.auth.forgotFailed);
     expect(text()).not.toContain(messages.auth.forgotDone);
   });
+
+  it("shows the failure message on a non-2xx, without inspecting the body", async () => {
+    // Every return path in the route answers 200; a non-2xx can only come
+    // from infrastructure (a proxy 502, a framework 500), never from
+    // anything about the account, so branching on status leaks nothing.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 502 })));
+
+    mount();
+    await submit("someone@example.com");
+
+    expect(text()).toContain(messages.auth.forgotFailed);
+    expect(text()).not.toContain(messages.auth.forgotDone);
+  });
 });
