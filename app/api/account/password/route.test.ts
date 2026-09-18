@@ -143,4 +143,13 @@ describe("PUT /api/account/password", () => {
     await call(VALID);
     expect(revokeTokensMock).not.toHaveBeenCalled();
   });
+
+  it("still reports success when revoking the reset link fails", async () => {
+    // The password write already happened and the caller's own session is
+    // already dead from the stamp it wrote; a 500 here would say otherwise.
+    revokeTokensMock.mockRejectedValue(new Error("db down"));
+    const res = await call(VALID);
+    expect(res.status).toBe(200);
+    expect(userUpdate).toHaveBeenCalledTimes(1);
+  });
 });
