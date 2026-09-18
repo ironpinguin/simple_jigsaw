@@ -1,28 +1,39 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { userFindUnique, tokenCount, tokenCreate, bannedMock, sendResetMock, hashIpMock } =
-  vi.hoisted(() => ({
-    userFindUnique: vi.fn(),
-    tokenCount: vi.fn(),
-    tokenCreate: vi.fn(),
-    bannedMock: vi.fn(),
-    sendResetMock: vi.fn(),
-    hashIpMock: vi.fn(),
-  }));
+const {
+  userFindUnique,
+  tokenCount,
+  tokenCreate,
+  bannedMock,
+  sendResetMock,
+  hashIpMock,
+  hasTrustedProxyMock,
+} = vi.hoisted(() => ({
+  userFindUnique: vi.fn(),
+  tokenCount: vi.fn(),
+  tokenCreate: vi.fn(),
+  bannedMock: vi.fn(),
+  sendResetMock: vi.fn(),
+  hashIpMock: vi.fn(),
+  hasTrustedProxyMock: vi.fn(),
+}));
 
 vi.mock("@/lib/db", () => ({
   prisma: { user: { findUnique: userFindUnique }, verificationToken: { count: tokenCount, create: tokenCreate } },
 }));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: bannedMock }));
 vi.mock("@/lib/mail", () => ({ sendPasswordResetEmail: sendResetMock }));
-vi.mock("@/lib/report-ip", () => ({ hashReporterIp: hashIpMock }));
+vi.mock("@/lib/report-ip", () => ({
+  hashReporterIp: hashIpMock,
+  hasTrustedProxy: hasTrustedProxyMock,
+}));
 vi.mock("@/lib/i18n-server", () => ({
   getErrorT: async () => (key: string) => key,
   resolveRequestLocale: async () => "de",
 }));
 
 import { POST } from "./route";
-import { __resetProbeState } from "@/lib/password-reset";
+import { __resetProbeState, PROBE_LIMIT } from "@/lib/password-reset";
 
 function call(body: unknown) {
   return POST(
@@ -45,6 +56,7 @@ describe("POST /api/account/password/reset-request", () => {
     vi.clearAllMocks();
     __resetProbeState();
     hashIpMock.mockReturnValue("ip-hash");
+    hasTrustedProxyMock.mockReturnValue(false);
     bannedMock.mockResolvedValue(false);
     tokenCount.mockResolvedValue(0);
     tokenCreate.mockResolvedValue({ token: "tok" });
@@ -101,14 +113,48 @@ describe("POST /api/account/password/reset-request", () => {
   it("stops a caller probing many unknown addresses", async () => {
     // The database count cannot see these: an unknown address creates no row.
     userFindUnique.mockResolvedValue(null);
-    for (let i = 0; i < 25; i++) await call({ email: `probe-${i}@example.com` });
+    const attempts = PROBE_LIMIT + 5;
+    for (let i = 0; i < attempts; i++) await call({ email: `probe-${i}@example.com` });
     // Still the same answer — being throttled must not be observable either.
     await assertSameAnswer(await call({ email: "probe-final@example.com" }));
-    expect(userFindUnique.mock.calls.length).toBeLessThan(25);
+    expect(userFindUnique.mock.calls.length).toBeLessThan(attempts);
   });
 
   it("records the requesting IP hash on the token it creates", async () => {
     await call({ email: "a@b.de" });
     expect(tokenCreate.mock.calls[0][0].data.requesterIpHash).toBe("ip-hash");
+  });
+
+  it("answers the same when sending the mail fails, and does not revoke the token it already created", async () => {
+    // Reachable only for an address that exists, is unbanned, has a hash and is
+    // under its limit — exactly where a distinguishable response (even a 500)
+    // would turn mail trouble into an oracle for which addresses have accounts.
+    sendResetMock.mockRejectedValueOnce(new Error("smtp down"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    await assertSameAnswer(await call({ email: "a@b.de" }));
+    expect(tokenCreate).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it("consults, and can be limited by, the per-IP durable count behind a trusted proxy", async () => {
+    hasTrustedProxyMock.mockReturnValue(true);
+    tokenCount.mockImplementation(async ({ where }: { where: { requesterIpHash?: string } }) =>
+      where.requesterIpHash ? 99 : 0,
+    );
+    await assertSameAnswer(await call({ email: "a@b.de" }));
+    expect(sendResetMock).not.toHaveBeenCalled();
+    expect(tokenCount).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not consult the per-IP count, or let another caller's shared-bucket usage block this one, without a trusted proxy", async () => {
+    hasTrustedProxyMock.mockReturnValue(false);
+    // Would trip RESET_PER_IP_LIMIT if consulted — proof it isn't, on the
+    // shipped default where every visitor hashes to one shared bucket.
+    tokenCount.mockImplementation(async ({ where }: { where: { requesterIpHash?: string } }) =>
+      where.requesterIpHash ? 99 : 0,
+    );
+    await assertSameAnswer(await call({ email: "a@b.de" }));
+    expect(sendResetMock).toHaveBeenCalledTimes(1);
+    expect(tokenCount).toHaveBeenCalledTimes(1);
   });
 });

@@ -14,6 +14,14 @@
 // are acceptable because it guards work rather than secrets: the request
 // endpoint answers identically whatever happens, so probing learns nothing
 // either way. This only stops it being free.
+//
+// PROBE_LIMIT is keyed by ipHash, and hashReporterIp collapses every visitor to
+// one shared "unknown" bucket on a deployment with no trusted proxy (the
+// shipped default — see lib/report-ip.ts). On such a deployment this counter
+// is therefore collective, exactly like RESET_PER_IP_LIMIT: it has to stay
+// generous enough that ordinary shared use — an office, a campus, a carrier-
+// grade NAT — does not trip it and silently break recovery for everyone behind
+// it, since the response never varies to say that it happened.
 
 /** Per account, per window. One person recovering one account needs very few. */
 export const RESET_PER_EMAIL_LIMIT = 3;
@@ -24,7 +32,7 @@ export const RESET_PER_IP_LIMIT = 10;
 export const RESET_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 /** Every request from one IP, existing address or not. */
-export const PROBE_LIMIT = 20;
+export const PROBE_LIMIT = 60;
 export const PROBE_WINDOW_MS = 10 * 60 * 1000;
 
 /** ipHash -> timestamps within the current window. */
