@@ -7,8 +7,13 @@
  * `User.passwordChangedAt`, null for an account whose password has never
  * changed.
  *
- * The comparison is second-to-second, so a token issued in the same second as
- * the change survives. See the test for why that direction was chosen.
+ * Auth.js re-stamps `iat` on every session read (it calls `setIssuedAt()`
+ * with no argument each time the JWT is encoded), so `iat` means "last
+ * re-issue", not "sign-in time". A cookie can therefore be re-issued in the
+ * same wall-clock second as a password change and, without care, would carry
+ * that second forward and never go stale. To close that, anything issued *in
+ * or before* the second of the change is refused: a same-second re-login is
+ * bounced once by design, and must sign in again.
  */
 export function isSessionStale(
   iatSeconds: number | undefined,
@@ -16,5 +21,5 @@ export function isSessionStale(
 ): boolean {
   if (changedAt === null) return false;
   if (iatSeconds === undefined) return true;
-  return iatSeconds < Math.floor(changedAt.getTime() / 1000);
+  return iatSeconds <= Math.floor(changedAt.getTime() / 1000);
 }

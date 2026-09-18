@@ -18,13 +18,16 @@ describe("isSessionStale", () => {
     expect(isSessionStale(1_002, at(1_001))).toBe(false);
   });
 
-  it("keeps a token issued in the same second as the change", () => {
-    // The deliberate sub-second window. `iat` has no sub-second precision, so
-    // the alternative is rejecting the fresh session of someone who signs back
-    // in within the same second as their own change. A token issued in that
-    // second is not a threat worth that.
-    expect(isSessionStale(1_001, at(1_001, 400))).toBe(false);
-    expect(isSessionStale(1_001, at(1_001, 999))).toBe(false);
+  it("treats a token issued in the same second as the change as stale, because `iat` is re-stamped on every read", () => {
+    // Auth.js re-stamps `iat` on every session read, so a token issued in the
+    // same second as the change is not necessarily the pre-change cookie —
+    // it could be a cookie re-issued *after* the change but still landing in
+    // that second, which would otherwise carry that second forward and never
+    // go stale. Do not relax this back to `<`: that was tried and reopens a
+    // permanent escape for exactly the cookie this feature exists to kill.
+    // The cost is a same-second re-login being bounced once, on purpose.
+    expect(isSessionStale(1_001, at(1_001, 400))).toBe(true);
+    expect(isSessionStale(1_001, at(1_001, 999))).toBe(true);
   });
 
   it("treats a token with no issue time as stale", () => {
