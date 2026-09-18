@@ -65,7 +65,11 @@ export function tokenClaimStatus(): {
   };
 }
 
-export async function createToken(userId: string, type: TokenKind): Promise<string> {
+export async function createToken(
+  userId: string,
+  type: TokenKind,
+  requesterIpHash: string | null = null,
+): Promise<string> {
   const now = Date.now();
 
   // Housekeeping on the way past, sharing the hourly budget with the timer in
@@ -79,7 +83,7 @@ export async function createToken(userId: string, type: TokenKind): Promise<stri
 
   const token = randomBytes(32).toString("hex");
   await prisma.verificationToken.create({
-    data: { token, type, userId, expiresAt: tokenExpiry(type, now) },
+    data: { token, type, userId, expiresAt: tokenExpiry(type, now), requesterIpHash },
   });
   return token;
 }
