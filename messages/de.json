@@ -58,7 +58,19 @@
     "inviteDoneTitle": "Konto aktiviert",
     "inviteDoneText": "Dein Passwort ist gesetzt. Du kannst dich jetzt anmelden.",
     "inviteFailed": "Aktivierung fehlgeschlagen.",
-    "passwordChangedSignIn": "Dein Passwort wurde geändert. Bitte melde dich erneut an."
+    "passwordChangedSignIn": "Dein Passwort wurde geändert. Bitte melde dich erneut an.",
+    "forgotLink": "Passwort vergessen?",
+    "forgotTitle": "Passwort zurücksetzen",
+    "forgotIntro": "Gib deine E-Mail-Adresse ein, dann schicken wir dir einen Link für ein neues Passwort.",
+    "forgotSubmit": "Link senden",
+    "forgotSending": "Wird gesendet…",
+    "forgotDone": "Falls es ein Konto für diese Adresse gibt, ist ein Link unterwegs. Schau in dein Postfach.",
+    "forgotFailed": "Die Anfrage konnte nicht gesendet werden.",
+    "resetTitle": "Neues Passwort wählen",
+    "resetSubmit": "Passwort setzen",
+    "resetSaving": "Wird gespeichert…",
+    "resetDone": "Dein Passwort ist gesetzt. Du kannst dich jetzt anmelden.",
+    "resetFailed": "Das Passwort konnte nicht gesetzt werden. Der Link ist vielleicht abgelaufen."
   },
   "create": {
     "title": "Neues Puzzle erstellen",

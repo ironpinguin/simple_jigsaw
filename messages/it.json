@@ -58,7 +58,19 @@
     "inviteDoneTitle": "Account attivato",
     "inviteDoneText": "La tua password è impostata. Ora puoi accedere.",
     "inviteFailed": "Attivazione non riuscita.",
-    "passwordChangedSignIn": "La tua password è stata cambiata. Accedi di nuovo."
+    "passwordChangedSignIn": "La tua password è stata cambiata. Accedi di nuovo.",
+    "forgotLink": "Password dimenticata?",
+    "forgotTitle": "Reimposta la password",
+    "forgotIntro": "Inserisci il tuo indirizzo email e ti invieremo un link per scegliere una nuova password.",
+    "forgotSubmit": "Invia il link",
+    "forgotSending": "Invio in corso…",
+    "forgotDone": "Se esiste un account per questo indirizzo, il link è in arrivo. Controlla la tua casella.",
+    "forgotFailed": "Non è stato possibile inviare la richiesta.",
+    "resetTitle": "Scegli una nuova password",
+    "resetSubmit": "Imposta password",
+    "resetSaving": "Salvataggio…",
+    "resetDone": "La tua password è impostata. Ora puoi accedere.",
+    "resetFailed": "Non è stato possibile impostare la password. Il link potrebbe essere scaduto."
   },
   "create": {
     "title": "Crea un nuovo puzzle",

@@ -58,7 +58,19 @@
     "inviteDoneTitle": "Account activated",
     "inviteDoneText": "Your password is set. You can sign in now.",
     "inviteFailed": "Activation failed.",
-    "passwordChangedSignIn": "Your password was changed. Please sign in again."
+    "passwordChangedSignIn": "Your password was changed. Please sign in again.",
+    "forgotLink": "Forgot your password?",
+    "forgotTitle": "Reset your password",
+    "forgotIntro": "Enter your email address and we will send you a link to choose a new password.",
+    "forgotSubmit": "Send the link",
+    "forgotSending": "Sending…",
+    "forgotDone": "If an account exists for that address, a link is on its way. Check your inbox.",
+    "forgotFailed": "The request could not be sent.",
+    "resetTitle": "Choose a new password",
+    "resetSubmit": "Set password",
+    "resetSaving": "Saving…",
+    "resetDone": "Your password is set. You can sign in now.",
+    "resetFailed": "The password could not be set. The link may have expired."
   },
   "create": {
     "title": "Create a new puzzle",
