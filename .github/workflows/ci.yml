@@ -97,6 +97,79 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  # The Dockerfile, which nothing else here reads. lint, test, build and sast all
+  # run npm on the runner; before this job a pull request could break the image
+  # with every gate green, and the break would surface at release-images — which
+  # runs only on a tag, after a tag the release process never moves (#62).
+  #
+  # Built through compose rather than a build-args list of its own: both
+  # published variants are already defined in docker-compose.yml (postgresql)
+  # and docker-compose.sqlite.yml (sqlite), so this cannot drift from what
+  # actually ships. Note the -f: a bare `docker compose build` merges
+  # docker-compose.override.yml and builds the *dev* target, proving nothing.
+  #
+  # Paths-filtered, because the gates already cost four jobs per Dependabot PR
+  # and most changes cannot affect the image. The filter gates the *steps*, not
+  # the job: a job that always runs always reports a conclusion, which is what a
+  # required status check needs — an `if`-skipped job reports "skipped" and is
+  # counted as a pass, which is a confusing thing to rely on. When nothing
+  # relevant changed this job is a checkout and a grep.
+  image:
+    # Tags are release-images' job; it builds both variants and pushes them.
+    if: "!startsWith(github.ref, 'refs/tags/v')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Needed to diff against the base of the pull request.
+          fetch-depth: 0
+      - name: Can this change affect the image?
+        id: scope
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "affected=true" >> "$GITHUB_OUTPUT"
+            echo "$GITHUB_REF_NAME is the branch that gets tagged — building unconditionally"
+            exit 0
+          fi
+          # Everything the image build itself consumes: the recipe, the compose
+          # files that define the two variants, the dependency manifests npm ci
+          # installs from, and the Prisma schema plus the script the build stage
+          # runs to generate its client. App source is already covered by the
+          # build job, which runs the same `next build`.
+          relevant='^(Dockerfile|\.dockerignore|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|scripts/prisma\.mjs|\.github/workflows/ci\.yml$)'
+          changed="$(git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}")"
+          if printf '%s\n' "$changed" | grep -qE "$relevant"; then
+            echo "affected=true" >> "$GITHUB_OUTPUT"
+            echo "Image-relevant files changed:"
+            printf '%s\n' "$changed" | grep -E "$relevant" | sed 's/^/  /'
+          else
+            echo "affected=false" >> "$GITHUB_OUTPUT"
+            echo "No image-relevant file changed; not building."
+          fi
+      - name: Build both published variants
+        if: steps.scope.outputs.affected == 'true'
+        run: |
+          docker compose -f docker-compose.yml build app
+          docker compose -f docker-compose.sqlite.yml build app
+      # A build is not a run. The SQLite stack is the leanest end-to-end check
+      # available — app plus a mail catcher, no Postgres and no object store —
+      # and its healthcheck already polls /api/health/ready, so `--wait`
+      # succeeding means the container came up, `db:push` ran and the app can
+      # reach its database.
+      - name: Start the SQLite stack and wait for it to be healthy
+        if: steps.scope.outputs.affected == 'true'
+        run: |
+          docker compose -f docker-compose.sqlite.yml up -d --wait --wait-timeout 180
+          curl -sf --retry 3 http://localhost:3000/api/health/ready
+      - name: Container logs, if it did not come up
+        if: failure() && steps.scope.outputs.affected == 'true'
+        run: docker compose -f docker-compose.sqlite.yml logs --no-color --tail 80
+      - name: Tear down
+        if: always() && steps.scope.outputs.affected == 'true'
+        run: docker compose -f docker-compose.sqlite.yml down -v
+
   # Static application security testing with Semgrep (community rulesets, no
   # token required). Fails the job on any finding and uploads SARIF to the
   # repository's code scanning view.
