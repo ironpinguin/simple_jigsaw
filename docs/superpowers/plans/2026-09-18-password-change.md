@@ -190,13 +190,16 @@ describe("isSessionStale", () => {
     expect(isSessionStale(1_002, at(1_001))).toBe(false);
   });
 
-  it("keeps a token issued in the same second as the change", () => {
-    // The deliberate sub-second window. `iat` has no sub-second precision, so
-    // the alternative is rejecting the fresh session of someone who signs back
-    // in within the same second as their own change. A token issued in that
-    // second is not a threat worth that.
-    expect(isSessionStale(1_001, at(1_001, 400))).toBe(false);
-    expect(isSessionStale(1_001, at(1_001, 999))).toBe(false);
+  it("treats a token issued in the same second as the change as stale, because `iat` is re-stamped on every read", () => {
+    // Auth.js re-stamps `iat` on every session read, so a token issued in the
+    // same second as the change is not necessarily the pre-change cookie —
+    // it could be a cookie re-issued *after* the change but still landing in
+    // that second, which would otherwise carry that second forward and never
+    // go stale. Do not relax this back to `<`: that was tried and reopens a
+    // permanent escape for exactly the cookie this feature exists to kill.
+    // The cost is a same-second re-login being bounced once, on purpose.
+    expect(isSessionStale(1_001, at(1_001, 400))).toBe(true);
+    expect(isSessionStale(1_001, at(1_001, 999))).toBe(true);
   });
 
   it("treats a token with no issue time as stale", () => {
@@ -229,8 +232,13 @@ Create `lib/session-freshness.ts`:
  * `User.passwordChangedAt`, null for an account whose password has never
  * changed.
  *
- * The comparison is second-to-second, so a token issued in the same second as
- * the change survives. See the test for why that direction was chosen.
+ * Auth.js re-stamps `iat` on every session read (it calls `setIssuedAt()`
+ * with no argument each time the JWT is encoded), so `iat` means "last
+ * re-issue", not "sign-in time". A cookie can therefore be re-issued in the
+ * same wall-clock second as a password change and, without care, would carry
+ * that second forward and never go stale. To close that, anything issued *in
+ * or before* the second of the change is refused: a same-second re-login is
+ * bounced once by design, and must sign in again.
  */
 export function isSessionStale(
   iatSeconds: number | undefined,
@@ -238,7 +246,7 @@ export function isSessionStale(
 ): boolean {
   if (changedAt === null) return false;
   if (iatSeconds === undefined) return true;
-  return iatSeconds < Math.floor(changedAt.getTime() / 1000);
+  return iatSeconds <= Math.floor(changedAt.getTime() / 1000);
 }
 ```
 
@@ -1110,5 +1118,5 @@ git commit -m "docs: changelog for the password change"
 ## Notes for the reviewer
 
 - **The jwt callback now reads the database on every session resolution.** That is the accepted cost of enforcing in one place; the alternative left `app/[locale]/my`, `create`, `layout` and the home page — which call `auth()` directly — accepting a stale cookie.
-- **The `iat` boundary is deliberately lenient by under a second.** `lib/session-freshness.test.ts` states it. Erring the other way rejects the fresh session of someone signing back in immediately after their own change.
+- **The `iat` boundary refuses the same second as the change, not just before it.** `lib/session-freshness.test.ts` states it. `iat` is re-stamped on every session read, so a cookie re-issued in that same second is not provably the pre-change one; refusing it too costs a same-second re-login having to sign in again, which is cheap next to leaving a permanent escape for a stolen cookie.
 - **Reset by email is not here.** It reuses `passwordChangedAt` and `isSessionStale` unchanged; see the spec's *Out of scope*.

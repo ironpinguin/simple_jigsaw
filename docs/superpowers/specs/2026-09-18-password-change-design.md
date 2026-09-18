@@ -68,13 +68,18 @@ export function isSessionStale(iatSeconds: number | undefined, changedAt: Date |
 Pure so the boundary is testable without a database or a session.
 
 **The boundary is the interesting part.** `iat` is whole seconds; a
-`DateTime` is milliseconds. The comparison is second-to-second — stale when
-`iat < Math.floor(changedAt / 1000)` — which leaves a sub-second window where a
-token issued just before the change survives. That direction is deliberate:
-erring the other way can reject the *fresh* session of someone who signs back in
-within the same second as their own change, and a token issued in the same
-second as the change is not a threat model worth that. The tests state the
-window rather than leaving it to be discovered.
+`DateTime` is milliseconds. Auth.js re-stamps `iat` on every session read (it
+calls `setIssuedAt()` with no argument each time the JWT is encoded), so `iat`
+means "last re-issue", not "sign-in time" — a cookie can be re-issued in the
+same wall-clock second as a password change. The comparison is therefore
+stale when `iat <= Math.floor(changedAt / 1000)`: anything issued *in or
+before* the second of the change is refused. Erring the other way — `<` —
+would let a cookie re-issued in that same second carry `iat == floor(changedAt
+/ 1000)` forever, since it would never compare less than the change; that is
+permanent survival for exactly the stolen cookie this feature exists to kill.
+The accepted cost is that a genuine same-second re-login is bounced once and
+has to sign in again. The tests state the boundary rather than leaving it to
+be discovered.
 
 A missing `iat` counts as stale: a token we cannot date is one we cannot vouch
 for.
