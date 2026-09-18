@@ -100,7 +100,9 @@ construction; reset-by-email becomes the fourth user.
 1. `getSessionUser()`, else 401 `notLoggedIn`.
 2. Parse `{ currentPassword, newPassword }`; the new one uses the shared field.
 3. `bcrypt.compare` the current password, exactly as
-   `app/api/account/route.ts:38` does; mismatch answers 400 `wrongPassword`.
+   `app/api/account/route.ts:38` does — including its `!user.passwordHash ||`
+   guard, which is there because `bcrypt.compare` against a null hash throws.
+   A mismatch answers **401** `errors.wrongPassword`, matching that route.
 4. One `update` writing `passwordHash` and `passwordChangedAt` together.
 
 It **sets** a hash and never clears one, so the invariant pinned in
@@ -113,7 +115,13 @@ a new consent.
 ### `components/ChangePassword.tsx`
 
 Beside `DeleteAccount` on `/my`. On success it signs out and sends the user to
-`/login` with a notice. Copy in DE/EN/IT, including the new `errors.*` keys.
+`/login` with a notice.
+
+Copy in DE/EN/IT. `errors.wrongPassword` already exists in all three and is
+reused rather than duplicated; what is new is the form's own labels and the
+notice on `/login`. The password-too-short case should surface the same message
+signup already uses rather than inventing a second wording — confirm which key
+that is when writing the form.
 
 ## Tests
 
