@@ -7,10 +7,14 @@ import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
 import { getErrorT } from "@/lib/i18n-server";
 import { toAdminUserView } from "@/lib/admin-users";
+import { passwordErrorKey, passwordField } from "@/lib/password";
 
 export async function GET() {
   if (!(await requireAdmin())) {
-    return NextResponse.json({ error: (await getErrorT())("noAccess") }, { status: 403 });
+    return NextResponse.json(
+      { error: (await getErrorT())("noAccess") },
+      { status: 403 },
+    );
   }
 
   const users = await prisma.user.findMany({
@@ -33,7 +37,7 @@ export async function GET() {
 
 const CreateSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordField,
   role: z.enum(["USER", "ADMIN"]).optional(),
 });
 
@@ -46,9 +50,9 @@ export async function POST(request: Request) {
 
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
+    const key = passwordErrorKey(parsed.error.issues, "password");
     return NextResponse.json(
-      { error: onPassword ? t("passwordMin") : t("invalidInput") },
+      { error: t(key ?? "invalidInput") },
       { status: 400 },
     );
   }

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { signOut } from "next-auth/react";
-import { PASSWORD_MIN_LENGTH } from "@/lib/password";
+import { PASSWORD_MAX_BYTES, PASSWORD_MIN_LENGTH } from "@/lib/password-limits";
 
 export default function ChangePassword() {
   const t = useTranslations("my");
@@ -82,6 +82,10 @@ export default function ChangePassword() {
           autoComplete="new-password"
           required
           minLength={PASSWORD_MIN_LENGTH}
+          // bcrypt's limit is 72 bytes and this attribute counts characters,
+          // so it stops the common ASCII case early and leaves the rest to the
+          // server, which answers with errors.passwordMax.
+          maxLength={PASSWORD_MAX_BYTES}
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
         />

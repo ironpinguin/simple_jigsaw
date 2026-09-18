@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   device making the change signs in again too, and says so. (#42)
 
 ### Changed
+- Passwords now have a maximum length of 72 bytes, wherever one is set —
+  registration, an invitation, an admin-created account and the new change
+  form. bcrypt hashes only the first 72 bytes and ignores the rest, so a longer
+  passphrase used to be accepted while its first 72 bytes alone were enough to
+  sign in, with nothing saying so. Existing passwords are unaffected and still
+  work; only setting a new one is checked. (#42)
 - The SQLite stack is now its own Compose project, `jigsaw-sqlite`. Both compose
   files previously defaulted to the checkout's directory name and so shared one
   project, which meant starting the SQLite stack in a checkout where

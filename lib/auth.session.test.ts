@@ -49,8 +49,11 @@ describe("the jwt callback", () => {
   });
 
   it("keeps a session issued after the password changed", async () => {
+    // Past SESSION_CUTOFF_MARGIN_MS: the cutoff reaches a second beyond the
+    // stamp to cover cookies re-issued while the write was still in flight
+    // (see lib/session-freshness.ts), so 1_002 would still be refused.
     userFindUnique.mockResolvedValue({ passwordChangedAt: new Date(1_001_000) });
-    const token = await jwtCallback()({ token: { id: "u1", iat: 1_002 } });
+    const token = await jwtCallback()({ token: { id: "u1", iat: 1_003 } });
     expect(token).not.toBeNull();
   });
 

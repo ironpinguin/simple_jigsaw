@@ -1,21 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSessionUserMock, userFindUnique, userUpdate, compareMock, hashMock } = vi.hoisted(
-  () => ({
-    getSessionUserMock: vi.fn(),
+const { authMock, userFindUnique, userUpdate, compareMock, hashMock } =
+  vi.hoisted(() => ({
+    authMock: vi.fn(),
     userFindUnique: vi.fn(),
     userUpdate: vi.fn(),
     compareMock: vi.fn(),
     hashMock: vi.fn(),
-  }),
-);
+  }));
 
-vi.mock("@/lib/auth", () => ({ getSessionUser: getSessionUserMock }));
+vi.mock("@/lib/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/db", () => ({
   prisma: { user: { findUnique: userFindUnique, update: userUpdate } },
 }));
-vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
-vi.mock("bcryptjs", () => ({ default: { compare: compareMock, hash: hashMock } }));
+vi.mock("@/lib/i18n-server", () => ({
+  getErrorT: async () => (key: string) => key,
+}));
+vi.mock("bcryptjs", () => ({
+  default: { compare: compareMock, hash: hashMock },
+}));
 
 import { PUT } from "./route";
 
@@ -34,7 +37,9 @@ const VALID = { currentPassword: "oldpassword", newPassword: "newpassword" };
 describe("PUT /api/account/password", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getSessionUserMock.mockResolvedValue({ id: "u1", email: "a@b.de", role: "USER" });
+    authMock.mockResolvedValue({
+      user: { id: "u1", email: "a@b.de", role: "USER" },
+    });
     userFindUnique.mockResolvedValue({ id: "u1", passwordHash: "$2b$hash" });
     compareMock.mockResolvedValue(true);
     hashMock.mockResolvedValue("$2b$newhash");
@@ -42,7 +47,7 @@ describe("PUT /api/account/password", () => {
   });
 
   it("refuses without a session, without touching the database", async () => {
-    getSessionUserMock.mockResolvedValue(null);
+    authMock.mockResolvedValue(null);
     const res = await call(VALID);
     expect(res.status).toBe(401);
     expect(userUpdate).not.toHaveBeenCalled();
@@ -58,10 +63,37 @@ describe("PUT /api/account/password", () => {
   });
 
   it("refuses a new password under the minimum", async () => {
-    const res = await call({ currentPassword: "oldpassword", newPassword: "short" });
+    const res = await call({
+      currentPassword: "oldpassword",
+      newPassword: "short",
+    });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "passwordMin" });
     expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a new password past what bcrypt hashes", async () => {
+    const res = await call({
+      currentPassword: "oldpassword",
+      newPassword: "a".repeat(100),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "passwordMax" });
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not answer a missing current password with the new password's rule", async () => {
+    // A body with neither field fails on both; answering "at least 8
+    // characters" names a rule the caller never broke.
+    const res = await call({});
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalidRequest" });
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("reads the user row once, on top of the lookup the session already made", async () => {
+    await call(VALID);
+    expect(userFindUnique).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a body that is not an object", async () => {

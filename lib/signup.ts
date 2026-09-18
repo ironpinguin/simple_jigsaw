@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { passwordField } from "./password";
+import { passwordErrorKey, passwordField } from "./password";
 
 // Validation shared by the two account-creation endpoints, `/api/register` and
 // `/api/invite`. It lives in lib/ so the terms gate — the record of consent the
@@ -30,12 +30,14 @@ export const InviteSchema = z.object({
 /**
  * The `errors.*` message key for a failed signup parse. Responses carry one
  * message, so the first matching field wins: password beats terms beats the
- * generic fallback.
+ * generic fallback. Which password message is passwordErrorKey's decision, so
+ * that every writer of a password reports its length the same way.
  */
 export function signupErrorKey(
-  issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey> }>,
-): "passwordMin" | "termsNotAccepted" | "invalidInput" {
-  if (issues.some((issue) => issue.path.includes("password"))) return "passwordMin";
+  issues: ReadonlyArray<{ code?: string; path: ReadonlyArray<PropertyKey> }>,
+): "passwordMin" | "passwordMax" | "termsNotAccepted" | "invalidInput" {
+  const password = passwordErrorKey(issues, "password");
+  if (password) return password;
   if (issues.some((issue) => issue.path.includes("termsAccepted"))) return "termsNotAccepted";
   return "invalidInput";
 }

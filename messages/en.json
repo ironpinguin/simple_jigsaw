@@ -325,6 +325,7 @@
     "inviteEmailFailed": "The invitation could not be sent. The account now has no valid link — invite the same address again to send a new one; the server log says why.",
     "inviteRevokeFailed": "The earlier invitation link could not be revoked, so no new invitation was sent. The earlier link still works. Try again; if it keeps failing, the server log says why and the operator has to step in.",
     "passwordMin": "Password must be at least 8 characters.",
+    "passwordMax": "Password must be at most 72 characters — accented letters and emoji count for more than one.",
     "invalidEmail": "Invalid email.",
     "noFile": "No file submitted.",
     "unsupportedType": "Only JPG, PNG or WebP are supported.",
