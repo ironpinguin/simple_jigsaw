@@ -68,8 +68,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // This costs a user lookup per session resolution. Accepted: most
       // protected routes already make one through getSessionUser, and a
       // "log out other devices" guarantee that is only sometimes enforced is
-      // not a guarantee.
-      if (!token.id) return token;
+      // not a guarantee. If the lookup itself throws (the database is
+      // unreachable), @auth/core catches it and clears the session cookie the
+      // same as a stale token would — a transient outage signs the user out
+      // rather than risk serving a page on an unverified session, which is the
+      // direction we want it to fail.
+      //
+      // A token with no id cannot be checked against anything, so it is
+      // refused rather than trusted.
+      if (!token.id) return null;
       const row = await prisma.user.findUnique({
         where: { id: token.id as string },
         select: { passwordChangedAt: true },

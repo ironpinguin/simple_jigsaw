@@ -60,9 +60,14 @@ describe("the jwt callback", () => {
     expect(token).toBeNull();
   });
 
-  it("passes a token with no id straight through, having nothing to check", async () => {
+  it("refuses a token with no id, since there is nothing to check it against", async () => {
+    // Fail closed: an id-less token cannot be looked up or dated, so it must
+    // not be trusted. (It also happens to keep app/[locale]/my/page.tsx safe —
+    // that route filters puzzles by session.user.id, and Prisma drops an
+    // undefined filter, so a waved-through id-less session would list every
+    // user's puzzles. Unreachable as long as this stays null.)
     const token = await jwtCallback()({ token: { iat: 1_000 } });
-    expect(token).not.toBeNull();
+    expect(token).toBeNull();
     expect(userFindUnique).not.toHaveBeenCalled();
   });
 });
