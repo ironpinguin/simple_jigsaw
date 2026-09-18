@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Change your own password from **My puzzles**, under *Password*. The current
+  password is required, so a stolen session cookie is not enough on its own.
+  Changing it signs you out everywhere else: sessions are stateless tokens, and
+  one issued before the change is now refused, which it was not before. The
+  device making the change signs in again too, and says so. (#42)
+
 ### Changed
 - The SQLite stack is now its own Compose project, `jigsaw-sqlite`. Both compose
   files previously defaulted to the checkout's directory name and so shared one
