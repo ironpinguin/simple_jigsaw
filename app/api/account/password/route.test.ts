@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { authMock, userFindUnique, userUpdate, compareMock, hashMock } = vi.hoisted(() => ({
-  authMock: vi.fn(),
-  userFindUnique: vi.fn(),
-  userUpdate: vi.fn(),
-  compareMock: vi.fn(),
-  hashMock: vi.fn(),
-}));
+const { authMock, userFindUnique, userUpdate, compareMock, hashMock, revokeTokensMock } =
+  vi.hoisted(() => ({
+    authMock: vi.fn(),
+    userFindUnique: vi.fn(),
+    userUpdate: vi.fn(),
+    compareMock: vi.fn(),
+    hashMock: vi.fn(),
+    revokeTokensMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/db", () => ({
@@ -14,6 +16,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
 vi.mock("bcryptjs", () => ({ default: { compare: compareMock, hash: hashMock } }));
+vi.mock("@/lib/tokens", () => ({ revokeTokens: revokeTokensMock }));
 
 import { PUT } from "./route";
 
@@ -125,5 +128,19 @@ describe("PUT /api/account/password", () => {
     expect(data.passwordHash).not.toBeNull();
     expect(data).not.toHaveProperty("termsAcceptedAt");
     expect(data).not.toHaveProperty("termsVersion");
+  });
+
+  it("kills any outstanding reset links", async () => {
+    // Someone who changes their password deliberately has answered whatever
+    // prompted an earlier "I forgot" — leaving that mail live would leave a
+    // second key to the account sitting in an inbox.
+    await call(VALID);
+    expect(revokeTokensMock).toHaveBeenCalledWith("u1", "PASSWORD_RESET");
+  });
+
+  it("does not kill them when the change is refused", async () => {
+    compareMock.mockResolvedValue(false);
+    await call(VALID);
+    expect(revokeTokensMock).not.toHaveBeenCalled();
   });
 });

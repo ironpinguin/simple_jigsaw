@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
+import { revokeTokens } from "@/lib/tokens";
 
 const Schema = z.object({
   currentPassword: z.string().min(1),
@@ -64,6 +65,12 @@ export async function PUT(request: Request) {
     where: { id: user.id },
     data: { passwordHash, passwordChangedAt: new Date() },
   });
+
+  // A reset mail still sitting in an inbox is a second key. Changing the
+  // password deliberately answers whatever prompted it, so the link goes.
+  // After the update, not before: a failed write must not disarm a link the
+  // user may still need.
+  await revokeTokens(user.id, "PASSWORD_RESET");
 
   return NextResponse.json({ ok: true });
 }
