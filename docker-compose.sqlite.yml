@@ -7,6 +7,14 @@
 # both persisted in the `sqlitedata` volume. For a real deployment set a strong
 # AUTH_SECRET and point SMTP_* at a real mail server (then mailpit can be dropped).
 
+# Its own Compose project, so this stack stands beside the Postgres one instead
+# of replacing it. Without this key both files default to the directory name and
+# share a project: starting this stack in a checkout where `docker compose up`
+# is running would adopt and tear down those containers. Renaming the project
+# also renames its volume (now `jigsaw-sqlite_sqlitedata`) — see CHANGELOG for
+# how to carry an existing one over. (#78)
+name: jigsaw-sqlite
+
 services:
   app:
     build:
@@ -65,8 +73,9 @@ services:
     volumes:
       - sqlitedata:/data
     # start_period covers `npm run db:push`, which the container's CMD runs
-    # before `next start`. This file is its own Compose project, so the dev
-    # override never merges into it. /ready rather than /health, because an app
+    # before `next start`. `-f` means the dev override never merges into this
+    # file, and `name:` above keeps it a separate project besides. /ready rather
+    # than /health, because an app
     # that cannot reach the database is not doing its job. (The retention sweep
     # runs on its own timer either way; a probe only brings the next one
     # forward, and never past the hourly budget.)
