@@ -131,7 +131,7 @@
     "deleteAccountFailed": "The account could not be deleted.",
     "deletedButSignOutFailed": "Your account was deleted, but signing out failed. Please close the browser or sign out manually.",
     "passwordTitle": "Password",
-    "passwordIntro": "Changing your password signs you out everywhere else.",
+    "passwordIntro": "Changing your password signs you out on every device, including this one.",
     "currentPassword": "Current password",
     "newPassword": "New password (min. 8 characters)",
     "changePassword": "Change password",

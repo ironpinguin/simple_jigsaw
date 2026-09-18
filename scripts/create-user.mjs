@@ -20,8 +20,23 @@ async function main() {
     console.error("Usage: npm run create-user -- <email> <password> [--admin]");
     process.exit(1);
   }
-  if (password.length < 8) {
-    console.error("Password must be at least 8 characters.");
+  // Duplicated from lib/password-limits.ts, which is TypeScript and so cannot
+  // be imported here — keep the two in step. The maximum is bcrypt's: it hashes
+  // 72 bytes and ignores the rest, so a longer password would authenticate on
+  // its first 72 bytes alone with nothing saying the tail was dropped.
+  const PASSWORD_MIN_LENGTH = 8;
+  const PASSWORD_MAX_BYTES = 72;
+
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    console.error(
+      `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
+    );
+    process.exit(1);
+  }
+  if (new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES) {
+    console.error(
+      `Password must be at most ${PASSWORD_MAX_BYTES} bytes — accented letters and emoji count for more than one.`,
+    );
     process.exit(1);
   }
 

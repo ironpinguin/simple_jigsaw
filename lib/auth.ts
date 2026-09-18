@@ -2,6 +2,7 @@
 // sessions (credentials providers require the JWT strategy, so no database
 // session/adapter tables are needed — we look the user up directly).
 
+import { cache } from "react";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
@@ -10,6 +11,26 @@ import { checkEmailBanned } from "./moderation";
 import { isAdminEmail } from "./admin-emails";
 import { toViewer } from "./visibility";
 import { isSessionStale } from "./session-freshness";
+
+/**
+ * The one user read a request needs, memoized for its length.
+ *
+ * auth() is not request-cached in next-auth 5 beta, so every call re-runs the
+ * jwt callback below, and a request calls auth() more than once — the locale
+ * layout and the page each do, and getSessionUser() does again before its own
+ * query. Reading passwordChangedAt separately would therefore have turned one
+ * row read per request into several, multiplied again across the per-image
+ * viewer checks a gallery makes. So the freshness check and getSessionUser
+ * share this, and a request that resolves its session any number of times
+ * still reads the row once. React.cache keys on the argument, so two different
+ * users in one request still get their own.
+ */
+const readSessionUser = cache(async (id: string) =>
+  prisma.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, role: true, passwordChangedAt: true },
+  }),
+);
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -44,11 +65,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Keep the ADMIN allow-list authoritative on every login.
         let role = user.role;
         if (isAdminEmail(email) && role !== "ADMIN") {
-          await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { role: "ADMIN" },
+          });
           role = "ADMIN";
         }
 
-        return { id: user.id, email: user.email, name: user.name ?? null, role };
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name ?? null,
+          role,
+        };
       },
     }),
   ],
@@ -65,8 +94,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // is the whole reason this feature stamps passwordChangedAt. Returning
       // null ends the session.
       //
-      // This costs a user lookup per session resolution. Accepted: most
-      // protected routes already make one through getSessionUser, and a
+      // This costs a user lookup, but not an extra one: readSessionUser above
+      // is the same memoized read getSessionUser makes, so a request that
+      // already resolved its user pays nothing. Accepted in any case — a
       // "log out other devices" guarantee that is only sometimes enforced is
       // not a guarantee. If the lookup itself throws (the database is
       // unreachable), @auth/core catches it and clears the session cookie the
@@ -77,10 +107,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // A token with no id cannot be checked against anything, so it is
       // refused rather than trusted.
       if (!token.id) return null;
-      const row = await prisma.user.findUnique({
-        where: { id: token.id as string },
-        select: { passwordChangedAt: true },
-      });
+      const row = await readSessionUser(token.id as string);
       if (!row) return null;
       return isSessionStale(token.iat, row.passwordChangedAt) ? null : token;
     },
@@ -104,10 +131,11 @@ export async function getSessionUser() {
   const session = await auth();
   const id = session?.user?.id;
   if (!id) return null;
-  return prisma.user.findUnique({
-    where: { id },
-    select: { id: true, email: true, role: true },
-  });
+  const user = await readSessionUser(id);
+  // Narrowed back to the three fields callers have always had: passwordChangedAt
+  // is read for the freshness check only and must not start appearing in the
+  // API responses that hand this object straight back.
+  return user && { id: user.id, email: user.email, role: user.role };
 }
 
 /** Like getSessionUser, but returns null unless the user is an ADMIN. */

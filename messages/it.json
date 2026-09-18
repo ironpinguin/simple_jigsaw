@@ -131,7 +131,7 @@
     "deleteAccountFailed": "Impossibile eliminare l''account.",
     "deletedButSignOutFailed": "Il tuo account è stato eliminato, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente.",
     "passwordTitle": "Password",
-    "passwordIntro": "Cambiando la password verrai disconnesso da tutti gli altri dispositivi.",
+    "passwordIntro": "Cambiando la password verrai disconnesso da tutti i dispositivi, compreso questo.",
     "currentPassword": "Password attuale",
     "newPassword": "Nuova password (min. 8 caratteri)",
     "changePassword": "Cambia password",

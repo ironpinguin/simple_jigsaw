@@ -131,7 +131,7 @@
     "deleteAccountFailed": "Konto konnte nicht gelöscht werden.",
     "deletedButSignOutFailed": "Dein Konto wurde gelöscht, aber die Abmeldung ist fehlgeschlagen. Bitte schließe den Browser oder melde dich manuell ab.",
     "passwordTitle": "Passwort",
-    "passwordIntro": "Wenn du dein Passwort änderst, wirst du überall sonst abgemeldet.",
+    "passwordIntro": "Wenn du dein Passwort änderst, wirst du auf allen Geräten abgemeldet – auch auf diesem.",
     "currentPassword": "Aktuelles Passwort",
     "newPassword": "Neues Passwort (min. 8 Zeichen)",
     "changePassword": "Passwort ändern",

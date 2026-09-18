@@ -11,8 +11,14 @@
  * no stamp, passes, and can be re-issued with an `iat` past the stamp it never
  * saw — surviving the change permanently, which is the one outcome this whole
  * mechanism exists to prevent. Prisma has no portable way to ask either
- * provider for its commit-time clock, so the window is closed here instead:
- * the cutoff covers the stamp plus long enough for that write and re-issue.
+ * provider for its commit-time clock, so the window is narrowed here instead:
+ * the cutoff covers the stamp plus long enough for a healthy write and
+ * re-issue. It is a bound, not a proof — a write that takes longer than this
+ * (lock contention, a loaded database) leaves the gap open again, so size the
+ * margin against observed write latency rather than trusting it. The
+ * race-free version stops comparing clocks altogether: an epoch on the user,
+ * copied into the token at sign-in and never re-stamped, compared for
+ * equality.
  *
  * The cost is the same kind as the `<=` below — a login that completes within
  * the margin of the change is bounced once. Signing out, loading /login and
