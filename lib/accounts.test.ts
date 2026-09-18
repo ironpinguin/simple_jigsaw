@@ -55,6 +55,20 @@ describe("token ttl", () => {
     expect(isExpired(new Date(now - 1), now)).toBe(true);
     expect(isExpired(new Date(now + 1), now)).toBe(false);
   });
+
+  it("gives a reset link two hours, far less than a verification or an invite", () => {
+    // A reset link grants the account outright, where a verify link only
+    // confirms an address. It is the most dangerous credential this system
+    // mails, so it is the shortest-lived.
+    expect(TOKEN_TTL_MS.PASSWORD_RESET).toBe(2 * 60 * 60 * 1000);
+    expect(TOKEN_TTL_MS.PASSWORD_RESET).toBeLessThan(TOKEN_TTL_MS.EMAIL_VERIFY);
+    expect(TOKEN_TTL_MS.INVITE).toBeGreaterThan(TOKEN_TTL_MS.EMAIL_VERIFY);
+  });
+
+  it("expires a reset token two hours after it was made", () => {
+    const now = Date.UTC(2026, 0, 1, 12, 0, 0);
+    expect(tokenExpiry("PASSWORD_RESET", now).toISOString()).toBe("2026-01-01T14:00:00.000Z");
+  });
 });
 
 describe("registration switch", () => {

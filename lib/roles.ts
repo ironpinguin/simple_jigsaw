@@ -5,7 +5,7 @@
 export const ROLES = ["USER", "ADMIN"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const TOKEN_TYPES = ["EMAIL_VERIFY", "INVITE"] as const;
+export const TOKEN_TYPES = ["EMAIL_VERIFY", "INVITE", "PASSWORD_RESET"] as const;
 export type TokenType = (typeof TOKEN_TYPES)[number];
 
 export const BAN_TYPES = ["EMAIL", "DOMAIN"] as const;
