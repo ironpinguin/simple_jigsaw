@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Changing it signs you out everywhere else: sessions are stateless tokens, and
   one issued before the change is now refused, which it was not before. The
   device making the change signs in again too, and says so. (#42)
+- Forgotten a password? **Forgot your password?** on the sign-in page mails a
+  link that sets a new one. The link works once and for two hours, and the page
+  answers the same way whether or not an address has an account, so it cannot be
+  used to find out who is registered. Completing a reset signs you out
+  everywhere else, and confirms your email address if it was still unconfirmed.
+  (#42)
 
 ### Changed
 - Losing admin rights now takes effect on the next page load rather than when
