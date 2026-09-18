@@ -13,6 +13,7 @@ vi.mock("bcryptjs", () => ({ default: { hash: hashMock } }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
 
 import { POST } from "./route";
+import { isSessionStale } from "@/lib/session-freshness";
 
 function call(body: unknown) {
   return POST(
@@ -109,5 +110,17 @@ describe("POST /api/account/password/reset", () => {
     expect(res.status).toBe(200);
     expect(userUpdate).toHaveBeenCalledTimes(1);
     expect(logged).toHaveBeenCalled();
+  });
+
+  it("writes a passwordChangedAt that makes a session issued before the reset stale, and one issued after fresh", async () => {
+    // The spec asks for "a session issued before a reset is refused
+    // afterwards" — the earlier test above only checks the stamp's type, not
+    // that composing it with isSessionStale actually invalidates a session.
+    await call(VALID);
+    const changedAt: Date = userUpdate.mock.calls[0][0].data.passwordChangedAt;
+    const changedAtSeconds = Math.floor(changedAt.getTime() / 1000);
+
+    expect(isSessionStale(changedAtSeconds - 10, changedAt)).toBe(true);
+    expect(isSessionStale(changedAtSeconds + 10, changedAt)).toBe(false);
   });
 });
