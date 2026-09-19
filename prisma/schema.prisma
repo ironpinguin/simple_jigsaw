@@ -46,7 +46,7 @@ model User {
 model VerificationToken {
   id        String   @id @default(cuid())
   token     String   @unique
-  // "EMAIL_VERIFY" | "INVITE"
+  // "EMAIL_VERIFY" | "INVITE" | "PASSWORD_RESET" (see lib/tokens.ts)
   type      String
   expiresAt DateTime
   createdAt DateTime @default(now())

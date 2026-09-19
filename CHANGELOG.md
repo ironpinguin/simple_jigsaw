@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#42)
 
 ### Changed
+- The privacy policy now covers password reset links: they are named alongside
+  the confirmation and invitation links in *What is stored* and in *Retention*,
+  and the keyed hash of the requesting IP address that a reset request stores on
+  its token is disclosed, together with why it exists and when it goes. The
+  *Server logs* section said the application stores no IP addresses at all,
+  which that hash made untrue. (#42)
 - Losing admin rights now takes effect on the next page load rather than when
   your session token expires: the *Admin* link disappears from the navigation
   straight away. Admin pages and endpoints already refused a demoted admin —
