@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import bcrypt from "bcryptjs";
 import { TERMS_VERSION } from "@/lib/legal";
 
-const { userFindUnique, userUpdate, consumeTokenMock, checkEmailBannedMock } = vi.hoisted(() => ({
-  userFindUnique: vi.fn(),
-  userUpdate: vi.fn(),
-  consumeTokenMock: vi.fn(),
-  checkEmailBannedMock: vi.fn(),
-}));
+const { userFindUnique, userUpdate, consumeTokenMock, checkEmailBannedMock, resolveRequestLocaleMock } =
+  vi.hoisted(() => ({
+    userFindUnique: vi.fn(),
+    userUpdate: vi.fn(),
+    consumeTokenMock: vi.fn(),
+    checkEmailBannedMock: vi.fn(),
+    resolveRequestLocaleMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/db", () => ({
   prisma: { user: { findUnique: userFindUnique, update: userUpdate } },
@@ -16,7 +18,13 @@ vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: checkEmailBannedMock }));
 // The key rather than the translation: these assertions are about which message
 // the route picks, and pinning the German copy would break on any rewording.
-vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
+// Deliberately not "de": that is the default locale and the fallback in both
+// resolveRequestLocale and mail.ts's resolveLocale, so the locale assertion
+// below would still pass if the route dropped it on the floor.
+vi.mock("@/lib/i18n-server", () => ({
+  getErrorT: async () => (key: string) => key,
+  resolveRequestLocale: resolveRequestLocaleMock,
+}));
 
 import { POST } from "./route";
 
@@ -38,9 +46,18 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue({ id: "user-1", email: "invited@example.com" });
   checkEmailBannedMock.mockResolvedValue(false);
   userUpdate.mockResolvedValue({});
+  resolveRequestLocaleMock.mockResolvedValue("it");
 });
 
 describe("POST /api/invite", () => {
+  it("stores the activation locale on the account", async () => {
+    // The invite itself was sent in whatever language the *admin* was browsing
+    // in; activation is the first moment the invitee's own is observable, so it
+    // is the one chance to record it before anybody mails them unprompted.
+    await callPost(VALID);
+    expect(userUpdate.mock.calls[0][0]).toMatchObject({ data: { locale: "it" } });
+  });
+
   it("sets the password and activates the account when the token is claimed", async () => {
     const res = await callPost(VALID);
 

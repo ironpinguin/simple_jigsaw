@@ -41,6 +41,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t("emailRegistered") }, { status: 409 });
   }
 
+  // Resolving the locale is unrelated to delivery — keep it out of the catch
+  // below so it cannot be reported as a failed verification mail. It is read
+  // before the create rather than after because the row stores it now: this is
+  // the one moment the language of the person behind the account is known, and
+  // every later mail *to* them is sent by somebody else (an admin, the
+  // classifier) whose own locale would be the wrong answer.
+  const locale = await resolveRequestLocale();
+
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   const user = await prisma.user.create({
     data: {
@@ -49,15 +57,12 @@ export async function POST(request: Request) {
       name: parsed.data.name || null,
       role: isAdminEmail(email) ? "ADMIN" : "USER",
       emailVerified: null,
+      locale,
       termsAcceptedAt: new Date(),
       termsVersion: TERMS_VERSION,
     },
     select: { id: true },
   });
-
-  // Resolving the locale is unrelated to delivery — keep it out of the catch
-  // below so it cannot be reported as a failed verification mail.
-  const locale = await resolveRequestLocale();
 
   try {
     const token = await createToken(user.id, "EMAIL_VERIFY");

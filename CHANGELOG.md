@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its token is disclosed, together with why it exists and when it goes. The
   *Server logs* section said the application stores no IP addresses at all,
   which that hash made untrue. (#42)
+- Transactional mail now arrives in the recipient's own language. Report
+  notifications to admins and takedown notices to a puzzle's owner went out in
+  German regardless of who received them: their recipient is not the person
+  making the request, so there was no language to go on and the existing EN and
+  IT translations were unreachable. Accounts now carry the language they signed
+  up or activated in, and switching language in the header updates it while
+  signed in. Accounts created before this keep German until their owner switches
+  once. The account data export lists the stored language along with the rest of
+  the account. (#31)
 - Losing admin rights now takes effect on the next page load rather than when
   your session token expires: the *Admin* link disappears from the navigation
   straight away. Admin pages and endpoints already refused a demoted admin —

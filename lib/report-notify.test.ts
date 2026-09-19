@@ -16,7 +16,10 @@ import { notifyAdminsOfReport } from "./report-notify";
 
 beforeEach(() => {
   vi.clearAllMocks();
-  userFindMany.mockResolvedValue([{ email: "a@example.com" }, { email: "b@example.com" }]);
+  userFindMany.mockResolvedValue([
+    { email: "a@example.com", locale: "en" },
+    { email: "b@example.com", locale: "it" },
+  ]);
   sendReport.mockResolvedValue(undefined);
   sendAutoReport.mockResolvedValue(undefined);
 });
@@ -26,8 +29,16 @@ describe("notifyAdminsOfReport", () => {
     await notifyAdminsOfReport("Beach", "NSFW", "user");
 
     expect(sendReport).toHaveBeenCalledTimes(2);
-    expect(sendReport).toHaveBeenCalledWith("a@example.com", "Beach", "NSFW");
-    expect(sendReport).toHaveBeenCalledWith("b@example.com", "Beach", "NSFW");
+    expect(sendReport).toHaveBeenCalledWith("a@example.com", "Beach", "NSFW", "en");
+    expect(sendReport).toHaveBeenCalledWith("b@example.com", "Beach", "NSFW", "it");
+  });
+
+  it("mails each admin in their own language, not the reporter's", async () => {
+    // The whole point of the column: the two admins here browse in different
+    // languages, and neither is the person who filed the report.
+    await notifyAdminsOfReport("Beach", "NSFW", "user");
+
+    expect(sendReport.mock.calls.map((c) => c.at(-1))).toEqual(["en", "it"]);
   });
 
   it("sends the machine wording for a machine finding", async () => {
@@ -37,6 +48,7 @@ describe("notifyAdminsOfReport", () => {
     await notifyAdminsOfReport("Beach", "AUTO_NSFW", "machine");
 
     expect(sendAutoReport).toHaveBeenCalledTimes(2);
+    expect(sendAutoReport).toHaveBeenCalledWith("a@example.com", "Beach", "AUTO_NSFW", "en");
     expect(sendReport).not.toHaveBeenCalled();
   });
 

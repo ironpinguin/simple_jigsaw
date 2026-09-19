@@ -77,7 +77,8 @@ export default async function LocaleLayout({
                 )}
               </>
             )}
-            <LanguageSwitcher />
+            {/* Signed in, so the switch is also the account's mail language. */}
+            <LanguageSwitcher persist={Boolean(session?.user)} />
           </nav>
         </header>
         <main className="site-main">{children}</main>

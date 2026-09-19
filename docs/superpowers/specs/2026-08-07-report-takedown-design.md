@@ -174,12 +174,13 @@ bodies in the `email` namespace (DE/EN/IT):
 - `sendTakedownNotice(to, puzzleTitle, category, locale)` — to the owner
   after a takedown.
 
-We store no per-user locale, so both default to the default locale (DE) and
-their EN/IT translations are currently unreachable in production. The acting
-user's locale is not a substitute: the recipient is an admin or the puzzle's
-owner, not the person who made the request. Sending in the recipient's own
-language needs a `locale` column on `User`, populated at signup — a follow-up
-`db-change`, not part of this PR.
+Both recipients are someone other than the person making the request — an
+admin, or the puzzle's owner — so the acting user's locale is not a substitute
+for theirs. Resolved in #31: `User.locale` carries the recipient's own language,
+written at signup and at invite activation and updated whenever a signed-in
+visitor uses the header's language switcher. The callers read it and pass it in;
+rows predating the column default to DE, which is what every one of these mails
+used to get.
 
 ## Error handling summary
 

@@ -6,14 +6,21 @@ vi.mock("nodemailer", () => ({
   default: { createTransport: () => ({ sendMail: sendMailMock }) },
 }));
 
-// Real EN catalog with minimal ICU interpolation; unknown keys throw, exactly
-// like next-intl — that is the failure mode the category guard protects.
+// The real catalogs with minimal ICU interpolation; unknown keys throw, exactly
+// like next-intl — that is the failure mode the category guard protects. The
+// locale is honoured rather than ignored, because which catalog a sender picks
+// is itself under test: the recipient's language is not the requester's.
+const CATALOGS: Record<string, () => Promise<{ default: unknown }>> = {
+  de: () => import("@/messages/de.json"),
+  en: () => import("@/messages/en.json"),
+  it: () => import("@/messages/it.json"),
+};
+
 vi.mock("next-intl/server", () => ({
-  getTranslations: async ({ namespace }: { namespace: string }) => {
-    const messages = (await import("@/messages/en.json")).default as unknown as Record<
-      string,
-      Record<string, string>
-    >;
+  getTranslations: async ({ locale, namespace }: { locale: string; namespace: string }) => {
+    const load = CATALOGS[locale];
+    if (!load) throw new Error(`no catalog for locale ${locale}`);
+    const messages = (await load()).default as unknown as Record<string, Record<string, string>>;
     const ns = messages[namespace];
     return (key: string, values?: Record<string, string>) => {
       const template = ns?.[key];
@@ -83,6 +90,43 @@ describe("sendAutoReportNotification", () => {
     const mail = sendMailMock.mock.calls[0][0];
     expect(mail.text).toContain("Explicit content");
     expect(mail.text).toContain("/en/admin/reports");
+  });
+});
+
+// The acceptance criterion of #31, and the reason the locale column exists:
+// these three senders mail somebody who is not the person making the request,
+// so until the recipient's own language could be looked up they all went out in
+// the default one. A pass here with the mock above ignoring `locale` would be
+// worthless, which is why that mock resolves a real catalog per locale.
+describe("recipient locale", () => {
+  it("writes a report notification in the admin's language", async () => {
+    await sendReportNotification("admin@example.com", "Beach", "NSFW", "it");
+    expect(sendMailMock.mock.calls[0][0].subject).toBe("Un puzzle è stato segnalato");
+  });
+
+  it("writes an automatic report notification in the admin's language", async () => {
+    await sendAutoReportNotification("admin@example.com", "Beach", "AUTO_NSFW", "en");
+    expect(sendMailMock.mock.calls[0][0].subject).toBe("A puzzle was held by the automatic check");
+  });
+
+  it("writes a takedown notice in the owner's language", async () => {
+    await sendTakedownNotice("owner@example.com", "Beach", "NSFW", "it");
+    expect(sendMailMock.mock.calls[0][0].subject).toBe("Il tuo puzzle è stato rimosso");
+  });
+
+  it("falls back to the default locale for a row that predates the column", async () => {
+    // `undefined` is what a pre-column account resolves to if a caller ever
+    // reads one before the default is applied — it must not throw, and it must
+    // keep today's behaviour rather than picking the last locale used.
+    await sendTakedownNotice("owner@example.com", "Beach", "NSFW", undefined);
+    expect(sendMailMock.mock.calls[0][0].subject).toBe("Dein Puzzle wurde entfernt");
+  });
+
+  it("falls back to the default locale for a value that is not a known locale", async () => {
+    // The column is a plain String on both providers — nothing at the database
+    // level stops a hand-edited row from holding "fr".
+    await sendTakedownNotice("owner@example.com", "Beach", "NSFW", "fr");
+    expect(sendMailMock.mock.calls[0][0].subject).toBe("Dein Puzzle wurde entfernt");
   });
 });
 
