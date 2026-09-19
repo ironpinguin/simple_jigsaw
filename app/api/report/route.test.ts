@@ -66,7 +66,7 @@ beforeEach(() => {
   reportCount.mockResolvedValue(0);
   reportFindFirst.mockResolvedValue(null);
   reportCreate.mockResolvedValue({ id: "r1" });
-  userFindMany.mockResolvedValue([{ email: "admin@example.com" }]);
+  userFindMany.mockResolvedValue([{ email: "admin@example.com", locale: "en" }]);
   sendReportNotificationMock.mockResolvedValue(undefined);
 });
 
@@ -86,7 +86,13 @@ describe("POST /api/report", () => {
       message: VALID.message,
       reporterEmail: null,
     });
-    expect(sendReportNotificationMock).toHaveBeenCalledWith("admin@example.com", "Beach", "NSFW");
+    // "en", not the reporter's locale: the admin is not who filed this.
+    expect(sendReportNotificationMock).toHaveBeenCalledWith(
+      "admin@example.com",
+      "Beach",
+      "NSFW",
+      "en",
+    );
   });
 
   it("stores only a hash of the IP, never the plain address", async () => {

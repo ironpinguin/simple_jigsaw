@@ -10,7 +10,16 @@ const LABELS: Record<string, string> = { de: "DE", en: "EN", it: "IT" };
 // Switches the locale while staying on the current page. next-intl's
 // usePathname/useRouter are locale-aware: the pathname is returned without the
 // prefix and router.replace re-applies the chosen one.
-export default function LanguageSwitcher() {
+//
+// `persist` also writes the choice to the signed-in user's row. Clicking here
+// is already the statement "this is my language", so it doubles as the setting
+// rather than there being a second control on /my that could disagree with it.
+// What it buys is the mail whose recipient is not the person making the request
+// — an admin notification, a takedown notice — which has no request locale to
+// go on; see app/api/account/locale/route.ts. The layout passes it, because it
+// is a Server Component that already knows the session; a client-side
+// useSession would be a provider and a round trip for one boolean.
+export default function LanguageSwitcher({ persist = false }: { persist?: boolean }) {
   const locale = useLocale();
   const pathname = usePathname();
   const router = useRouter();
@@ -18,6 +27,20 @@ export default function LanguageSwitcher() {
 
   function switchTo(next: string) {
     if (next === locale) return;
+    // Deliberately not awaited and never blocking the switch: the visitor asked
+    // for a different page language, not for a database write, and neither a
+    // slow round trip nor a 500 may keep them on the old locale. The route logs
+    // its own failures — this catch is only here so an unreachable server does
+    // not surface as an unhandled rejection.
+    if (persist) {
+      fetch("/api/account/locale", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locale: next }),
+      }).catch((err: unknown) => {
+        console.error("[lang] storing the locale on the account failed:", err);
+      });
+    }
     startTransition(() => {
       router.replace(pathname, { locale: next });
     });

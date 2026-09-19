@@ -105,11 +105,14 @@ export async function sendPasswordResetEmail(
   });
 }
 
-// Known gap: both report mails go out in the default locale. Their recipients
-// (an admin, the reported puzzle's owner) are not the person making the
-// request, so the acting user's locale would be the wrong one to use — the
-// recipient's own language needs a `locale` column on User, populated at
-// signup. Until then the `locale` parameter is only reachable from tests.
+// Everything above mails the person who made the request — they just typed
+// their own address into a form — so the request locale is both available and
+// correct. The three senders below do not: their recipient is an admin, or the
+// reported puzzle's owner, and the acting user's language is somebody else's.
+// Those callers read `User.locale` instead (lib/report-notify.ts,
+// app/api/admin/puzzles/[id]/route.ts); it is a plain String on both providers,
+// so an unknown value falls back to the default in resolveLocale above rather
+// than throwing on a missing catalog.
 export async function sendReportNotification(
   to: string,
   puzzleTitle: string,

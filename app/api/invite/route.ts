@@ -5,7 +5,7 @@ import { consumeToken } from "@/lib/tokens";
 import { checkEmailBanned } from "@/lib/moderation";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
-import { getErrorT } from "@/lib/i18n-server";
+import { getErrorT, resolveRequestLocale } from "@/lib/i18n-server";
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -39,6 +39,11 @@ export async function POST(request: Request) {
     data: {
       passwordHash,
       emailVerified: new Date(),
+      // The invite went out in the admin's language, so the row still carries
+      // the default. This request is the first one the invitee themselves makes
+      // — the only signal of their language before something mails them without
+      // being asked.
+      locale: await resolveRequestLocale(),
       termsAcceptedAt: new Date(),
       termsVersion: TERMS_VERSION,
     },

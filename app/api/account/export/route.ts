@@ -36,6 +36,7 @@ export async function GET() {
         email: true,
         name: true,
         role: true,
+        locale: true,
         emailVerified: true,
         termsAcceptedAt: true,
         termsVersion: true,

@@ -31,6 +31,15 @@ model User {
   // password has never changed, which is every row that exists today — so the
   // column arriving logs nobody out.
   passwordChangedAt DateTime?
+  // The recipient's own language for transactional mail, independent of the
+  // locale of whoever triggers the send — an admin notification and a takedown
+  // notice go to someone other than the person making the request. One of
+  // `routing.locales` (i18n/routing.ts), validated there rather than in
+  // lib/roles.ts: that const union already exists and a second copy would be a
+  // second source of truth. The default must stay in step with
+  // routing.defaultLocale; it is what every row predating the column gets, so
+  // their mail keeps arriving exactly as it does today.
+  locale       String  @default("de")
   // Terms-of-use acceptance: when, and which version (TERMS_VERSION in lib/legal.ts).
   // Null for accounts that predate the terms, were created by an admin (CLI
   // or direct create), or were invited and not yet activated — see
