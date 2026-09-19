@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   userFindUnique,
   tokenCount,
+  tokenFindMany,
   tokenCreate,
   bannedMock,
   sendResetMock,
@@ -11,6 +12,7 @@ const {
 } = vi.hoisted(() => ({
   userFindUnique: vi.fn(),
   tokenCount: vi.fn(),
+  tokenFindMany: vi.fn(),
   tokenCreate: vi.fn(),
   bannedMock: vi.fn(),
   sendResetMock: vi.fn(),
@@ -19,7 +21,10 @@ const {
 }));
 
 vi.mock("@/lib/db", () => ({
-  prisma: { user: { findUnique: userFindUnique }, verificationToken: { count: tokenCount, create: tokenCreate } },
+  prisma: {
+    user: { findUnique: userFindUnique },
+    verificationToken: { count: tokenCount, findMany: tokenFindMany, create: tokenCreate },
+  },
 }));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: bannedMock }));
 vi.mock("@/lib/mail", () => ({ sendPasswordResetEmail: sendResetMock }));
@@ -33,7 +38,17 @@ vi.mock("@/lib/i18n-server", () => ({
 }));
 
 import { POST } from "./route";
-import { __resetProbeState, PROBE_LIMIT } from "@/lib/password-reset";
+import {
+  __resetProbeState,
+  PROBE_LIMIT,
+  RESET_EMAIL_RETRY_AFTER_MS,
+  RESET_PER_EMAIL_LIMIT,
+} from "@/lib/password-reset";
+
+/** The account's `n` most recent reset links, newest first, the newest `ageMs` old. */
+function links(n: number, ageMs: number) {
+  return Array.from({ length: n }, (_, i) => ({ createdAt: new Date(Date.now() - ageMs - i * 1_000) }));
+}
 
 function call(body: unknown) {
   return POST(
@@ -59,6 +74,7 @@ describe("POST /api/account/password/reset-request", () => {
     hasTrustedProxyMock.mockReturnValue(false);
     bannedMock.mockResolvedValue(false);
     tokenCount.mockResolvedValue(0);
+    tokenFindMany.mockResolvedValue([]);
     tokenCreate.mockResolvedValue({ token: "tok" });
     userFindUnique.mockResolvedValue({ id: "u1", email: "a@b.de", passwordHash: "$2b$h", emailVerified: null });
   });
@@ -99,9 +115,39 @@ describe("POST /api/account/password/reset-request", () => {
   });
 
   it("answers the same when the per-address limit is spent, and sends nothing", async () => {
-    tokenCount.mockResolvedValue(99);
+    tokenFindMany.mockResolvedValue(links(RESET_PER_EMAIL_LIMIT, 1_000));
     await assertSameAnswer(await call({ email: "a@b.de" }));
     expect(sendResetMock).not.toHaveBeenCalled();
+  });
+
+  it("lets one through once the newest link is stale, so the cap cannot hold an account shut", async () => {
+    // The cap is keyed on the address, and anyone may name any address: three
+    // POSTs spend a stranger's hourly budget, and three an hour keep it spent
+    // for as long as the attacker keeps going. The victim would ask to reset,
+    // be told a link is on its way — the answer never varies — and get nothing.
+    // So a spent quota stops mattering once the newest link is old enough,
+    // which bounds the wait at RESET_EMAIL_RETRY_AFTER_MS instead of leaving it
+    // open-ended.
+    tokenFindMany.mockResolvedValue(links(RESET_PER_EMAIL_LIMIT, RESET_EMAIL_RETRY_AFTER_MS + 1_000));
+    await assertSameAnswer(await call({ email: "a@b.de" }));
+    expect(sendResetMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still caps the burst: a spent quota with a fresh link sends nothing", async () => {
+    // The relaxation above is only about age. Three requests in a row are still
+    // three mails and no more, which is what stops the endpoint being a mailer.
+    tokenFindMany.mockResolvedValue(links(RESET_PER_EMAIL_LIMIT, RESET_EMAIL_RETRY_AFTER_MS - 1_000));
+    await assertSameAnswer(await call({ email: "a@b.de" }));
+    expect(sendResetMock).not.toHaveBeenCalled();
+  });
+
+  it("reads only as many links as the rule needs", async () => {
+    // Bounded on purpose: the newest timestamp and whether the limit is reached
+    // are the whole rule, so the query must not grow with the rows in the window.
+    await call({ email: "a@b.de" });
+    const args = tokenFindMany.mock.calls[0][0];
+    expect(args.take).toBe(RESET_PER_EMAIL_LIMIT);
+    expect(args.orderBy).toEqual({ createdAt: "desc" });
   });
 
   it("answers the same for a malformed body, and sends nothing", async () => {
@@ -141,13 +187,13 @@ describe("POST /api/account/password/reset-request", () => {
     expect(tokenCreate.mock.calls[0][0].data.requesterIpHash).toBe("ip-hash");
   });
 
-  it("answers the same, rather than 500, when the per-email rate-limit count throws", async () => {
+  it("answers the same, rather than 500, when the per-address rate-limit read throws", async () => {
     // The realistic trigger: a rolling deploy where db:push has not yet added
     // requesterIpHash. Reachable only for an address that exists, is unbanned
     // and has a hash — so an uncaught throw here would 500 only for real
     // accounts while unknown addresses still got 200, the same enumeration
     // oracle the mail-send catch exists to close.
-    tokenCount.mockRejectedValueOnce(new Error("column requesterIpHash does not exist"));
+    tokenFindMany.mockRejectedValueOnce(new Error("column requesterIpHash does not exist"));
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     await assertSameAnswer(await call({ email: "a@b.de" }));
     expect(sendResetMock).not.toHaveBeenCalled();
@@ -167,23 +213,19 @@ describe("POST /api/account/password/reset-request", () => {
 
   it("consults, and can be limited by, the per-IP durable count behind a trusted proxy", async () => {
     hasTrustedProxyMock.mockReturnValue(true);
-    tokenCount.mockImplementation(async ({ where }: { where: { requesterIpHash?: string } }) =>
-      where.requesterIpHash ? 99 : 0,
-    );
+    tokenCount.mockResolvedValue(99);
     await assertSameAnswer(await call({ email: "a@b.de" }));
     expect(sendResetMock).not.toHaveBeenCalled();
-    expect(tokenCount).toHaveBeenCalledTimes(2);
+    expect(tokenCount).toHaveBeenCalledTimes(1);
   });
 
   it("does not consult the per-IP count, or let another caller's shared-bucket usage block this one, without a trusted proxy", async () => {
     hasTrustedProxyMock.mockReturnValue(false);
     // Would trip RESET_PER_IP_LIMIT if consulted — proof it isn't, on the
     // shipped default where every visitor hashes to one shared bucket.
-    tokenCount.mockImplementation(async ({ where }: { where: { requesterIpHash?: string } }) =>
-      where.requesterIpHash ? 99 : 0,
-    );
+    tokenCount.mockResolvedValue(99);
     await assertSameAnswer(await call({ email: "a@b.de" }));
     expect(sendResetMock).toHaveBeenCalledTimes(1);
-    expect(tokenCount).toHaveBeenCalledTimes(1);
+    expect(tokenCount).not.toHaveBeenCalled();
   });
 });

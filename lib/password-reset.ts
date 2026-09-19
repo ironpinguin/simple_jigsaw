@@ -48,6 +48,37 @@ export const RESET_PER_IP_LIMIT = 10;
 export const RESET_RATE_WINDOW_MS = 60 * 60 * 1000;
 
 /**
+ * How stale an account's newest reset link has to be for a request to be
+ * honoured even though RESET_PER_EMAIL_LIMIT is spent.
+ *
+ * Without this, the per-address cap is a lever anyone can hold over somebody
+ * else's account. The endpoint is public and its answer never varies, so three
+ * POSTs naming a victim's address spend that victim's whole hourly budget; three
+ * more an hour later keep it spent for as long as the attacker cares to
+ * continue. The victim then asks to reset, is told a link is on its way, and
+ * never receives one — no error, nothing to explain it. The attacker's own
+ * requests do mail working links to the victim's address, which is the only
+ * reason this is not a total lockout, but a link that landed in spam or was
+ * deleted as unsolicited is no recovery path.
+ *
+ * A quota alone cannot tell the two apart, because both sides have exactly the
+ * same evidence: an address. What it can do is bound how long the account can be
+ * held shut. Once the newest link for the account is this old, one more request
+ * is let through whatever the count says — so the wait is at most this interval
+ * rather than unbounded, and an attacker has to win the race afresh every time.
+ *
+ * Window over limit, so the long-run ceiling this relaxes to is the rate the
+ * quota already allows in a burst: three per hour becomes one per twenty
+ * minutes, and the worst case is the two together, roughly five mails an hour
+ * to one address. That is the price of the guarantee, paid in mail to an
+ * address that asked for it.
+ *
+ * Purely a relaxation: it only ever lets through a request the quota would have
+ * dropped, so nothing that worked before can start failing because of it.
+ */
+export const RESET_EMAIL_RETRY_AFTER_MS = RESET_RATE_WINDOW_MS / RESET_PER_EMAIL_LIMIT;
+
+/**
  * Every request from one hashed IP, existing address or not — enforced only
  * when hasTrustedProxy() confirms the hash identifies a single real client.
  */

@@ -8,6 +8,7 @@ import { sendPasswordResetEmail } from "@/lib/mail";
 import { hasTrustedProxy, hashReporterIp } from "@/lib/report-ip";
 import { resolveRequestLocale } from "@/lib/i18n-server";
 import {
+  RESET_EMAIL_RETRY_AFTER_MS,
   RESET_PER_EMAIL_LIMIT,
   RESET_PER_IP_LIMIT,
   RESET_RATE_WINDOW_MS,
@@ -23,12 +24,13 @@ const Schema = z.object({ email: z.string().email() });
  * telling the internet which addresses have accounts.
  *
  * Status and body only, deliberately not timing: an unknown address returns
- * after one `findUnique`, while an eligible one additionally runs two counts,
- * an insert, an opportunistic sweep and an awaited SMTP round trip — tens to
- * hundreds of milliseconds more. Equalising that would mean firing the mail
- * send without awaiting it, which is worse in this runtime (a failure has
- * nowhere left to be handled). The gap is real and left alone; `recordProbe`
- * below is what limits how fast a caller can sample it, not what closes it.
+ * after one `findUnique`, while an eligible one additionally runs two
+ * rate-limit reads, an insert, an opportunistic sweep and an awaited SMTP round
+ * trip — tens to hundreds of milliseconds more. Equalising that would mean
+ * firing the mail send without awaiting it, which is worse in this runtime (a
+ * failure has nowhere left to be handled). The gap is real and left alone;
+ * `recordProbe` below is what limits how fast a caller can sample it, not what
+ * closes it.
  */
 const SAME_ANSWER = { ok: true };
 const answer = () => NextResponse.json(SAME_ANSWER);
@@ -66,17 +68,35 @@ export async function POST(request: Request) {
   if (!user?.passwordHash) return answer();
 
   // Starts here, not at the mail send below: every await from this line to
-  // the send — the per-email count, the per-IP count, locale resolution,
+  // the send — the per-address read, the per-IP count, locale resolution,
   // minting the token, sending the mail — is reachable only for an address
   // that exists, is unbanned and has a password hash, so a throw in any of
   // them must get the same swallow-and-answer treatment as a mail failure.
   // See the catch below for why.
   try {
-    const since = new Date(Date.now() - RESET_RATE_WINDOW_MS);
-    const forUser = await prisma.verificationToken.count({
+    const now = Date.now();
+    const since = new Date(now - RESET_RATE_WINDOW_MS);
+
+    // The newest few rather than a bare count, because the cap alone is a lever
+    // an attacker holds over the account it is supposed to protect: this
+    // endpoint is public, its answer never varies, and three POSTs naming
+    // somebody else's address spend that person's whole hourly budget. So the
+    // quota still caps the burst, and the timestamp of the newest link decides
+    // whether it is still allowed to: once that link is RESET_EMAIL_RETRY_AFTER_MS
+    // old, one more request goes through however spent the quota is, which
+    // bounds how long recovery can be held shut. See lib/password-reset.ts for
+    // what that costs. `take` keeps the read bounded — the newest is all the
+    // rule reads, and the count only has to be recognised as having reached the
+    // limit.
+    const recent = await prisma.verificationToken.findMany({
       where: { userId: user.id, type: "PASSWORD_RESET", createdAt: { gte: since } },
+      select: { createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: RESET_PER_EMAIL_LIMIT,
     });
-    if (forUser >= RESET_PER_EMAIL_LIMIT) return answer();
+    const quotaSpent = recent.length >= RESET_PER_EMAIL_LIMIT;
+    const newestAt = recent[0]?.createdAt.getTime() ?? 0;
+    if (quotaSpent && newestAt > now - RESET_EMAIL_RETRY_AFTER_MS) return answer();
 
     // The per-IP durable count is only meaningful when x-forwarded-for can be
     // trusted to identify a single client (lib/report-ip.ts). With the shipped
@@ -94,7 +114,7 @@ export async function POST(request: Request) {
     }
 
     // Deliberately no revokeTokens here, unlike the admin invite route. Revoking
-    // deletes the rows the counts above read, so the per-address limit could never
+    // deletes the rows the rule above reads, so the per-address limit could never
     // exceed one. The invite route's reasoning does not transfer either: its two
     // live links can sit in two different mailboxes, where every reset link goes
     // to the account's own address. Single use and a two-hour life are what keep

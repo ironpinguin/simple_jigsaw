@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   PROBE_LIMIT,
   PROBE_WINDOW_MS,
+  RESET_EMAIL_RETRY_AFTER_MS,
   RESET_PER_EMAIL_LIMIT,
   RESET_PER_IP_LIMIT,
   RESET_RATE_WINDOW_MS,
@@ -21,6 +22,15 @@ describe("the limits", () => {
   it("uses a window long enough to be worth counting", () => {
     expect(RESET_RATE_WINDOW_MS).toBe(60 * 60 * 1000);
     expect(PROBE_WINDOW_MS).toBeLessThanOrEqual(RESET_RATE_WINDOW_MS);
+  });
+
+  it("bounds how long a spent per-address quota can hold an account shut", () => {
+    // Anyone may name anyone's address, so the cap protecting an account is also
+    // the lever against it. Letting one request through once the newest link is
+    // this old caps the wait — and at window over limit, the rate it relaxes to
+    // is the one the quota already allows in a burst.
+    expect(RESET_EMAIL_RETRY_AFTER_MS).toBe(RESET_RATE_WINDOW_MS / RESET_PER_EMAIL_LIMIT);
+    expect(RESET_EMAIL_RETRY_AFTER_MS).toBeLessThan(RESET_RATE_WINDOW_MS);
   });
 });
 

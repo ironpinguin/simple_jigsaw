@@ -70,6 +70,21 @@ This caps **mail actually sent to real people**, survives restarts, and works
 across replicas. It is the limit that matters, because sending mail is the
 expensive, abusable side effect.
 
+**The per-email cap points both ways.** Anyone may name anyone's address, and
+the answer never varies, so three POSTs spend a stranger's hourly budget and
+three an hour keep it spent indefinitely: the victim asks to reset, is told a
+link is on its way, and gets nothing. The attacker's own requests do mail
+working links to the victim, which is why this is not a total lockout — but a
+link that landed in spam is no recovery path. No quota can tell the two sides
+apart, because both present exactly the same evidence: an address. What it can
+do is bound the wait. Once the account's newest link is `RESET_RATE_WINDOW_MS /
+RESET_PER_EMAIL_LIMIT` old (20 minutes), one more request is honoured whatever
+the count says, so the attacker has to win the race afresh each time. The price
+is the ceiling this relaxes to — the burst quota plus one per 20 minutes, around
+five mails an hour to one address. The escape hatch only ever lets through a
+request the quota would have dropped, so it cannot deny anything that worked
+before.
+
 **In-memory half — a per-IP probe counter.** The durable half cannot see a
 request for an address that does not exist, because such a request creates no
 row. An attacker enumerating thousands of addresses would be counted zero times.
