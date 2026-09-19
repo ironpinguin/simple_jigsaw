@@ -31,10 +31,7 @@ export async function PUT(request: Request) {
     // Only a new password of the wrong length means anything to the user;
     // a missing or non-string field is a malformed client and says so.
     const key = passwordErrorKey(parsed.error.issues, "newPassword");
-    return NextResponse.json(
-      { error: t(key ?? "invalidRequest") },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: t(key ?? "invalidRequest") }, { status: 400 });
   }
 
   // Confirms the session's user still exists, which getSessionUser would

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   device making the change signs in again too, and says so. (#42)
 
 ### Changed
+- Losing admin rights now takes effect on the next page load rather than when
+  your session token expires: the *Admin* link disappears from the navigation
+  straight away. Admin pages and endpoints already refused a demoted admin —
+  only the link lingered. (#42)
 - Passwords now have a maximum length of 72 bytes, wherever one is set —
   registration, an invitation, an admin-created account, the `create-user`
   script and the new change form. bcrypt hashes only the first 72 bytes and

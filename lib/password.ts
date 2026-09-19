@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  PASSWORD_MAX_BYTES,
-  PASSWORD_MIN_LENGTH,
-  passwordByteLength,
-} from "./password-limits";
+import { PASSWORD_MAX_BYTES, PASSWORD_MIN_LENGTH, passwordByteLength } from "./password-limits";
 
 /**
  * The password rule, in one place. Four writers have to agree on it —

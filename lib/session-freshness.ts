@@ -39,14 +39,8 @@ export const SESSION_CUTOFF_MARGIN_MS = 1_000;
  * or before* the second of the change is refused: a same-second re-login is
  * bounced once by design, and must sign in again.
  */
-export function isSessionStale(
-  iatSeconds: number | undefined,
-  changedAt: Date | null,
-): boolean {
+export function isSessionStale(iatSeconds: number | undefined, changedAt: Date | null): boolean {
   if (changedAt === null) return false;
   if (iatSeconds === undefined) return true;
-  return (
-    iatSeconds <=
-    Math.floor((changedAt.getTime() + SESSION_CUTOFF_MARGIN_MS) / 1000)
-  );
+  return iatSeconds <= Math.floor((changedAt.getTime() + SESSION_CUTOFF_MARGIN_MS) / 1000);
 }

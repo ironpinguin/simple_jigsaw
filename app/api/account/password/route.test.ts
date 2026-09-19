@@ -1,24 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { authMock, userFindUnique, userUpdate, compareMock, hashMock } =
-  vi.hoisted(() => ({
-    authMock: vi.fn(),
-    userFindUnique: vi.fn(),
-    userUpdate: vi.fn(),
-    compareMock: vi.fn(),
-    hashMock: vi.fn(),
-  }));
+const { authMock, userFindUnique, userUpdate, compareMock, hashMock } = vi.hoisted(() => ({
+  authMock: vi.fn(),
+  userFindUnique: vi.fn(),
+  userUpdate: vi.fn(),
+  compareMock: vi.fn(),
+  hashMock: vi.fn(),
+}));
 
 vi.mock("@/lib/auth", () => ({ auth: authMock }));
 vi.mock("@/lib/db", () => ({
   prisma: { user: { findUnique: userFindUnique, update: userUpdate } },
 }));
-vi.mock("@/lib/i18n-server", () => ({
-  getErrorT: async () => (key: string) => key,
-}));
-vi.mock("bcryptjs", () => ({
-  default: { compare: compareMock, hash: hashMock },
-}));
+vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
+vi.mock("bcryptjs", () => ({ default: { compare: compareMock, hash: hashMock } }));
 
 import { PUT } from "./route";
 

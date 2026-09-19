@@ -11,10 +11,7 @@ import { passwordErrorKey, passwordField } from "@/lib/password";
 
 export async function GET() {
   if (!(await requireAdmin())) {
-    return NextResponse.json(
-      { error: (await getErrorT())("noAccess") },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: (await getErrorT())("noAccess") }, { status: 403 });
   }
 
   const users = await prisma.user.findMany({
@@ -51,10 +48,7 @@ export async function POST(request: Request) {
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     const key = passwordErrorKey(parsed.error.issues, "password");
-    return NextResponse.json(
-      { error: t(key ?? "invalidInput") },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: t(key ?? "invalidInput") }, { status: 400 });
   }
 
   const email = normalizeEmail(parsed.data.email);

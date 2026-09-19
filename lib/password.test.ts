@@ -20,17 +20,13 @@ describe("passwordField", () => {
 
   it("accepts the minimum and up to the maximum", () => {
     expect(passwordField.safeParse("12345678").success).toBe(true);
-    expect(
-      passwordField.safeParse("a".repeat(PASSWORD_MAX_BYTES)).success,
-    ).toBe(true);
+    expect(passwordField.safeParse("a".repeat(PASSWORD_MAX_BYTES)).success).toBe(true);
   });
 
   it("rejects a password past what bcrypt hashes, instead of silently truncating it", () => {
     // bcrypt ignores everything after 72 bytes, so a longer passphrase would
     // authenticate on its prefix alone with nothing saying the tail was lost.
-    expect(
-      passwordField.safeParse("a".repeat(PASSWORD_MAX_BYTES + 1)).success,
-    ).toBe(false);
+    expect(passwordField.safeParse("a".repeat(PASSWORD_MAX_BYTES + 1)).success).toBe(false);
     expect(passwordField.safeParse("a".repeat(200)).success).toBe(false);
   });
 
@@ -50,9 +46,7 @@ describe("passwordErrorKey", () => {
   const Schema = z.object({ password: passwordField, other: z.string() });
   const key = (input: unknown) => {
     const parsed = Schema.safeParse(input);
-    return parsed.success
-      ? null
-      : passwordErrorKey(parsed.error.issues, "password");
+    return parsed.success ? null : passwordErrorKey(parsed.error.issues, "password");
   };
 
   it("names the minimum and the maximum apart", () => {

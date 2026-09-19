@@ -13,17 +13,24 @@ import { toViewer } from "./visibility";
 import { isSessionStale } from "./session-freshness";
 
 /**
- * The one user read a request needs, memoized for its length.
+ * The one user read a page render needs, memoized for its length.
  *
  * auth() is not request-cached in next-auth 5 beta, so every call re-runs the
- * jwt callback below, and a request calls auth() more than once — the locale
+ * jwt callback below, and a render calls auth() more than once — the locale
  * layout and the page each do, and getSessionUser() does again before its own
- * query. Reading passwordChangedAt separately would therefore have turned one
- * row read per request into several, multiplied again across the per-image
- * viewer checks a gallery makes. So the freshness check and getSessionUser
- * share this, and a request that resolves its session any number of times
- * still reads the row once. React.cache keys on the argument, so two different
- * users in one request still get their own.
+ * query. Sharing one read between the freshness check and getSessionUser
+ * collapses those: measured on /de/my, three user-row reads became one.
+ *
+ * **Only for React renders.** React.cache stores on the RSC flight request, and
+ * Next's route-handler runtime establishes no such scope, so in `app/api/**`
+ * every call gets a fresh cache and still pays its own query — two reads for a
+ * route that calls getSessionUser, as before. That is most of this app's
+ * auth() calls, `/api/image/[...key]` per gallery thumbnail included. Making
+ * those one read too would mean memoizing on something request-scoped that
+ * route handlers also have, which is a bigger change than this.
+ *
+ * React.cache keys on the argument, so two different users in one render still
+ * get their own row.
  */
 const readSessionUser = cache(async (id: string) =>
   prisma.user.findUnique({
@@ -65,19 +72,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Keep the ADMIN allow-list authoritative on every login.
         let role = user.role;
         if (isAdminEmail(email) && role !== "ADMIN") {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: { role: "ADMIN" },
-          });
+          await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
           role = "ADMIN";
         }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name ?? null,
-          role,
-        };
+        return { id: user.id, email: user.email, name: user.name ?? null, role };
       },
     }),
   ],
@@ -94,9 +93,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // is the whole reason this feature stamps passwordChangedAt. Returning
       // null ends the session.
       //
-      // This costs a user lookup, but not an extra one: readSessionUser above
-      // is the same memoized read getSessionUser makes, so a request that
-      // already resolved its user pays nothing. Accepted in any case — a
+      // This costs a user lookup. In a page render it is not an extra one:
+      // readSessionUser above is the same memoized read getSessionUser makes,
+      // so a render that already resolved its user pays nothing. In a route
+      // handler, where that memo does not apply, it is a second query per
+      // auth() call. Accepted either way — a
       // "log out other devices" guarantee that is only sometimes enforced is
       // not a guarantee. If the lookup itself throws (the database is
       // unreachable), @auth/core catches it and clears the session cookie the
@@ -109,7 +110,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!token.id) return null;
       const row = await readSessionUser(token.id as string);
       if (!row) return null;
-      return isSessionStale(token.iat, row.passwordChangedAt) ? null : token;
+      if (isSessionStale(token.iat, row.passwordChangedAt)) return null;
+      // The row is already here, so take the role from it rather than leaving
+      // the claim frozen at sign-in: a demoted admin otherwise keeps the Admin
+      // link in the nav (app/[locale]/layout.tsx) until the token expires.
+      // getSessionViewer has always read the role from the database for the
+      // same reason; this brings the JWT claim into line with it, free.
+      token.role = row.role;
+      return token;
     },
     session({ session, token }) {
       if (token.id && session.user) {
@@ -126,6 +134,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
  * the database. Sessions are stateless (JWT), so a cookie can outlive its user
  * (e.g. after the DB was reset). Returns null in that case so protected routes
  * can respond with 401 instead of failing later on a foreign-key violation.
+ *
+ * Inside a React render the row is read once and reused (readSessionUser), so
+ * this answers from whatever that first read saw — per render, not per call.
+ * Code that mutates a user and then re-checks it in the same render would read
+ * the pre-mutation row; nothing does that today, and a route handler gets a
+ * fresh read per call in any case.
  */
 export async function getSessionUser() {
   const session = await auth();

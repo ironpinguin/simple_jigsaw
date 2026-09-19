@@ -28,9 +28,7 @@ async function main() {
   const PASSWORD_MAX_BYTES = 72;
 
   if (password.length < PASSWORD_MIN_LENGTH) {
-    console.error(
-      `Password must be at least ${PASSWORD_MIN_LENGTH} characters.`,
-    );
+    console.error(`Password must be at least ${PASSWORD_MIN_LENGTH} characters.`);
     process.exit(1);
   }
   if (new TextEncoder().encode(password).length > PASSWORD_MAX_BYTES) {

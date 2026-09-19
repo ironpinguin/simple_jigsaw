@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// These cases all use the id "u1" with a different mocked row each time, which
+// only works because lib/auth.ts's readSessionUser is wrapped in React.cache
+// and React.cache is a pass-through outside a render — there is no dispatcher
+// under vitest, so nothing is memoized. If that ever changes, the first case's
+// row would be served to all of them and this file would fail loudly rather
+// than quietly: that is the intended signal, not something to work around by
+// varying the id.
+
 const { userFindUnique } = vi.hoisted(() => ({ userFindUnique: vi.fn() }));
 
 vi.mock("./db", () => ({ prisma: { user: { findUnique: userFindUnique } } }));
@@ -36,14 +44,14 @@ describe("the jwt callback", () => {
   });
 
   it("keeps a session when the password has never changed", async () => {
-    userFindUnique.mockResolvedValue({ passwordChangedAt: null });
+    userFindUnique.mockResolvedValue({ passwordChangedAt: null, role: "USER" });
     const token = await jwtCallback()({ token: { id: "u1", iat: 1_000 } });
     expect(token).not.toBeNull();
   });
 
   it("ends a session issued before the password changed", async () => {
     // This is the whole feature: a cookie taken before the change stops working.
-    userFindUnique.mockResolvedValue({ passwordChangedAt: new Date(1_001_000) });
+    userFindUnique.mockResolvedValue({ passwordChangedAt: new Date(1_001_000), role: "USER" });
     const token = await jwtCallback()({ token: { id: "u1", iat: 1_000 } });
     expect(token).toBeNull();
   });
@@ -52,9 +60,18 @@ describe("the jwt callback", () => {
     // Past SESSION_CUTOFF_MARGIN_MS: the cutoff reaches a second beyond the
     // stamp to cover cookies re-issued while the write was still in flight
     // (see lib/session-freshness.ts), so 1_002 would still be refused.
-    userFindUnique.mockResolvedValue({ passwordChangedAt: new Date(1_001_000) });
+    userFindUnique.mockResolvedValue({ passwordChangedAt: new Date(1_001_000), role: "USER" });
     const token = await jwtCallback()({ token: { id: "u1", iat: 1_003 } });
     expect(token).not.toBeNull();
+  });
+
+  it("takes the role from the row, so a demotion is not frozen in the token", async () => {
+    // getSessionViewer has always read the role from the database rather than
+    // the claim; the claim now agrees, so the Admin link in the nav goes away
+    // with the demotion instead of when the token expires.
+    userFindUnique.mockResolvedValue({ passwordChangedAt: null, role: "USER" });
+    const token = await jwtCallback()({ token: { id: "u1", iat: 1_000, role: "ADMIN" } });
+    expect(token).toMatchObject({ role: "USER" });
   });
 
   it("ends a session whose user is gone", async () => {
