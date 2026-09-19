@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { PASSWORD_MIN_LENGTH } from "@/lib/password";
+import { PASSWORD_MAX_BYTES, PASSWORD_MIN_LENGTH } from "@/lib/password-limits";
 
 export default function ResetPage() {
   const t = useTranslations("auth");
@@ -75,6 +75,11 @@ export default function ResetPage() {
           type="password"
           required
           minLength={PASSWORD_MIN_LENGTH}
+          // Same reasoning as components/ChangePassword.tsx: bcrypt's limit is
+          // 72 bytes and this attribute counts characters, so it catches the
+          // common ASCII case early and leaves the rest to the server, which
+          // answers with errors.passwordMax.
+          maxLength={PASSWORD_MAX_BYTES}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"

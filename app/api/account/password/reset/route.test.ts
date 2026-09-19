@@ -87,6 +87,25 @@ describe("POST /api/account/password/reset", () => {
     expect(consumeTokenMock).not.toHaveBeenCalled();
   });
 
+  it("reports a passphrase over bcrypt's byte limit as too long, not too short", async () => {
+    // The limit is bcrypt's 72 bytes, so it is counted in bytes: 20 four-byte
+    // emoji are 80. Reporting this as passwordMin would tell the user to
+    // lengthen a password that is already too long.
+    const res = await call({ token: "tok-123", password: "🧩".repeat(20) });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "passwordMax" });
+    expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("calls a password of the wrong type malformed rather than too short", async () => {
+    // A non-string password is a broken client, not a length the user chose;
+    // "at least 8 characters" describes a rule it never broke.
+    const res = await call({ token: "tok-123", password: 12345678 });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "invalidRequest" });
+    expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
   it("revokes the account's other outstanding reset links after a successful reset", async () => {
     // Up to two more PASSWORD_RESET links can still be live (RESET_PER_EMAIL_LIMIT
     // is 3); completing one answers the same question the others were sent for.

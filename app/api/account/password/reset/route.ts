@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { consumeToken, revokeTokens } from "@/lib/tokens";
-import { passwordField } from "@/lib/password";
+import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
 
 const Schema = z.object({ token: z.string().min(1), password: passwordField });
@@ -11,13 +11,18 @@ const Schema = z.object({ token: z.string().min(1), password: passwordField });
 export async function POST(request: Request) {
   const t = await getErrorT();
 
-  // Validated before the token is spent: a too-short password must not burn a
+  // Validated before the token is spent: a rejected password must not burn a
   // single-use link and leave the user to request another.
   const parsed = Schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
+    // passwordErrorKey decides which length message applies, so this endpoint
+    // reports the rule the same way the other three writers do: a passphrase
+    // over bcrypt's 72-byte limit hears passwordMax, not "at least 8
+    // characters". It returns null for a missing or non-string password —
+    // a malformed client, not a length the user can fix.
+    const passwordKey = passwordErrorKey(parsed.error.issues, "password");
     return NextResponse.json(
-      { error: t(onPassword ? "passwordMin" : "invalidRequest") },
+      { error: t(passwordKey ?? "invalidRequest") },
       { status: 400 },
     );
   }
