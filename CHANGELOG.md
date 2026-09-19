@@ -38,9 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   making the request, so there was no language to go on and the existing EN and
   IT translations were unreachable. Accounts now carry the language they signed
   up or activated in, and switching language in the header updates it while
-  signed in. Accounts created before this keep German until their owner switches
-  once. The account data export lists the stored language along with the rest of
-  the account. (#31)
+  signed in. An invited account records the language of the person activating
+  it, not the one their invitation link happened to carry — that link's language
+  is whichever the inviting admin was using. Accounts created before this keep
+  German until their owner switches once. The account data export lists the
+  stored language along with the rest of the account, and the privacy policy
+  names it among the data held on you. (#31)
 - Losing admin rights now takes effect on the next page load rather than when
   your session token expires: the *Admin* link disappears from the navigation
   straight away. Admin pages and endpoints already refused a demoted admin —

@@ -29,6 +29,29 @@ export async function resolveRequestLocale(): Promise<Locale> {
 }
 
 /**
+ * The language to *store* for someone whose page URL somebody else chose.
+ *
+ * Accept-Language only, deliberately skipping the cookie that
+ * resolveRequestLocale prefers. Invite activation is the case: the invitee
+ * follows a link an admin generated, so its `/de` prefix is the admin's
+ * language, and the middleware described above then writes NEXT_LOCALE to match
+ * it. Reading that cookie back records the colleague who pressed the button
+ * rather than the person who will receive every later mail — verified: an
+ * Italian browser opening a German admin's invite link is served
+ * `Set-Cookie: NEXT_LOCALE=de`.
+ *
+ * The trade-off is the invitee who switches language on the invite page itself:
+ * that click also lands in the same cookie, and is lost here. It is the rarer
+ * case, it costs one click to correct once they are signed in (the switcher
+ * persists from then on), and getting it wrong leaves them with their own
+ * browser's language rather than a stranger's.
+ */
+export async function resolveBrowserLocale(): Promise<Locale> {
+  const header = (await headers()).get("accept-language");
+  return matchAcceptLanguage(header, routing.locales) ?? routing.defaultLocale;
+}
+
+/**
  * Translator for the `errors` namespace in the caller's language.
  *
  * Request-scoped: route handlers only. The explicit locale is load-bearing —

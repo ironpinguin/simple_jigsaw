@@ -263,7 +263,7 @@
     "controllerMissing": "No operator details are configured for this instance, so no controller is named here. Without them the rights listed below cannot be exercised — whoever runs the instance needs to supply them.",
     "dataTitle": "2. What is stored",
     "accountTitle": "Account",
-    "accountText": "When you sign up we store your email address, a name if you choose to give one, your password as a bcrypt hash (never in plain text), whether and when you confirmed your email address, your role and when you signed up. This data is needed to run your account; the legal basis is Art. 6(1)(b) GDPR.",
+    "accountText": "When you sign up we store your email address, a name if you choose to give one, your password as a bcrypt hash (never in plain text), whether and when you confirmed your email address, your role, the language we write to you in, and when you signed up. This data is needed to run your account; the legal basis is Art. 6(1)(b) GDPR.",
     "tokensTitle": "Confirmation, invitation and password reset links",
     "tokensText": "For email confirmation, for invitations and for resetting your password we generate a random token with an expiry date, tied to your account. It is deleted when redeemed; a link that is never redeemed stops being valid once it expires and is removed automatically. When you request a reset we also store, on that token, a hash of your IP address keyed with a secret — never the address itself. It serves only to limit how many requests one sender can make, and it disappears with the token. The legal basis is Art. 6(1)(f) GDPR — the legitimate interest in not letting those mails be abused.",
     "bansTitle": "Blocked addresses",

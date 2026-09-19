@@ -90,6 +90,22 @@ describe("LanguageSwitcher", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("says so when the account route refuses the write", async () => {
+    // A tab left open until the session cookie expired: the PUT answers 401,
+    // the page still switches, and without this the user's mail language stays
+    // what it was with nothing anywhere recording that it did not change.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
+
+    mount({ persist: true });
+    click("EN");
+    await act(async () => {});
+
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining("401"));
+    expect(replaceMock).toHaveBeenCalledWith("/my", { locale: "en" });
+    logged.mockRestore();
+  });
+
   it("still switches the page when storing the choice fails", async () => {
     // The language the visitor asked for is the point; persisting it is a side
     // effect they never asked about, and an unreachable route must neither

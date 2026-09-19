@@ -5,7 +5,7 @@ import { consumeToken } from "@/lib/tokens";
 import { checkEmailBanned } from "@/lib/moderation";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
-import { getErrorT, resolveRequestLocale } from "@/lib/i18n-server";
+import { getErrorT, resolveBrowserLocale } from "@/lib/i18n-server";
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -43,7 +43,13 @@ export async function POST(request: Request) {
       // the default. This request is the first one the invitee themselves makes
       // — the only signal of their language before something mails them without
       // being asked.
-      locale: await resolveRequestLocale(),
+      //
+      // Accept-Language only (resolveBrowserLocale), never NEXT_LOCALE: the
+      // invitee arrived through a link whose `/de` prefix the *admin* chose, and
+      // next-intl's middleware writes that prefix into the cookie on their first
+      // page view. Reading it back would pin the admin's language on them
+      // permanently — the exact failure this column exists to end.
+      locale: await resolveBrowserLocale(),
       termsAcceptedAt: new Date(),
       termsVersion: TERMS_VERSION,
     },

@@ -29,17 +29,29 @@ export default function LanguageSwitcher({ persist = false }: { persist?: boolea
     if (next === locale) return;
     // Deliberately not awaited and never blocking the switch: the visitor asked
     // for a different page language, not for a database write, and neither a
-    // slow round trip nor a 500 may keep them on the old locale. The route logs
-    // its own failures — this catch is only here so an unreachable server does
-    // not surface as an unhandled rejection.
+    // slow round trip nor a refusal may keep them on the old locale.
+    //
+    // A refusal is still worth a line. The page changes language either way, so
+    // there is nothing on screen to distinguish a stored choice from one that
+    // was dropped — and the most likely refusal is a 401 from a tab left open
+    // until its session expired, which the route cannot usefully log because it
+    // sees one every time. Its own log covers the 500.
     if (persist) {
       fetch("/api/account/locale", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ locale: next }),
-      }).catch((err: unknown) => {
-        console.error("[lang] storing the locale on the account failed:", err);
-      });
+      })
+        .then((res) => {
+          if (!res.ok) {
+            console.error(
+              `[lang] the account kept its old mail language: /api/account/locale answered ${res.status}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          console.error("[lang] storing the locale on the account failed:", err);
+        });
     }
     startTransition(() => {
       router.replace(pathname, { locale: next });

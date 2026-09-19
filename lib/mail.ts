@@ -105,14 +105,22 @@ export async function sendPasswordResetEmail(
   });
 }
 
-// Everything above mails the person who made the request — they just typed
-// their own address into a form — so the request locale is both available and
-// correct. The three senders below do not: their recipient is an admin, or the
-// reported puzzle's owner, and the acting user's language is somebody else's.
-// Those callers read `User.locale` instead (lib/report-notify.ts,
+// Which locale a caller should pass depends on who the recipient is.
+//
+// Verification and reset mail the person who just typed their own address into
+// a form, so the request locale is both available and correct. The three
+// senders below never do: the recipient is an admin, or the reported puzzle's
+// owner, and the acting user's language belongs to somebody else. Those callers
+// read `User.locale` instead (lib/report-notify.ts,
 // app/api/admin/puzzles/[id]/route.ts); it is a plain String on both providers,
 // so an unknown value falls back to the default in resolveLocale above rather
 // than throwing on a missing catalog.
+//
+// sendInviteEmail is the odd one out and stays on the request locale: its
+// recipient is not the requester either — an admin types a colleague's address
+// — but the row is brand new and holds nothing better to read. The invitee's
+// own language is recorded when they activate, from Accept-Language rather than
+// the cookie this very mail's link goes on to set (see resolveBrowserLocale).
 export async function sendReportNotification(
   to: string,
   puzzleTitle: string,

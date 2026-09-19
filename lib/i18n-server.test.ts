@@ -41,7 +41,7 @@ vi.mock("next-intl/server", () => ({
 import deMessages from "@/messages/de.json";
 import enMessages from "@/messages/en.json";
 import itMessages from "@/messages/it.json";
-import { getErrorT, resolveRequestLocale } from "./i18n-server";
+import { getErrorT, resolveBrowserLocale, resolveRequestLocale } from "./i18n-server";
 
 /** A request as the browser sends it: `cookie` omitted means none was set. */
 function request({ cookie, acceptLanguage }: { cookie?: string; acceptLanguage?: string }) {
@@ -99,6 +99,33 @@ describe("resolveRequestLocale", () => {
       request({ cookie: "", acceptLanguage: "en-GB,en;q=0.9" });
       await expect(resolveRequestLocale()).resolves.toBe("en");
     });
+  });
+});
+
+describe("resolveBrowserLocale", () => {
+  // Same inputs as resolveRequestLocale above, opposite precedence — and the
+  // difference is the whole reason it exists. An invitee opens the link an
+  // admin sent them, so the URL locale is the *admin's* choice; next-intl's
+  // middleware then writes NEXT_LOCALE for it, and a cookie that says "de"
+  // proves only that a German-speaking colleague pressed the invite button.
+  it("ignores a cookie the recipient did not choose", async () => {
+    request({ cookie: "de", acceptLanguage: "it-IT,it;q=0.9" });
+    await expect(resolveBrowserLocale()).resolves.toBe("it");
+  });
+
+  it("still reads the browser language when there is no cookie", async () => {
+    request({ acceptLanguage: "en-GB,en;q=0.9" });
+    await expect(resolveBrowserLocale()).resolves.toBe("en");
+  });
+
+  it("falls back to the default when the header names no supported language", async () => {
+    request({ cookie: "en", acceptLanguage: "fr-FR,fr;q=0.9" });
+    await expect(resolveBrowserLocale()).resolves.toBe("de");
+  });
+
+  it("falls back to the default when there is no header at all", async () => {
+    request({ cookie: "en" });
+    await expect(resolveBrowserLocale()).resolves.toBe("de");
   });
 });
 
