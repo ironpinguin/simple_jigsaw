@@ -1,0 +1,149 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { normalizeEmail } from "@/lib/bans";
+import { checkEmailBanned } from "@/lib/moderation";
+import { createToken } from "@/lib/tokens";
+import { sendPasswordResetEmail } from "@/lib/mail";
+import { hasTrustedProxy, hashReporterIp } from "@/lib/report-ip";
+import { resolveRequestLocale } from "@/lib/i18n-server";
+import {
+  RESET_EMAIL_RETRY_AFTER_MS,
+  RESET_PER_EMAIL_LIMIT,
+  RESET_PER_IP_LIMIT,
+  RESET_RATE_WINDOW_MS,
+  recordProbe,
+} from "@/lib/password-reset";
+
+const Schema = z.object({ email: z.string().email() });
+
+/**
+ * The one answer this route ever gives. Unknown address, banned address, a row
+ * with no password, a spent rate limit, a malformed body and a sent mail all
+ * produce exactly this — which is what lets the endpoint be public without
+ * telling the internet which addresses have accounts.
+ *
+ * Status and body only, deliberately not timing: an unknown address returns
+ * after one `findUnique`, while an eligible one additionally runs two
+ * rate-limit reads, an insert, an opportunistic sweep and an awaited SMTP round
+ * trip — tens to hundreds of milliseconds more. Equalising that would mean
+ * firing the mail send without awaiting it, which is worse in this runtime (a
+ * failure has nowhere left to be handled). The gap is real and left alone;
+ * `recordProbe` below is what limits how fast a caller can sample it, not what
+ * closes it.
+ */
+const SAME_ANSWER = { ok: true };
+const answer = () => NextResponse.json(SAME_ANSWER);
+
+export async function POST(request: Request) {
+  const ipHash = hashReporterIp(request.headers.get("x-forwarded-for"));
+
+  // Record unconditionally so the counter stays warm if the deployment later
+  // gains a trusted proxy; enforce only when the hash identifies one client.
+  // Before anything that costs a query — this is the only limit that sees a
+  // request for an address with no account, because such a request creates no
+  // row for the database counts below to find. See lib/password-reset.ts for
+  // why enforcement is gated: without a trusted proxy, every visitor hashes to
+  // one shared bucket, and enforcing here would make this a lever one caller
+  // could hold over everyone's password recovery.
+  const withinProbeLimit = recordProbe(ipHash);
+  if (hasTrustedProxy() && !withinProbeLimit) return answer();
+
+  const parsed = Schema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return answer();
+
+  const email = normalizeEmail(parsed.data.email);
+  if (await checkEmailBanned(email)) return answer();
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, passwordHash: true },
+  });
+
+  // A row with no hash is an invitation that was never redeemed; those belong to
+  // the invite flow (#33), and a reset link would be a second, quieter way to
+  // activate one. Verification is deliberately NOT required — an account that
+  // never confirmed its address is exactly the one with no other way back, and
+  // completing the reset marks it verified.
+  if (!user?.passwordHash) return answer();
+
+  // Starts here, not at the mail send below: every await from this line to
+  // the send — the per-address read, the per-IP count, locale resolution,
+  // minting the token, sending the mail — is reachable only for an address
+  // that exists, is unbanned and has a password hash, so a throw in any of
+  // them must get the same swallow-and-answer treatment as a mail failure.
+  // See the catch below for why.
+  try {
+    const now = Date.now();
+    const since = new Date(now - RESET_RATE_WINDOW_MS);
+
+    // The newest few rather than a bare count, because the cap alone is a lever
+    // an attacker holds over the account it is supposed to protect: this
+    // endpoint is public, its answer never varies, and three POSTs naming
+    // somebody else's address spend that person's whole hourly budget. So the
+    // quota still caps the burst, and the timestamp of the newest link decides
+    // whether it is still allowed to: once that link is RESET_EMAIL_RETRY_AFTER_MS
+    // old, one more request goes through however spent the quota is, which
+    // bounds how long recovery can be held shut. See lib/password-reset.ts for
+    // what that costs. `take` keeps the read bounded — the newest is all the
+    // rule reads, and the count only has to be recognised as having reached the
+    // limit.
+    const recent = await prisma.verificationToken.findMany({
+      where: { userId: user.id, type: "PASSWORD_RESET", createdAt: { gte: since } },
+      select: { createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: RESET_PER_EMAIL_LIMIT,
+    });
+    const quotaSpent = recent.length >= RESET_PER_EMAIL_LIMIT;
+    const newestAt = recent[0]?.createdAt.getTime() ?? 0;
+    if (quotaSpent && newestAt > now - RESET_EMAIL_RETRY_AFTER_MS) return answer();
+
+    // The per-IP durable count is only meaningful when x-forwarded-for can be
+    // trusted to identify a single client (lib/report-ip.ts). With the shipped
+    // default of no trusted proxy, every visitor hashes to the same "unknown"
+    // bucket, so counting it here would turn RESET_PER_IP_LIMIT into a
+    // deployment-wide cap: one visitor spending it would silently deny password
+    // recovery to everyone else, and — because the response never varies —
+    // nobody would ever learn why. The per-email count above stays unconditional
+    // because it is meaningful in every configuration.
+    if (hasTrustedProxy()) {
+      const forIp = await prisma.verificationToken.count({
+        where: { requesterIpHash: ipHash, type: "PASSWORD_RESET", createdAt: { gte: since } },
+      });
+      if (forIp >= RESET_PER_IP_LIMIT) return answer();
+    }
+
+    // Deliberately no revokeTokens here, unlike the admin invite route. Revoking
+    // deletes the rows the rule above reads, so the per-address limit could never
+    // exceed one. The invite route's reasoning does not transfer either: its two
+    // live links can sit in two different mailboxes, where every reset link goes
+    // to the account's own address. Single use and a two-hour life are what keep
+    // the extras harmless.
+    const locale = await resolveRequestLocale();
+    const token = await createToken(user.id, "PASSWORD_RESET", ipHash);
+    await sendPasswordResetEmail(user.email, token, locale);
+  } catch (error) {
+    // Swallowed on purpose and never surfaced as anything but the identical
+    // answer. This branch is reachable only for an address that exists, is
+    // unbanned and has a password hash — so letting an exception here escape
+    // as a 500 (a database blip on either rate-limit count, a locale lookup
+    // failing, an SMTP outage, a relay rejecting one recipient) would make the
+    // failure itself an oracle telling the caller exactly which addresses have
+    // accounts. The realistic trigger for the counts is a rolling deploy where
+    // db:push has not yet added requesterIpHash: the user lookup succeeds, the
+    // count throws, and without the try starting here that would 500 only for
+    // real accounts while unknown addresses still got 200. A swallowed
+    // rate-limit count therefore correctly means no mail sent rather than
+    // unlimited mail — the counts exist to cap mail, and failing open here
+    // would defeat them.
+    console.error(`[reset-request] processing the reset request for user ${user.id} failed:`, error);
+  }
+
+  // A token created just above may now exist even though the mail failed to
+  // send. Left in place on purpose: it is single-use, expires in two hours,
+  // only ever mailed to the account's own address, and already counted
+  // against the per-address budget checked above — deleting it here would let
+  // an attacker who can induce send failures reset that budget for free.
+
+  return answer();
+}

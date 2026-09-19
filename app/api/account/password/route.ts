@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
+import { revokeTokens } from "@/lib/tokens";
 
 const Schema = z.object({
   currentPassword: z.string().min(1),
@@ -64,6 +65,29 @@ export async function PUT(request: Request) {
     where: { id: user.id },
     data: { passwordHash, passwordChangedAt: new Date() },
   });
+
+  // A reset mail still sitting in an inbox is a second key. Changing the
+  // password deliberately answers whatever prompted it, so the link goes.
+  // After the update, not before: a failed write must not disarm a link the
+  // user may still need.
+  //
+  // Swallowed rather than reported: the update above already succeeded and
+  // the caller's own session is already invalid because of the stamp it just
+  // wrote, so a 500 here would tell the user the opposite of what happened —
+  // ChangePassword.tsx shows a generic failure and does not sign them out,
+  // so they would retry with the old password, be told that is wrong too,
+  // and then get signed out anyway on their next request. The cost of
+  // swallowing it is a surviving reset link, live for up to its two-hour
+  // TTL — the reason this is logged rather than ignored.
+  try {
+    await revokeTokens(user.id, "PASSWORD_RESET");
+  } catch (error) {
+    console.error(
+      `[account-password] revoking PASSWORD_RESET links for user ${user.id} failed after ` +
+        `the password was already changed; a reset link may still work for up to its TTL:`,
+      error,
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }

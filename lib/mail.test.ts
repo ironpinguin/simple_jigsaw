@@ -23,7 +23,12 @@ vi.mock("next-intl/server", () => ({
   },
 }));
 
-import { sendAutoReportNotification, sendReportNotification, sendTakedownNotice } from "./mail";
+import {
+  sendAutoReportNotification,
+  sendPasswordResetEmail,
+  sendReportNotification,
+  sendTakedownNotice,
+} from "./mail";
 
 // Puzzle titles are user input interpolated into mail bodies — the escaping
 // asserted here is the only thing between an owner-authored title like
@@ -107,5 +112,27 @@ describe("sendTakedownNotice", () => {
     const mail = sendMailMock.mock.calls[0][0];
     expect(mail.text).toContain("Beach");
     expect(mail.text).toContain("removed");
+  });
+});
+
+describe("sendPasswordResetEmail", () => {
+  it("sends a reset link on the recipient's locale prefix", async () => {
+    await sendPasswordResetEmail("someone@example.com", "tok-123", "it");
+    const sent = sendMailMock.mock.calls[0][0];
+
+    expect(sent.to).toBe("someone@example.com");
+    expect(sent.text).toContain("/it/reset?token=tok-123");
+    expect(sent.html).toContain("/it/reset?token=tok-123");
+  });
+
+  it("never states whether the address has an account", async () => {
+    // The request endpoint answers identically for unknown addresses; a mail
+    // that said "your account" would give away what the endpoint withholds —
+    // to anyone who can read the recipient's inbox.
+    await sendPasswordResetEmail("someone@example.com", "tok-123", "en");
+    const sent = sendMailMock.mock.calls[0][0];
+
+    expect(sent.text).toContain("Someone asked to reset the password");
+    expect(sent.text).toContain("you can ignore this email");
   });
 });

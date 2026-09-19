@@ -41,6 +41,10 @@ export function inviteUrl(token: string, locale: Locale): string {
   return `${appUrl()}/${locale}/invite?token=${encodeURIComponent(token)}`;
 }
 
+export function resetUrl(token: string, locale: Locale): string {
+  return `${appUrl()}/${locale}/reset?token=${encodeURIComponent(token)}`;
+}
+
 // Puzzle titles are user input and get interpolated into HTML bodies.
 function escapeHtml(s: string): string {
   return s
@@ -81,6 +85,23 @@ export async function sendInviteEmail(
     subject: t("inviteSubject"),
     text: `${t("inviteIntro")}\n\n${t("inviteAction")}\n${url}\n\n${t("inviteExpiry")}`,
     html: `<p>${t("inviteIntro")}</p><p>${t("inviteAction")}</p><p><a href="${url}">${url}</a></p><p>${t("inviteExpiry")}</p>`,
+  });
+}
+
+export async function sendPasswordResetEmail(
+  to: string,
+  token: string,
+  locale?: string,
+): Promise<void> {
+  const loc = resolveLocale(locale);
+  const t = await getTranslations({ locale: loc, namespace: "email" });
+  const url = resetUrl(token, loc);
+  await transport().sendMail({
+    from: FROM,
+    to,
+    subject: t("resetSubject"),
+    text: `${t("resetIntro")}\n\n${t("resetAction")}\n${url}\n\n${t("resetExpiry")}`,
+    html: `<p>${t("resetIntro")}</p><p>${t("resetAction")}</p><p><a href="${url}">${url}</a></p><p>${t("resetExpiry")}</p>`,
   });
 }
 

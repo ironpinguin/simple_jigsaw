@@ -69,6 +69,9 @@ export default function LoginPage() {
       <p className="muted">
         {t("noAccount")} <Link href="/register">{t("registerLink")}</Link>
       </p>
+      <p>
+        <Link href="/forgot">{t("forgotLink")}</Link>
+      </p>
     </form>
   );
 }

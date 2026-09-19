@@ -1,10 +1,15 @@
 // Pure token lifetime helpers (no DB) so expiry logic is unit-testable.
 
-export type TokenKind = "EMAIL_VERIFY" | "INVITE";
+export type TokenKind = "EMAIL_VERIFY" | "INVITE" | "PASSWORD_RESET";
 
 const HOUR = 60 * 60 * 1000;
 export const TOKEN_TTL_MS: Record<TokenKind, number> = {
   EMAIL_VERIFY: 24 * HOUR,
+  // A reset link grants the account outright, unlike a verify link that only
+  // confirms an address — so it is the shortest-lived credential here. Two
+  // hours rather than one buys tolerance for a greylisting delay or a slow
+  // relay; asking for another is one click either way.
+  PASSWORD_RESET: 2 * HOUR,
   INVITE: 7 * 24 * HOUR,
 };
 

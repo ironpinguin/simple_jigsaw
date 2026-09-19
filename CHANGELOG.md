@@ -13,8 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Changing it signs you out everywhere else: sessions are stateless tokens, and
   one issued before the change is now refused, which it was not before. The
   device making the change signs in again too, and says so. (#42)
+- Forgotten a password? **Forgot your password?** on the sign-in page mails a
+  link that sets a new one. The link works once and for two hours, and the page
+  answers the same way whether or not an address has an account, so it cannot be
+  used to find out who is registered. Completing a reset signs you out
+  everywhere else, and confirms your email address if it was still unconfirmed.
+  If the new password cannot be saved after a valid link was spent, the page now
+  says the link is used up and asks for a new one, instead of claiming it may
+  have expired. Only a few links an hour are mailed to one address, but that
+  limit cannot lock you out: once the newest link for your address is about
+  twenty minutes old, the next request is honoured however many came before
+  it. (#42)
 
 ### Changed
+- The privacy policy now covers password reset links: they are named alongside
+  the confirmation and invitation links in *What is stored* and in *Retention*,
+  and the keyed hash of the requesting IP address that a reset request stores on
+  its token is disclosed, together with why it exists and when it goes. The
+  *Server logs* section said the application stores no IP addresses at all,
+  which that hash made untrue. (#42)
 - Losing admin rights now takes effect on the next page load rather than when
   your session token expires: the *Admin* link disappears from the navigation
   straight away. Admin pages and endpoints already refused a demoted admin —

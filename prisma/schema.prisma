@@ -46,15 +46,22 @@ model User {
 model VerificationToken {
   id        String   @id @default(cuid())
   token     String   @unique
-  // "EMAIL_VERIFY" | "INVITE"
+  // "EMAIL_VERIFY" | "INVITE" | "PASSWORD_RESET" (see lib/tokens.ts)
   type      String
   expiresAt DateTime
   createdAt DateTime @default(now())
+
+  // Hashed with hashReporterIp, exactly as Report.reporterIpHash is, so the
+  // reset-request endpoint can rate-limit per IP by counting rows. Null for
+  // tokens not created from a request (verification, invites) and for every row
+  // that predates the column.
+  requesterIpHash String?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([requesterIpHash])
 }
 
 model BannedEmail {
