@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { consumeTokenMock, revokeTokensMock, userUpdate, hashMock } = vi.hoisted(() => ({
+const { consumeTokenMock, revokeTokensMock, userFindUnique, userUpdate, hashMock } = vi.hoisted(() => ({
   consumeTokenMock: vi.fn(),
   revokeTokensMock: vi.fn(),
+  userFindUnique: vi.fn(),
   userUpdate: vi.fn(),
   hashMock: vi.fn(),
 }));
 
 vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock, revokeTokens: revokeTokensMock }));
-vi.mock("@/lib/db", () => ({ prisma: { user: { update: userUpdate } } }));
+vi.mock("@/lib/db", () => ({ prisma: { user: { findUnique: userFindUnique, update: userUpdate } } }));
 vi.mock("bcryptjs", () => ({ default: { hash: hashMock } }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
 
@@ -32,6 +33,8 @@ describe("POST /api/account/password/reset", () => {
     vi.clearAllMocks();
     consumeTokenMock.mockResolvedValue({ ok: true, userId: "u1" });
     hashMock.mockResolvedValue("$2b$new");
+    // The account this link belongs to, never confirmed unless a test says so.
+    userFindUnique.mockResolvedValue({ emailVerified: null });
     userUpdate.mockResolvedValue({});
     revokeTokensMock.mockResolvedValue(0);
   });
@@ -53,6 +56,33 @@ describe("POST /api/account/password/reset", () => {
     expect(data.passwordChangedAt).toBeInstanceOf(Date);
     expect(data.emailVerified).toBeInstanceOf(Date);
     expect(userUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the original confirmation date when the address was already confirmed", async () => {
+    // emailVerified records when the address was confirmed — lib/account-export.ts
+    // publishes it as a date and the privacy copy promises it says when. Stamping
+    // it on every reset would tell someone who confirmed in 2024, in their own
+    // Art. 15 export, that they confirmed today.
+    const confirmedAt = new Date("2024-03-04T10:00:00.000Z");
+    userFindUnique.mockResolvedValue({ emailVerified: confirmedAt });
+
+    await call(VALID);
+    const data = userUpdate.mock.calls[0][0].data;
+
+    expect(data.emailVerified).toEqual(confirmedAt);
+    expect(data.passwordChangedAt).not.toEqual(confirmedAt);
+  });
+
+  it("confirms the address when it never was, because nothing else will", async () => {
+    // lib/auth.ts refuses a falsy emailVerified at sign-in, so an account that
+    // never confirmed would otherwise get a working password it cannot use.
+    userFindUnique.mockResolvedValue({ emailVerified: null });
+
+    await call(VALID);
+    const data = userUpdate.mock.calls[0][0].data;
+
+    expect(data.emailVerified).toBeInstanceOf(Date);
+    expect(data.emailVerified).toEqual(data.passwordChangedAt);
   });
 
   it("stamps passwordChangedAt after the hash, not before it", async () => {

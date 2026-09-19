@@ -38,6 +38,22 @@ export async function POST(request: Request) {
   }
 
   try {
+    // Read for emailVerified alone, and only to leave an existing one alone.
+    // Setting it matters for the account that never confirmed — lib/auth.ts
+    // refuses a falsy emailVerified at sign-in, so without this a reset would
+    // hand that user a working password and no way to use it — but it is a
+    // record of when the address was confirmed, not a last-seen stamp:
+    // lib/account-export.ts publishes it as a date, and the privacy copy
+    // promises it says when you confirmed your address. Writing it
+    // unconditionally would restate a 2024 confirmation as today for everybody
+    // who ever resets, in their own Art. 15 export. A row that vanished between
+    // the claim and here reads as null and the update below throws P2025, which
+    // the catch already answers.
+    const account = await prisma.user.findUnique({
+      where: { id: claim.userId },
+      select: { emailVerified: true },
+    });
+
     // Hash first, stamp second. Read before the bcrypt round instead, the way
     // an inline `await bcrypt.hash(...)` next to a hoisted `now` reads it, and
     // passwordChangedAt would be dated a whole hash — 60-150 ms — before the
@@ -56,8 +72,9 @@ export async function POST(request: Request) {
         // at or before this second (lib/auth.ts).
         passwordChangedAt: now,
         // Clicking a link sent to the address proves what the confirmation
-        // mail asks, so a reset doubles as verification.
-        emailVerified: now,
+        // mail asks, so a reset doubles as verification — for an address that
+        // has not been confirmed yet. An earlier confirmation stands.
+        emailVerified: account?.emailVerified ?? now,
       },
     });
   } catch (error) {
@@ -79,13 +96,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t("resetNotApplied") }, { status: 503 });
   }
 
-  // Up to RESET_PER_EMAIL_LIMIT other PASSWORD_RESET links can still be live
-  // for this account — a reset mail still sitting in an inbox is a second
-  // key. Completing this one answers the same question the others were sent
-  // for just as deliberately as changing the password from inside the account
-  // does (app/api/account/password/route.ts), so it revokes for the same
-  // reason. After the update, not before: a failed write must not disarm
-  // links the user may still need.
+  // Other PASSWORD_RESET links can still be live for this account — the
+  // per-address rule in the request route allows a handful an hour, and a reset
+  // mail still sitting in an inbox is a second key. Completing this one answers
+  // the same question the others were sent for just as deliberately as changing
+  // the password from inside the account does
+  // (app/api/account/password/route.ts), so it revokes for the same reason.
+  // After the update, not before: a failed write must not disarm links the user
+  // may still need.
   //
   // Swallowed rather than reported: the password has already been reset
   // above, so a 500 here would tell the user the opposite of what happened.
