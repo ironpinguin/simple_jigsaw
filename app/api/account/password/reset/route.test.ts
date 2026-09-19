@@ -55,6 +55,29 @@ describe("POST /api/account/password/reset", () => {
     expect(userUpdate).toHaveBeenCalledTimes(1);
   });
 
+  it("stamps passwordChangedAt after the hash, not before it", async () => {
+    // Read before the bcrypt round, the stamp is dated a whole hash early —
+    // 60-150 ms out of the 1000 ms SESSION_CUTOFF_MARGIN_MS has to cover the
+    // stamp, the write and the re-issue together. Fake timers stand in for the
+    // round: the stamp must carry the time hashing finished, not when it began.
+    vi.useFakeTimers();
+    try {
+      const startedAt = Date.now();
+      hashMock.mockImplementation(async () => {
+        vi.advanceTimersByTime(150);
+        return "$2b$new";
+      });
+
+      await call(VALID);
+      const data = userUpdate.mock.calls[0][0].data;
+
+      expect(data.passwordChangedAt.getTime()).toBe(startedAt + 150);
+      expect(data.emailVerified.getTime()).toBe(startedAt + 150);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("never clears a hash, and never touches consent", async () => {
     await call(VALID);
     const data = userUpdate.mock.calls[0][0].data;
@@ -128,6 +151,20 @@ describe("POST /api/account/password/reset", () => {
     const res = await call(VALID);
     expect(res.status).toBe(200);
     expect(userUpdate).toHaveBeenCalledTimes(1);
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it("says the link is spent rather than expired when the password write fails", async () => {
+    // consumeToken has already deleted the row by then. An uncaught throw here
+    // would be a 500, which the page renders as "the link may have expired" —
+    // the one explanation that is certainly wrong, since a valid link was just
+    // spent. Nothing must be revoked either: the password did not change.
+    userUpdate.mockRejectedValue(new Error("db down"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await call(VALID);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "resetNotApplied" });
+    expect(revokeTokensMock).not.toHaveBeenCalled();
     expect(logged).toHaveBeenCalled();
   });
 

@@ -349,6 +349,7 @@
     "inviteInvalid": "Der Einladungslink ist ungültig oder abgelaufen.",
     "resetInvalid": "Der Link zum Zurücksetzen ist ungültig oder abgelaufen.",
     "linkUnavailable": "Der Link konnte gerade nicht eingelöst werden. Bitte versuche es in einem Moment erneut.",
+    "resetNotApplied": "Der Link war gültig, aber das neue Passwort konnte nicht gespeichert werden — und der Link ist jetzt verbraucht. Bitte fordere einen neuen Link an und versuche es noch einmal.",
     "accountNotFound": "Konto nicht gefunden.",
     "lastAdminDemote": "Der letzte Admin kann nicht herabgestuft werden.",
     "lastAdminDelete": "Der letzte Admin kann nicht gelöscht werden.",

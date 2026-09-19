@@ -349,6 +349,7 @@
     "inviteInvalid": "The invitation link is invalid or has expired.",
     "resetInvalid": "The reset link is invalid or has expired.",
     "linkUnavailable": "The link could not be redeemed just now. Please try again in a moment.",
+    "resetNotApplied": "The link was valid, but the new password could not be saved — and the link has now been used up. Please request a new reset link and try again.",
     "accountNotFound": "Account not found.",
     "lastAdminDemote": "The last admin cannot be demoted.",
     "lastAdminDelete": "The last admin cannot be deleted.",

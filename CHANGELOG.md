@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answers the same way whether or not an address has an account, so it cannot be
   used to find out who is registered. Completing a reset signs you out
   everywhere else, and confirms your email address if it was still unconfirmed.
-  (#42)
+  If the new password cannot be saved after a valid link was spent, the page now
+  says the link is used up and asks for a new one, instead of claiming it may
+  have expired. (#42)
 
 ### Changed
 - The privacy policy now covers password reset links: they are named alongside

@@ -37,19 +37,47 @@ export async function POST(request: Request) {
       : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
   }
 
-  const now = new Date();
-  await prisma.user.update({
-    where: { id: claim.userId },
-    data: {
-      passwordHash: await bcrypt.hash(parsed.data.password, 10),
-      // Ends every other session: the jwt callback refuses any token issued at
-      // or before this second (lib/auth.ts).
-      passwordChangedAt: now,
-      // Clicking a link sent to the address proves what the confirmation mail
-      // asks, so a reset doubles as verification.
-      emailVerified: now,
-    },
-  });
+  try {
+    // Hash first, stamp second. Read before the bcrypt round instead, the way
+    // an inline `await bcrypt.hash(...)` next to a hoisted `now` reads it, and
+    // passwordChangedAt would be dated a whole hash — 60-150 ms — before the
+    // write is even issued. lib/session-freshness.ts gives
+    // SESSION_CUTOFF_MARGIN_MS 1000 ms to cover the stamp plus a healthy write
+    // and re-issue together, so that is a tenth of the budget spent before the
+    // window it exists for has even started. Same shape as the deliberate
+    // hash-then-stamp order in app/api/account/password/route.ts.
+    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    const now = new Date();
+    await prisma.user.update({
+      where: { id: claim.userId },
+      data: {
+        passwordHash,
+        // Ends every other session: the jwt callback refuses any token issued
+        // at or before this second (lib/auth.ts).
+        passwordChangedAt: now,
+        // Clicking a link sent to the address proves what the confirmation
+        // mail asks, so a reset doubles as verification.
+        emailVerified: now,
+      },
+    });
+  } catch (error) {
+    // consumeToken has already deleted the row, so the link is spent whether or
+    // not this write lands — a store that went away between the two statements,
+    // or P2025 for an account deleted in the gap, which
+    // app/api/invite/route.ts guards ahead of its own write. Letting it throw
+    // answers with the generic 500 the page renders as auth.resetFailed, "the
+    // link may have expired": the one explanation that is certainly wrong, and
+    // it sends the user back to a link that no longer exists. Say what actually
+    // happened instead — and log it, because nothing else records why the write
+    // failed. The hash sits inside the try for the same reason: bcrypt throwing
+    // spends the link just as thoroughly as the update throwing does.
+    console.error(
+      `[account-password-reset] setting the new password for user ${claim.userId} failed after ` +
+        `the link was already spent; the user has to request a new one:`,
+      error,
+    );
+    return NextResponse.json({ error: t("resetNotApplied") }, { status: 503 });
+  }
 
   // Up to RESET_PER_EMAIL_LIMIT other PASSWORD_RESET links can still be live
   // for this account — a reset mail still sitting in an inbox is a second
