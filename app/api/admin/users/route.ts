@@ -7,6 +7,7 @@ import { normalizeEmail } from "@/lib/bans";
 import { checkEmailBanned } from "@/lib/moderation";
 import { getErrorT } from "@/lib/i18n-server";
 import { toAdminUserView } from "@/lib/admin-users";
+import { passwordErrorKey, passwordField } from "@/lib/password";
 
 export async function GET() {
   if (!(await requireAdmin())) {
@@ -33,7 +34,7 @@ export async function GET() {
 
 const CreateSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8),
+  password: passwordField,
   role: z.enum(["USER", "ADMIN"]).optional(),
 });
 
@@ -46,11 +47,8 @@ export async function POST(request: Request) {
 
   const parsed = CreateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    const onPassword = parsed.error.issues.some((i) => i.path.includes("password"));
-    return NextResponse.json(
-      { error: onPassword ? t("passwordMin") : t("invalidInput") },
-      { status: 400 },
-    );
+    const key = passwordErrorKey(parsed.error.issues, "password");
+    return NextResponse.json({ error: t(key ?? "invalidInput") }, { status: 400 });
   }
 
   const email = normalizeEmail(parsed.data.email);

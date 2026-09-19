@@ -57,7 +57,8 @@
     "inviteLoading": "Attivazione…",
     "inviteDoneTitle": "Account attivato",
     "inviteDoneText": "La tua password è impostata. Ora puoi accedere.",
-    "inviteFailed": "Attivazione non riuscita."
+    "inviteFailed": "Attivazione non riuscita.",
+    "passwordChangedSignIn": "La tua password è stata cambiata. Accedi di nuovo."
   },
   "create": {
     "title": "Crea un nuovo puzzle",
@@ -128,7 +129,15 @@
     "cancel": "Annulla",
     "deleting": "Eliminazione account…",
     "deleteAccountFailed": "Impossibile eliminare l''account.",
-    "deletedButSignOutFailed": "Il tuo account è stato eliminato, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente."
+    "deletedButSignOutFailed": "Il tuo account è stato eliminato, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente.",
+    "passwordTitle": "Password",
+    "passwordIntro": "Cambiando la password verrai disconnesso da tutti i dispositivi, compreso questo.",
+    "currentPassword": "Password attuale",
+    "newPassword": "Nuova password (min. 8 caratteri)",
+    "changePassword": "Cambia password",
+    "changingPassword": "Modifica in corso…",
+    "changePasswordFailed": "Non è stato possibile cambiare la password.",
+    "changedButSignOutFailed": "La tua password è stata cambiata, ma la disconnessione non è riuscita. Chiudi il browser o esci manualmente."
   },
   "report": {
     "reportLink": "Segnala",
@@ -316,6 +325,7 @@
     "inviteEmailFailed": "Non è stato possibile inviare l'invito. L'account ora non ha nessun link valido: invita di nuovo lo stesso indirizzo per inviarne uno nuovo; il motivo è nel log del server.",
     "inviteRevokeFailed": "Non è stato possibile revocare il link di invito precedente, quindi non è stato inviato nessun nuovo invito. Il link precedente è ancora valido. Riprova; se continua a non funzionare, il motivo è nel log del server e serve l'intervento del gestore.",
     "passwordMin": "La password deve avere almeno 8 caratteri.",
+    "passwordMax": "La password può avere al massimo 72 byte; lettere accentate ed emoji contano più di uno.",
     "invalidEmail": "E-mail non valida.",
     "noFile": "Nessun file inviato.",
     "unsupportedType": "Sono supportati solo JPG, PNG o WebP.",

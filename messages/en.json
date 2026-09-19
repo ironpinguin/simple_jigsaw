@@ -57,7 +57,8 @@
     "inviteLoading": "Activating…",
     "inviteDoneTitle": "Account activated",
     "inviteDoneText": "Your password is set. You can sign in now.",
-    "inviteFailed": "Activation failed."
+    "inviteFailed": "Activation failed.",
+    "passwordChangedSignIn": "Your password was changed. Please sign in again."
   },
   "create": {
     "title": "Create a new puzzle",
@@ -128,7 +129,15 @@
     "cancel": "Cancel",
     "deleting": "Deleting account…",
     "deleteAccountFailed": "The account could not be deleted.",
-    "deletedButSignOutFailed": "Your account was deleted, but signing out failed. Please close the browser or sign out manually."
+    "deletedButSignOutFailed": "Your account was deleted, but signing out failed. Please close the browser or sign out manually.",
+    "passwordTitle": "Password",
+    "passwordIntro": "Changing your password signs you out on every device, including this one.",
+    "currentPassword": "Current password",
+    "newPassword": "New password (min. 8 characters)",
+    "changePassword": "Change password",
+    "changingPassword": "Changing…",
+    "changePasswordFailed": "The password could not be changed.",
+    "changedButSignOutFailed": "Your password was changed, but signing out failed. Please close the browser or sign out manually."
   },
   "report": {
     "reportLink": "Report",
@@ -316,6 +325,7 @@
     "inviteEmailFailed": "The invitation could not be sent. The account now has no valid link — invite the same address again to send a new one; the server log says why.",
     "inviteRevokeFailed": "The earlier invitation link could not be revoked, so no new invitation was sent. The earlier link still works. Try again; if it keeps failing, the server log says why and the operator has to step in.",
     "passwordMin": "Password must be at least 8 characters.",
+    "passwordMax": "Password must be at most 72 bytes — accented letters and emoji count for more than one.",
     "invalidEmail": "Invalid email.",
     "noFile": "No file submitted.",
     "unsupportedType": "Only JPG, PNG or WebP are supported.",

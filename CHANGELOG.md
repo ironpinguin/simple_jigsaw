@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Change your own password from **My puzzles**, under *Password*. The current
+  password is required, so a stolen session cookie is not enough on its own.
+  Changing it signs you out everywhere else: sessions are stateless tokens, and
+  one issued before the change is now refused, which it was not before. The
+  device making the change signs in again too, and says so. (#42)
+
 ### Changed
+- Losing admin rights now takes effect on the next page load rather than when
+  your session token expires: the *Admin* link disappears from the navigation
+  straight away. Admin pages and endpoints already refused a demoted admin —
+  only the link lingered. (#42)
+- Passwords now have a maximum length of 72 bytes, wherever one is set —
+  registration, an invitation, an admin-created account, the `create-user`
+  script and the new change form. bcrypt hashes only the first 72 bytes and
+  ignores the rest, so a longer passphrase used to be accepted while its first
+  72 bytes alone were enough to sign in, with nothing saying so. Existing passwords are unaffected and still
+  work; only setting a new one is checked. (#42)
 - The SQLite stack is now its own Compose project, `jigsaw-sqlite`. Both compose
   files previously defaulted to the checkout's directory name and so shared one
   project, which meant starting the SQLite stack in a checkout where
