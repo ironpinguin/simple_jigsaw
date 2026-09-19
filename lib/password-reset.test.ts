@@ -54,6 +54,15 @@ describe("recordProbe", () => {
     expect(recordProbe("ip-a", 1_000 + PROBE_WINDOW_MS + 1)).toBe(true);
   });
 
+  it("does not walk every caller on every call", () => {
+    // The whole-map prune is O(callers seen in the last window). Running it per
+    // call makes a prober spread over N addresses cost O(N²) — the limiter doing
+    // the attacker's work for it, on an unauthenticated endpoint. One sweep per
+    // window keeps the map bounded and each call O(1) in its own bucket.
+    for (let i = 0; i < 200; i++) recordProbe(`ip-${i}`, 1_000 + i);
+    expect(__resetProbeState.sweeps()).toBeLessThanOrEqual(1);
+  });
+
   it("does not grow without bound as callers come and go", () => {
     // The counter lives in the process for its lifetime; without pruning, every
     // address that ever probed would be retained until restart.

@@ -88,23 +88,54 @@ export const PROBE_WINDOW_MS = 10 * 60 * 1000;
 /** ipHash -> timestamps within the current window. */
 const probes = new Map<string, number[]>();
 
-/**
- * Record one request from `ipHash` and say whether it is allowed.
- *
- * Prunes as it goes: without that, every address that ever probed would be held
- * until the process restarted.
- */
-export function recordProbe(ipHash: string, now: number = Date.now()): boolean {
-  const cutoff = now - PROBE_WINDOW_MS;
+/** When the last full sweep ran, so the next one can be due rather than constant. */
+let lastSweepAt = 0;
 
+/** How many full sweeps have run. Test seam: the cadence is the point, below. */
+let sweeps = 0;
+
+/**
+ * Drop every bucket with nothing live left in it. O(callers seen recently), so
+ * it runs at most once per window rather than once per call — see `recordProbe`.
+ */
+function sweep(cutoff: number, now: number): void {
   for (const [key, times] of probes) {
     const live = times.filter((t) => t > cutoff);
     if (live.length === 0) probes.delete(key);
     else probes.set(key, live);
   }
+  lastSweepAt = now;
+  sweeps++;
+}
 
-  const mine = probes.get(ipHash) ?? [];
-  if (mine.length >= PROBE_LIMIT) return false;
+/**
+ * Record one request from `ipHash` and say whether it is allowed.
+ *
+ * Prunes as it goes: without that, every address that ever probed would be held
+ * until the process restarted. The caller's own bucket is pruned on every call,
+ * which is what the limit is actually read from; the rest of the map is swept
+ * only when a sweep is due.
+ *
+ * The cadence is the point. Sweeping the whole map on every call makes one
+ * request cost O(callers seen in the last ten minutes) — and behind a trusted
+ * proxy, the only configuration where this counter is enforced at all, a prober
+ * spread over N source addresses is exactly what fills that map. The limiter
+ * would then do O(N²) work over the run: the mechanism that exists to make
+ * enumeration expensive for the attacker, doing the attacker's work for them on
+ * an unauthenticated endpoint. Sweeping once per window keeps the map bounded by
+ * the callers of the last two windows and leaves each request O(1) in its own
+ * bucket.
+ */
+export function recordProbe(ipHash: string, now: number = Date.now()): boolean {
+  const cutoff = now - PROBE_WINDOW_MS;
+
+  if (now - lastSweepAt >= PROBE_WINDOW_MS) sweep(cutoff, now);
+
+  const mine = (probes.get(ipHash) ?? []).filter((t) => t > cutoff);
+  if (mine.length >= PROBE_LIMIT) {
+    probes.set(ipHash, mine);
+    return false;
+  }
   mine.push(now);
   probes.set(ipHash, mine);
   return true;
@@ -113,5 +144,8 @@ export function recordProbe(ipHash: string, now: number = Date.now()): boolean {
 /** Test seam: the counter is module state, so tests need a way to clear it. */
 export function __resetProbeState(): void {
   probes.clear();
+  lastSweepAt = 0;
+  sweeps = 0;
 }
 __resetProbeState.size = () => probes.size;
+__resetProbeState.sweeps = () => sweeps;
