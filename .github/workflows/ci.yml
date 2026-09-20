@@ -269,9 +269,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
           IMAGE: ghcr.io/${{ github.repository }}
+          REPO: ${{ github.repository }}
         run: |
+          # Linked at the tag rather than on main: the release page has to keep
+          # describing *this* release once later ones have landed. No per-version
+          # anchor — the changelog headings carry the release date, which the tag
+          # alone does not give us.
           cat > notes.md <<EOF
-          Automated release for $TAG. See CHANGELOG.md for details.
+          Automated release for $TAG.
+          See the [changelog](https://github.com/$REPO/blob/$TAG/CHANGELOG.md) for everything in this release.
 
           Images:
           - \`$IMAGE:$TAG\` (PostgreSQL)

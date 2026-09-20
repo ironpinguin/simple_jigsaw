@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Release pages now link the changelog instead of naming the file in passing, so
+  the page a release lands on says where to read what shipped. The link points at
+  the changelog as it stood for that tag, not at the current one. (#94)
+
 ## [0.7.0] - 2026-09-20
 
 ### Added
