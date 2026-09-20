@@ -21,6 +21,7 @@ type ExportableUser = {
   email: string;
   name: string | null;
   role: string;
+  locale: string | null;
   emailVerified: Date | null;
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
@@ -48,6 +49,7 @@ export type AccountExport = {
     email: string;
     name: string | null;
     role: string;
+    locale: string | null;
     emailVerified: string | null;
     termsAcceptedAt: string | null;
     termsVersion: string | null;
@@ -96,6 +98,7 @@ export function buildAccountExport({
       email: user.email,
       name: user.name,
       role: user.role,
+      locale: user.locale,
       emailVerified: iso(user.emailVerified),
       termsAcceptedAt: iso(user.termsAcceptedAt),
       termsVersion: user.termsVersion,

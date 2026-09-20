@@ -45,7 +45,7 @@ export async function notifyAdminsOfReport(
   try {
     const admins = await prisma.user.findMany({
       where: { role: "ADMIN" },
-      select: { email: true },
+      select: { email: true, locale: true },
     });
 
     if (admins.length === 0) {
@@ -58,7 +58,10 @@ export async function notifyAdminsOfReport(
     const send = NOTIFY[origin];
     await Promise.all(
       admins.map((admin) =>
-        send(admin.email, puzzleTitle, category).catch((error: unknown) => {
+        // Each admin in their own language: the reporter's locale belongs to
+        // somebody else entirely, and the acting admin's does on the machine
+        // path too — there is no acting admin there at all.
+        send(admin.email, puzzleTitle, category, admin.locale).catch((error: unknown) => {
           // Per recipient, so one full mailbox does not cost the other admins
           // their notification.
           console.error(`[${tag}] admin notification to ${admin.email} failed:`, error);

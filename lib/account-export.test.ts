@@ -8,6 +8,7 @@ const user = {
   email: "someone@example.org",
   name: "Someone",
   role: "USER",
+  locale: "it",
   emailVerified: new Date(Date.UTC(2026, 0, 2)),
   termsAcceptedAt: new Date(Date.UTC(2026, 0, 3)),
   termsVersion: "2026-01-01",
@@ -37,8 +38,19 @@ describe("buildAccountExport", () => {
       email: "someone@example.org",
       name: "Someone",
       role: "USER",
+      locale: "it",
       termsVersion: "2026-01-01",
     });
+  });
+
+  it("includes the mail language, because it is a preference the instance stores", () => {
+    // Art. 15 is "everything held about them", and the exclusions above this
+    // module are each argued for. A stored preference is not one of them, and a
+    // column added later that quietly never reaches the file is how the export
+    // stops matching its own contract.
+    const out = buildAccountExport({ user, puzzles: [], baseUrl: "https://jigsaw.example.org" });
+
+    expect(out.account.locale).toBe("it");
   });
 
   it("dates the export so the download says what it is a snapshot of", () => {

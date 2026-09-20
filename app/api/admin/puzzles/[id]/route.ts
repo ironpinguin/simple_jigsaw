@@ -19,7 +19,7 @@ export async function DELETE(
 
   const puzzle = await prisma.puzzle.findUnique({
     where: { id },
-    select: { imageKey: true, title: true, owner: { select: { email: true } } },
+    select: { imageKey: true, title: true, owner: { select: { email: true, locale: true } } },
   });
   if (!puzzle) {
     return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
@@ -72,7 +72,14 @@ export async function DELETE(
     result.reportedCategory !== null && isReportCategory(result.reportedCategory)
       ? result.reportedCategory
       : null;
-  const ownerNotified = await sendTakedownNotice(puzzle.owner.email, puzzle.title, category)
+  // The owner's own locale, not the acting admin's: this is the one mail in
+  // the moderation flow whose recipient is on the other side of the decision.
+  const ownerNotified = await sendTakedownNotice(
+    puzzle.owner.email,
+    puzzle.title,
+    category,
+    puzzle.owner.locale,
+  )
     .then(() => true)
     .catch((err) => {
       console.error(`[admin] takedown notice to the owner failed:`, err);

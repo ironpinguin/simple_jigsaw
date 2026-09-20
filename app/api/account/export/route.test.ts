@@ -21,6 +21,7 @@ const row = {
   role: "USER",
   emailVerified: new Date(Date.UTC(2026, 0, 2)),
   termsAcceptedAt: new Date(Date.UTC(2026, 0, 3)),
+  locale: "it",
   termsVersion: "2026-01-01",
   createdAt: new Date(Date.UTC(2026, 0, 1)),
 };

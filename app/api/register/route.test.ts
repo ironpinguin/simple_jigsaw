@@ -84,6 +84,14 @@ describe("POST /api/register", () => {
     expect(userCreate.mock.calls[0][0].data.termsAcceptedAt).toBeInstanceOf(Date);
   });
 
+  it("stores the signup locale on the account, for mail nobody has triggered yet", async () => {
+    // Every later mail whose recipient is this user rather than its requester —
+    // an admin notification, a takedown notice — reads the column instead of a
+    // request that has nothing to do with them.
+    await callPost(VALID);
+    expect(userCreate.mock.calls[0][0]).toMatchObject({ data: { locale: "it" } });
+  });
+
   it("answers 403 when registration is switched off", async () => {
     isRegistrationEnabledMock.mockReturnValue(false);
     const res = await callPost(VALID);

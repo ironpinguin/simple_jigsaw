@@ -54,7 +54,7 @@ import { DELETE } from "./route";
 const PUZZLE = {
   imageKey: "puzzles/abc.webp",
   title: "Beach",
-  owner: { email: "owner@example.com" },
+  owner: { email: "owner@example.com", locale: "it" },
 };
 
 function callDelete() {
@@ -152,20 +152,28 @@ describe("DELETE /api/admin/puzzles/[id]", () => {
 
   it("notifies the owner with title and reported category and reports it in the body", async () => {
     const res = await callDelete();
-    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", "NSFW");
+    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", "NSFW", "it");
     expect(await res.json()).toEqual({ ok: true, ownerNotified: true });
   });
 
   it("sends a category-less notice when no open report exists — nothing gets invented", async () => {
     txReportFindFirst.mockResolvedValue(null);
     await callDelete();
-    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null);
+    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null, "it");
   });
 
   it("sends a category-less notice when the stored category is not canonical", async () => {
     txReportFindFirst.mockResolvedValue({ category: "LEGACY" });
     await callDelete();
-    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null);
+    expect(sendTakedownNoticeMock).toHaveBeenCalledWith("owner@example.com", "Beach", null, "it");
+  });
+
+  it("writes the notice in the owner's language, not the acting admin's", async () => {
+    // The admin clicking takedown may well be browsing in German while the
+    // owner they are about to mail reads Italian. Before the locale column
+    // every notice went out in the default language regardless.
+    await callDelete();
+    expect(sendTakedownNoticeMock.mock.calls[0].at(-1)).toBe("it");
   });
 
   it("answers 200 with ownerNotified=false when the owner mail fails, and logs it", async () => {

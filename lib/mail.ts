@@ -27,8 +27,12 @@ function appUrl(): string {
   return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 }
 
-function resolveLocale(locale?: string): Locale {
-  return hasLocale(routing.locales, locale) ? locale : routing.defaultLocale;
+// `null` is a value the User.locale column actually holds — it means nobody has
+// established that person's language — so it is accepted here alongside
+// undefined and an unrecognised string, and all three land on the default.
+function resolveLocale(locale?: string | null): Locale {
+  const candidate = locale ?? undefined;
+  return hasLocale(routing.locales, candidate) ? candidate : routing.defaultLocale;
 }
 
 // Links are locale-prefixed so the confirmation/invite page opens in the same
@@ -57,7 +61,7 @@ function escapeHtml(s: string): string {
 export async function sendVerificationEmail(
   to: string,
   token: string,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -74,7 +78,7 @@ export async function sendVerificationEmail(
 export async function sendInviteEmail(
   to: string,
   token: string,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -91,7 +95,7 @@ export async function sendInviteEmail(
 export async function sendPasswordResetEmail(
   to: string,
   token: string,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -105,16 +109,27 @@ export async function sendPasswordResetEmail(
   });
 }
 
-// Known gap: both report mails go out in the default locale. Their recipients
-// (an admin, the reported puzzle's owner) are not the person making the
-// request, so the acting user's locale would be the wrong one to use — the
-// recipient's own language needs a `locale` column on User, populated at
-// signup. Until then the `locale` parameter is only reachable from tests.
+// Which locale a caller should pass depends on who the recipient is.
+//
+// Verification and reset mail the person who just typed their own address into
+// a form, so the request locale is both available and correct. The three
+// senders below never do: the recipient is an admin, or the reported puzzle's
+// owner, and the acting user's language belongs to somebody else. Those callers
+// read `User.locale` instead (lib/report-notify.ts,
+// app/api/admin/puzzles/[id]/route.ts); it is a plain String on both providers,
+// so an unknown value falls back to the default in resolveLocale above rather
+// than throwing on a missing catalog.
+//
+// sendInviteEmail is the odd one out and stays on the request locale: its
+// recipient is not the requester either — an admin types a colleague's address
+// — but the row is brand new and holds nothing better to read. The invitee's
+// own language is recorded when they activate, from Accept-Language rather than
+// the cookie this very mail's link goes on to set (see resolveBrowserLocale).
 export async function sendReportNotification(
   to: string,
   puzzleTitle: string,
   category: ReportCategory,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -145,7 +160,7 @@ export async function sendAutoReportNotification(
   to: string,
   puzzleTitle: string,
   category: ReportCategory,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -168,7 +183,7 @@ export async function sendTakedownNotice(
   to: string,
   puzzleTitle: string,
   category: ReportCategory | null,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });

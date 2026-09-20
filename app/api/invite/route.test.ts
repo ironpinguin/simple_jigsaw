@@ -2,12 +2,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import bcrypt from "bcryptjs";
 import { TERMS_VERSION } from "@/lib/legal";
 
-const { userFindUnique, userUpdate, consumeTokenMock, checkEmailBannedMock } = vi.hoisted(() => ({
-  userFindUnique: vi.fn(),
-  userUpdate: vi.fn(),
-  consumeTokenMock: vi.fn(),
-  checkEmailBannedMock: vi.fn(),
-}));
+const {
+  userFindUnique,
+  userUpdate,
+  consumeTokenMock,
+  checkEmailBannedMock,
+  resolveRequestLocaleMock,
+  resolveBrowserLocaleMock,
+} =
+  vi.hoisted(() => ({
+    userFindUnique: vi.fn(),
+    userUpdate: vi.fn(),
+    consumeTokenMock: vi.fn(),
+    checkEmailBannedMock: vi.fn(),
+    resolveRequestLocaleMock: vi.fn(),
+    resolveBrowserLocaleMock: vi.fn(),
+  }));
 
 vi.mock("@/lib/db", () => ({
   prisma: { user: { findUnique: userFindUnique, update: userUpdate } },
@@ -16,7 +26,14 @@ vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: checkEmailBannedMock }));
 // The key rather than the translation: these assertions are about which message
 // the route picks, and pinning the German copy would break on any rewording.
-vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
+// Deliberately not "de": that is the default locale and the fallback in both
+// resolveRequestLocale and mail.ts's resolveLocale, so the locale assertion
+// below would still pass if the route dropped it on the floor.
+vi.mock("@/lib/i18n-server", () => ({
+  getErrorT: async () => (key: string) => key,
+  resolveRequestLocale: resolveRequestLocaleMock,
+  resolveBrowserLocale: resolveBrowserLocaleMock,
+}));
 
 import { POST } from "./route";
 
@@ -38,9 +55,25 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue({ id: "user-1", email: "invited@example.com" });
   checkEmailBannedMock.mockResolvedValue(false);
   userUpdate.mockResolvedValue({});
+  // The two differ on purpose: the cookie-preferring resolver would report the
+  // locale of the admin's invite link, the header-only one the invitee's own.
+  resolveRequestLocaleMock.mockResolvedValue("de");
+  resolveBrowserLocaleMock.mockResolvedValue("it");
 });
 
 describe("POST /api/invite", () => {
+  it("stores the invitee's own language, not the one their invite link carried", async () => {
+    // Activation is the first moment the invitee's language is observable, and
+    // the one chance to record it before anybody mails them unprompted. It must
+    // not come from NEXT_LOCALE: an admin's /de link makes next-intl write that
+    // cookie on the invitee's very first page view, so the cookie-preferring
+    // resolver would pin the admin's language on them for good.
+    await callPost(VALID);
+
+    expect(userUpdate.mock.calls[0][0]).toMatchObject({ data: { locale: "it" } });
+    expect(resolveRequestLocaleMock).not.toHaveBeenCalled();
+  });
+
   it("sets the password and activates the account when the token is claimed", async () => {
     const res = await callPost(VALID);
 
