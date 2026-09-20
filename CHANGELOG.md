@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-20
+
 ### Added
 - Change your own password from **My puzzles**, under *Password*. The current
   password is required, so a stolen session cookie is not enough on its own.
@@ -418,7 +420,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.6.0...main
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.7.0...main
+[0.7.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.6.0
 [0.5.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.5.0
 [0.4.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.4.0
