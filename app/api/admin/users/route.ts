@@ -60,6 +60,12 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  // No `locale`: the admin typed somebody else's address and there is nothing
+  // here that says what language that person reads. Unlike an invitation this
+  // path has no activation step to observe them at — the account is usable
+  // immediately — so the column stays null until their first sign-in fills it
+  // in (lib/auth.ts). Writing the admin's own locale would be a guess, and a
+  // sticky one, since a stored value is never overwritten.
   const user = await prisma.user.create({
     data: {
       email,

@@ -36,10 +36,17 @@ model User {
   // notice go to someone other than the person making the request. One of
   // `routing.locales` (i18n/routing.ts), validated there rather than in
   // lib/roles.ts: that const union already exists and a second copy would be a
-  // second source of truth. The default must stay in step with
-  // routing.defaultLocale; it is what every row predating the column gets, so
-  // their mail keeps arriving exactly as it does today.
-  locale       String  @default("de")
+  // second source of truth.
+  //
+  // Null, deliberately, rather than defaulting to "de": null means nobody has
+  // ever established this person's language, which is true of every row
+  // predating the column and of every account an admin creates outright.
+  // Readers fall back to routing.defaultLocale, so those keep receiving exactly
+  // what they do today — but because the state is distinguishable, a first
+  // login can fill it in (lib/auth.ts) without ever overwriting a choice
+  // somebody actually made. A "de" default would make the two cases identical
+  // and the correction impossible.
+  locale       String?
   // Terms-of-use acceptance: when, and which version (TERMS_VERSION in lib/legal.ts).
   // Null for accounts that predate the terms, were created by an admin (CLI
   // or direct create), or were invited and not yet activated — see

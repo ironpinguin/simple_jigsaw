@@ -26,7 +26,14 @@ export default function LanguageSwitcher({ persist = false }: { persist?: boolea
   const [pending, startTransition] = useTransition();
 
   function switchTo(next: string) {
-    if (next === locale) return;
+    // No early return when `next === locale`. The page language and the stored
+    // mail language are separate values that routinely disagree — an account
+    // nobody ever established one for falls back to German while its owner
+    // browses in English, and following a shared /it link switches the page
+    // without touching the account at all. In both the button that looks
+    // correct is the active one, so returning here would make the fix
+    // unreachable. Only the navigation is skipped.
+    //
     // Deliberately not awaited and never blocking the switch: the visitor asked
     // for a different page language, not for a database write, and neither a
     // slow round trip nor a refusal may keep them on the old locale.
@@ -53,9 +60,11 @@ export default function LanguageSwitcher({ persist = false }: { persist?: boolea
           console.error("[lang] storing the locale on the account failed:", err);
         });
     }
-    startTransition(() => {
-      router.replace(pathname, { locale: next });
-    });
+    if (next !== locale) {
+      startTransition(() => {
+        router.replace(pathname, { locale: next });
+      });
+    }
   }
 
   return (

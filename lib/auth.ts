@@ -11,6 +11,8 @@ import { checkEmailBanned } from "./moderation";
 import { isAdminEmail } from "./admin-emails";
 import { toViewer } from "./visibility";
 import { isSessionStale } from "./session-freshness";
+import { resolveRequestLocale } from "./i18n-server";
+import { routing } from "@/i18n/routing";
 
 /**
  * The one user read a page render needs, memoized for its length.
@@ -74,6 +76,32 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (isAdminEmail(email) && role !== "ADMIN") {
           await prisma.user.update({ where: { id: user.id }, data: { role: "ADMIN" } });
           role = "ADMIN";
+        }
+
+        // First sight of this person's own language, for accounts nobody ever
+        // established one for: every row predating the column, and every
+        // account an admin created outright (there is no activation step in
+        // that path to observe them at). They navigated to the login page
+        // themselves, so unlike an invite link the URL and cookie are their
+        // own choice and resolveRequestLocale is the right reader.
+        //
+        // Only when it is null. A row that already holds a language holds one
+        // somebody chose — at signup, at invite activation, or with the
+        // switcher — and signing in from a differently configured machine must
+        // not silently undo that. Skipping the default keeps the write off the
+        // common path, where storing "de" changes nothing any reader does.
+        if (user.locale === null) {
+          try {
+            const locale = await resolveRequestLocale();
+            if (locale !== routing.defaultLocale) {
+              await prisma.user.update({ where: { id: user.id }, data: { locale } });
+            }
+          } catch (error) {
+            // Nobody asked for this write, so it must never be what stops a
+            // login. The account simply keeps falling back to the default and
+            // the next sign-in tries again.
+            console.error(`[auth] storing the sign-in locale for user ${user.id} failed:`, error);
+          }
         }
 
         return { id: user.id, email: user.email, name: user.name ?? null, role };

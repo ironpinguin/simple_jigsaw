@@ -80,14 +80,31 @@ describe("LanguageSwitcher", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("does not write anything when the locale did not change", async () => {
+  it("does not navigate when the locale did not change", async () => {
     mount({ persist: true });
 
     click("DE");
     await act(async () => {});
 
     expect(replaceMock).not.toHaveBeenCalled();
-    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("still records the choice when the page is already in that language", async () => {
+    // The stored language and the browsed one are independent, so pressing the
+    // active button is the only way to say "this one" when they disagree — and
+    // they disagree for every account that has never had one established, and
+    // for anyone who arrived on a /it link somebody shared. Returning early
+    // here would make that correction unreachable: the button that looks right
+    // would be the one button that does nothing.
+    mount({ persist: true });
+
+    click("DE");
+    await act(async () => {});
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/account/locale",
+      expect.objectContaining({ body: JSON.stringify({ locale: "de" }) }),
+    );
   });
 
   it("says so when the account route refuses the write", async () => {

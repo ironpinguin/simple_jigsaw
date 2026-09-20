@@ -27,8 +27,12 @@ function appUrl(): string {
   return (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
 }
 
-function resolveLocale(locale?: string): Locale {
-  return hasLocale(routing.locales, locale) ? locale : routing.defaultLocale;
+// `null` is a value the User.locale column actually holds — it means nobody has
+// established that person's language — so it is accepted here alongside
+// undefined and an unrecognised string, and all three land on the default.
+function resolveLocale(locale?: string | null): Locale {
+  const candidate = locale ?? undefined;
+  return hasLocale(routing.locales, candidate) ? candidate : routing.defaultLocale;
 }
 
 // Links are locale-prefixed so the confirmation/invite page opens in the same
@@ -57,7 +61,7 @@ function escapeHtml(s: string): string {
 export async function sendVerificationEmail(
   to: string,
   token: string,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -74,7 +78,7 @@ export async function sendVerificationEmail(
 export async function sendInviteEmail(
   to: string,
   token: string,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -91,7 +95,7 @@ export async function sendInviteEmail(
 export async function sendPasswordResetEmail(
   to: string,
   token: string,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -125,7 +129,7 @@ export async function sendReportNotification(
   to: string,
   puzzleTitle: string,
   category: ReportCategory,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -156,7 +160,7 @@ export async function sendAutoReportNotification(
   to: string,
   puzzleTitle: string,
   category: ReportCategory,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });
@@ -179,7 +183,7 @@ export async function sendTakedownNotice(
   to: string,
   puzzleTitle: string,
   category: ReportCategory | null,
-  locale?: string,
+  locale?: string | null,
 ): Promise<void> {
   const loc = resolveLocale(locale);
   const t = await getTranslations({ locale: loc, namespace: "email" });

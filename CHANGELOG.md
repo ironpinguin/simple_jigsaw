@@ -40,9 +40,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   up or activated in, and switching language in the header updates it while
   signed in. An invited account records the language of the person activating
   it, not the one their invitation link happened to carry — that link's language
-  is whichever the inviting admin was using. Accounts created before this keep
-  German until their owner switches once. The account data export lists the
-  stored language along with the rest of the account, and the privacy policy
+  is whichever the inviting admin was using. An account nobody was ever asked
+  for a language on — every account that already exists, and any an admin
+  creates outright — picks one up at its owner's next sign-in, and keeps
+  receiving German until then, exactly as today. A language you have chosen is
+  never overwritten by signing in somewhere else. The account data export lists
+  the stored language along with the rest of the account, and the privacy policy
   names it among the data held on you. (#31)
 - Losing admin rights now takes effect on the next page load rather than when
   your session token expires: the *Admin* link disappears from the navigation
