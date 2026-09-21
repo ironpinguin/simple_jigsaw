@@ -34,9 +34,10 @@ const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
  * file mutating a counter `tokenClaimStatus` no longer reads.
  */
 function resetClaimState() {
-  const claims = (globalThis.__jigsawTokenClaims ??= { failures: 0, lost: 0 });
+  const claims = (globalThis.__jigsawTokenClaims ??= { failures: 0, lost: 0, unattempted: 0 });
   claims.failures = 0;
   claims.lost = 0;
+  claims.unattempted = 0;
   delete claims.lastFailureAt;
 }
 
@@ -262,7 +263,7 @@ describe("consumeToken", () => {
 });
 
 describe("recordClaimFailure", () => {
-  it("degrades the redeem path for a claim that never got to run", async () => {
+  it("counts and logs a claim that never got to run", async () => {
     // A transaction that cannot start throws around `consumeToken`, not inside
     // it, so the claim records nothing for itself — and the readiness probe goes
     // on reporting a healthy redeem path while every activation fails (#50).
@@ -270,11 +271,52 @@ describe("recordClaimFailure", () => {
 
     recordClaimFailure("INVITE", new Error("Unable to start a transaction"));
 
-    expect(tokenClaimStatus()).toMatchObject({ failures: 1, degraded: true, lastFailureAt: NOW });
+    expect(tokenClaimStatus()).toMatchObject({ unattempted: 1, lastFailureAt: NOW });
     // Named the same way a failed delete is, so one grep finds both.
     expect(String(error.mock.calls[0][0])).toContain("[tokens]");
     expect(String(error.mock.calls[0][0])).toContain("INVITE");
     error.mockRestore();
+  });
+
+  it("does not call one collision a broken redeem path", async () => {
+    // The commonest cause is two people redeeming at once on the SQLite stack,
+    // whose single connection one activation holds for its whole transaction.
+    // Degrading on that would leave the probe red for days on a quiet instance
+    // — activations are rare, and only a success clears it — which is how a
+    // signal stops being read. The sweep next door tolerates three for the
+    // same reason.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    recordClaimFailure("INVITE", new Error("write conflict"));
+    recordClaimFailure("INVITE", new Error("write conflict"));
+
+    expect(tokenClaimStatus().degraded).toBe(false);
+  });
+
+  it("degrades once they stop looking like a collision", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    for (let i = 0; i < 3; i += 1) recordClaimFailure("INVITE", new Error("timed out"));
+
+    expect(tokenClaimStatus()).toMatchObject({ unattempted: 3, degraded: true });
+  });
+
+  it("still degrades immediately when a delete itself fails", async () => {
+    // Unchanged, and the distinction is the point: a DELETE that was refused is
+    // evidence the redeem path is broken for everyone, not that two clicks
+    // collided.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue({
+      token: "abc",
+      type: "EMAIL_VERIFY",
+      userId: "user-1",
+      expiresAt: new Date(NOW + 1000),
+    });
+    deleteMany.mockRejectedValue(new Error("permission denied"));
+
+    await consumeToken("abc", "EMAIL_VERIFY");
+
+    expect(tokenClaimStatus().degraded).toBe(true);
   });
 
   it("is cleared by the next claim that actually removes a row", async () => {
@@ -286,12 +328,12 @@ describe("recordClaimFailure", () => {
       expiresAt: new Date(NOW + 1000),
     });
 
-    recordClaimFailure("EMAIL_VERIFY", new Error("timed out"));
+    for (let i = 0; i < 3; i += 1) recordClaimFailure("EMAIL_VERIFY", new Error("timed out"));
     expect(tokenClaimStatus().degraded).toBe(true);
 
     await consumeToken("abc", "EMAIL_VERIFY");
 
-    expect(tokenClaimStatus().degraded).toBe(false);
+    expect(tokenClaimStatus()).toMatchObject({ unattempted: 0, degraded: false });
   });
 });
 
@@ -308,6 +350,7 @@ describe("tokenClaimStatus", () => {
       failures: 0,
       lastFailureAt: null,
       lost: 0,
+      unattempted: 0,
       degraded: false,
     });
   });

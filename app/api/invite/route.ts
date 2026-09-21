@@ -27,6 +27,30 @@ class Refused extends Error {
   }
 }
 
+/**
+ * The answer to a moderation refusal, and the log line that goes with it.
+ * Shared by the cheap pre-check and the authoritative one inside the
+ * transaction so the two cannot drift into answering differently.
+ *
+ * These two are the refusals nothing else records. A silent early return here
+ * is how "my invite does not work" becomes unanswerable: an operator sees a 404
+ * or a 403 in an access log and nothing that names the account. The id, never
+ * the address — this lands in a log for someone who may since have asked to be
+ * erased.
+ */
+function refuse(
+  t: (key: string) => string,
+  reason: "accountNotFound" | "emailBanned",
+  userId?: string,
+): NextResponse {
+  if (reason === "accountNotFound") {
+    console.warn(`[invite] user ${userId ?? "?"} activated an invite but no longer exists`);
+    return NextResponse.json({ error: t("accountNotFound") }, { status: 404 });
+  }
+  console.warn(`[invite] user ${userId ?? "?"} activated an invite from a banned address`);
+  return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
+}
+
 export async function POST(request: Request) {
   const t = await getErrorT();
   const parsed = InviteSchema.safeParse(await request.json().catch(() => null));
@@ -34,19 +58,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t(signupErrorKey(parsed.error.issues)) }, { status: 400 });
   }
 
-  // A cheap indexed read before the expensive part, the way api/register orders
+  // Cheap indexed reads before the expensive part, the way api/register orders
   // the same two steps. This route is unauthenticated, outside the proxy's
-  // matcher and unthrottled, so hashing first would hand any caller ~100ms of
-  // CPU per made-up token. Not the claim and not a precondition — purely a way
-  // to stop early; the authoritative single-use delete is still the one inside
-  // the transaction, so nothing here can be raced into an activation.
+  // matcher and unthrottled, and the refusals below no longer spend the token —
+  // so the holder of an invitation that cannot currently be used can replay it
+  // for the rest of its TTL. Deciding after the hash would hand them ~100ms of
+  // CPU and an interactive write transaction every time; on the SQLite stack
+  // that transaction serialises against every other writer.
+  //
+  // A filter, not the decision: the authoritative single-use delete and the
+  // checks that go with it are still the ones inside the transaction, so
+  // nothing here can be raced into an activation — only into wasted work.
   const known = await prisma.verificationToken.findFirst({
     where: { token: parsed.data.token, type: "INVITE" },
-    select: { id: true },
+    select: { user: { select: { id: true, email: true } } },
   });
   if (!known) {
     return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
   }
+  if (!known.user) return refuse(t, "accountNotFound");
+  if (await checkEmailBanned(known.user.email)) return refuse(t, "emailBanned", known.user.id);
 
   // Both before the transaction, and deliberately so. bcrypt at cost 10 is
   // ~100ms of CPU: inside, it would hold a write lock for that long — on SQLite,
@@ -115,17 +146,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
       case "invalid":
         return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
-      // The two moderation refusals are the ones nothing else records. A silent
-      // early return here is how "my invite does not work" becomes unanswerable:
-      // an operator sees a 404 or a 403 in an access log and nothing that names
-      // the account. The id, never the address — this lands in a log for someone
-      // who may since have asked to be erased.
+      // Reached only when the state changed under the pre-check above — a ban
+      // or a deletion that landed in the gap. Same answer, and the claim rolls
+      // back with it.
       case "accountNotFound":
-        console.warn(`[invite] user ${error.userId} activated an invite but no longer exists`);
-        return NextResponse.json({ error: t("accountNotFound") }, { status: 404 });
       case "emailBanned":
-        console.warn(`[invite] user ${error.userId} activated an invite from a banned address`);
-        return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
+        return refuse(t, error.reason, error.userId);
       // The success response sits directly after this switch, so falling out of
       // it would report an activation that never happened. A reason added to
       // InviteRefusal and not to this switch fails the build here, and anything

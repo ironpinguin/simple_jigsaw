@@ -80,8 +80,12 @@ export async function POST(request: Request) {
   } catch (error) {
     // consumeToken has already deleted the row, so the link is spent whether or
     // not this write lands — a store that went away between the two statements,
-    // or P2025 for an account deleted in the gap, which
-    // app/api/invite/route.ts guards ahead of its own write. Letting it throw
+    // or P2025 for an account deleted in the gap. app/api/invite/route.ts no
+    // longer has this shape at all: since #50 it claims inside a transaction,
+    // so a write that throws rolls the claim back and the link survives. This
+    // route still burns it, which is defensible only because a reset is
+    // self-service — the user can ask for another link, where an invitee
+    // cannot. Letting it throw
     // answers with the generic 500 the page renders as auth.resetFailed, "the
     // link may have expired": the one explanation that is certainly wrong, and
     // it sends the user back to a link that no longer exists. Say what actually

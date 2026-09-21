@@ -37,7 +37,23 @@ type ClaimState = {
    * so this counter is the only place they show up.
    */
   lost: number;
+  /**
+   * Claims that never got to run at all, since the last one that did — a
+   * transaction that could not be started or that ran out its deadline
+   * (`recordClaimFailure`). Kept apart from `failures` because it is weaker
+   * evidence: the commonest cause is two redemptions colliding, not a redeem
+   * path that is broken for everyone.
+   */
+  unattempted: number;
 };
+
+/**
+ * Collisions tolerated before `unattempted` counts as a broken redeem path.
+ * Three, like the sweep's STALE_AFTER_MISSED_SWEEPS and for the same reason:
+ * one blip on a quiet instance would otherwise hold the probe red for days,
+ * because only a successful claim clears it and activations are rare.
+ */
+const UNATTEMPTED_BEFORE_DEGRADED = 3;
 
 // Shared per process rather than per module instance, for the reason
 // lib/retention.ts sets out at length: Next emits this module once per webpack
@@ -48,7 +64,11 @@ declare global {
   var __jigsawTokenClaims: ClaimState | undefined;
 }
 
-const claims: ClaimState = (globalThis.__jigsawTokenClaims ??= { failures: 0, lost: 0 });
+const claims: ClaimState = (globalThis.__jigsawTokenClaims ??= {
+  failures: 0,
+  lost: 0,
+  unattempted: 0,
+});
 
 /**
  * What an operator needs to tell a working redeem path from a broken one, in
@@ -57,23 +77,33 @@ const claims: ClaimState = (globalThis.__jigsawTokenClaims ??= { failures: 0, lo
  * but not delete leaves every link in the instance unredeemable while the
  * database looks perfectly healthy.
  *
- * Degraded on a single failure, where the sweep tolerates three. The sweep runs
- * hourly and gets another window, so one blip there is noise; a claim only runs
- * because somebody clicked their link, so there is no next attempt to stay
- * quiet about, and the one that failed already cost them their activation. Only
- * a delete that removes a row clears it — nothing else proves the DELETE works.
+ * Degraded on a single `failures`, where the sweep tolerates three. The sweep
+ * runs hourly and gets another window, so one blip there is noise; a delete
+ * that was refused only runs because somebody clicked their link, so there is
+ * no next attempt to stay quiet about, and the one that failed already cost
+ * them their activation.
+ *
+ * `unattempted` is the weaker signal and gets the sweep's tolerance instead —
+ * see UNATTEMPTED_BEFORE_DEGRADED. A run of either still shows up.
+ *
+ * Only a claim whose delete removed a row clears them. Inside a transaction
+ * that is a delete which ran and then rolled back, which still answers the
+ * question the flag asks — whether the DELETE works — even though the row came
+ * back.
  */
 export function tokenClaimStatus(): {
   failures: number;
   lastFailureAt: number | null;
   lost: number;
+  unattempted: number;
   degraded: boolean;
 } {
   return {
     failures: claims.failures,
     lastFailureAt: claims.lastFailureAt ?? null,
     lost: claims.lost,
-    degraded: claims.failures > 0,
+    unattempted: claims.unattempted,
+    degraded: claims.failures > 0 || claims.unattempted >= UNATTEMPTED_BEFORE_DEGRADED,
   };
 }
 
@@ -89,7 +119,7 @@ export function tokenClaimStatus(): {
  * that actually removes a row proves the redeem path works again.
  */
 export function recordClaimFailure(type: TokenKind, error: unknown): void {
-  claims.failures += 1;
+  claims.unattempted += 1;
   claims.lastFailureAt = Date.now();
   console.error(`[tokens] could not attempt a ${type} claim; refusing it:`, error);
 }
@@ -210,8 +240,10 @@ export async function consumeToken(
     return { ok: false, reason: "invalid" };
   }
 
-  // The DELETE works, whatever this particular row's expiry turns out to say.
+  // The DELETE works, whatever this particular row's expiry turns out to say,
+  // and whatever the enclosing transaction goes on to decide.
   claims.failures = 0;
+  claims.unattempted = 0;
 
   if (isExpired(row.expiresAt, Date.now())) return { ok: false, reason: "invalid" };
   return { ok: true, userId: row.userId };

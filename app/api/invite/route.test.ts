@@ -3,8 +3,10 @@ import bcrypt from "bcryptjs";
 import { TERMS_VERSION } from "@/lib/legal";
 
 const {
-  userFindUnique,
-  userUpdate,
+  txUserFindUnique,
+  txUserUpdate,
+  prismaUserFindUnique,
+  prismaUserUpdate,
   tokenFindFirst,
   recordClaimFailureMock,
   consumeTokenMock,
@@ -15,10 +17,17 @@ const {
   tx,
   txState,
 } = vi.hoisted(() => {
-  const userFindUnique = vi.fn();
-  const userUpdate = vi.fn();
+  const txUserFindUnique = vi.fn();
+  const txUserUpdate = vi.fn();
   const tokenFindFirst = vi.fn();
-  const tx = { user: { findUnique: userFindUnique, update: userUpdate } };
+  const tx = { user: { findUnique: txUserFindUnique, update: txUserUpdate } };
+  // Separate doubles on purpose. Backing both clients with one mock would make
+  // the transactional-client assertions unfalsifiable: a route that wrote the
+  // activation through the module-level client — committing it on a second
+  // connection, outside the rollback's reach, which is the #50 failure itself —
+  // would satisfy every one of them.
+  const prismaUserFindUnique = vi.fn();
+  const prismaUserUpdate = vi.fn();
   // Prisma's own rollback cannot be exercised against a mock, so the double
   // records the one thing that stands in for it: whether the callback came back
   // or threw. A thrown callback is exactly what makes Prisma roll the claim
@@ -35,8 +44,10 @@ const {
     }
   });
   return {
-    userFindUnique,
-    userUpdate,
+    txUserFindUnique,
+    txUserUpdate,
+    prismaUserFindUnique,
+    prismaUserUpdate,
     tokenFindFirst,
     recordClaimFailureMock: vi.fn(),
     consumeTokenMock: vi.fn(),
@@ -51,7 +62,7 @@ const {
 
 vi.mock("@/lib/db", () => ({
   prisma: {
-    user: { findUnique: userFindUnique, update: userUpdate },
+    user: { findUnique: prismaUserFindUnique, update: prismaUserUpdate },
     verificationToken: { findFirst: tokenFindFirst },
     $transaction: transaction,
   },
@@ -91,10 +102,10 @@ beforeEach(() => {
   txState.committed = 0;
   txState.rolledBack = 0;
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
-  tokenFindFirst.mockResolvedValue({ id: "vt-1" });
-  userFindUnique.mockResolvedValue({ id: "user-1", email: "invited@example.com" });
+  tokenFindFirst.mockResolvedValue({ user: { id: "user-1", email: "invited@example.com" } });
+  txUserFindUnique.mockResolvedValue({ id: "user-1", email: "invited@example.com" });
   checkEmailBannedMock.mockResolvedValue(false);
-  userUpdate.mockResolvedValue({});
+  txUserUpdate.mockResolvedValue({});
   // The two differ on purpose: the cookie-preferring resolver would report the
   // locale of the admin's invite link, the header-only one the invitee's own.
   resolveRequestLocaleMock.mockResolvedValue("de");
@@ -110,7 +121,7 @@ describe("POST /api/invite", () => {
     // resolver would pin the admin's language on them for good.
     await callPost(VALID);
 
-    expect(userUpdate.mock.calls[0][0]).toMatchObject({ data: { locale: "it" } });
+    expect(txUserUpdate.mock.calls[0][0]).toMatchObject({ data: { locale: "it" } });
     expect(resolveRequestLocaleMock).not.toHaveBeenCalled();
   });
 
@@ -121,7 +132,7 @@ describe("POST /api/invite", () => {
     await expect(res.json()).resolves.toEqual({ ok: true });
     expect(consumeTokenMock).toHaveBeenCalledWith("tok", "INVITE", tx);
 
-    const { where, data } = userUpdate.mock.calls[0][0];
+    const { where, data } = txUserUpdate.mock.calls[0][0];
     expect(where).toEqual({ id: "user-1" });
     expect(data).toMatchObject({ termsVersion: TERMS_VERSION });
     expect(data.emailVerified).toBeInstanceOf(Date);
@@ -138,7 +149,7 @@ describe("POST /api/invite", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "inviteInvalid" });
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("answers 503 when the claim could not be attempted", async () => {
@@ -162,17 +173,17 @@ describe("POST /api/invite", () => {
 
     await callPost(VALID);
 
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("answers 404 when the invited account has gone", async () => {
-    userFindUnique.mockResolvedValue(null);
+    txUserFindUnique.mockResolvedValue(null);
 
     const res = await callPost(VALID);
 
     expect(res.status).toBe(404);
     await expect(res.json()).resolves.toEqual({ error: "accountNotFound" });
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("answers 403 and sets no password when the address has since been banned", async () => {
@@ -182,7 +193,7 @@ describe("POST /api/invite", () => {
 
     expect(res.status).toBe(403);
     await expect(res.json()).resolves.toEqual({ error: "emailBanned" });
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("rejects a short password before claiming the token", async () => {
@@ -262,7 +273,7 @@ describe("POST /api/invite", () => {
     // work it authorises, so a write that threw left the account unactivated
     // with the link already dead. INVITE is minted only by an admin and a second
     // registration answers 409, so nothing but an operator could rescue it.
-    userUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
+    txUserUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
 
     await expect(callPost(VALID)).rejects.toThrow("SQLITE_BUSY");
 
@@ -271,7 +282,9 @@ describe("POST /api/invite", () => {
   });
 
   it("does not burn the invitation when the invited account has gone", async () => {
-    userFindUnique.mockResolvedValue(null);
+    // Barely reachable — the token's relation cascades on delete — so the gap
+    // it covers is an account removed between the pre-check and the claim.
+    txUserFindUnique.mockResolvedValue(null);
 
     await callPost(VALID);
 
@@ -286,8 +299,38 @@ describe("POST /api/invite", () => {
 
     await callPost(VALID);
 
-    expect(txState.rolledBack).toBe(1);
+    // Refused before the claim, so there is nothing to roll back — the same
+    // guarantee, reached without spending anything.
+    expect(transaction).not.toHaveBeenCalled();
     expect(txState.committed).toBe(0);
+  });
+
+  it("refuses a banned invitee without hashing or opening a transaction", async () => {
+    // The invitation survives a ban by design, so the holder can replay this
+    // token for the rest of its seven-day TTL. Deciding that after the hash
+    // would hand them ~100ms of CPU and an interactive write transaction per
+    // request, on an unauthenticated route with no throttle.
+    checkEmailBannedMock.mockResolvedValue(true);
+    const hash = vi.spyOn(bcrypt, "hash");
+
+    const res = await callPost(VALID);
+
+    expect(res.status).toBe(403);
+    expect(hash).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("rolls back when the ban lands after the pre-check", async () => {
+    // Why the check inside the transaction stays: the cheap one above is a
+    // filter, and a ban arriving in the gap has to be caught by the claim's own
+    // transaction or the activation goes through.
+    checkEmailBannedMock.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+
+    const res = await callPost(VALID);
+
+    expect(res.status).toBe(403);
+    expect(txState.rolledBack).toBe(1);
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("claims the invitation on the transaction's own client", async () => {
@@ -298,6 +341,17 @@ describe("POST /api/invite", () => {
     expect(consumeTokenMock).toHaveBeenCalledWith("tok", "INVITE", tx);
     expect(checkEmailBannedMock).toHaveBeenCalledWith("invited@example.com", tx);
     expect(txState.committed).toBe(1);
+  });
+
+  it("writes the activation through the transaction, never the module client", async () => {
+    // The module-level client is a second connection: an activation committed
+    // there survives the rollback that is supposed to undo it, which is #50
+    // again with extra steps.
+    await callPost(VALID);
+
+    expect(txUserUpdate).toHaveBeenCalledTimes(1);
+    expect(prismaUserUpdate).not.toHaveBeenCalled();
+    expect(prismaUserFindUnique).not.toHaveBeenCalled();
   });
 
   it("hashes the password before opening the transaction", async () => {
@@ -321,7 +375,7 @@ describe("POST /api/invite", () => {
 
     await expect(callPost(VALID)).rejects.toThrow();
 
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("names the account in the log when the invited account has gone", async () => {
@@ -329,7 +383,7 @@ describe("POST /api/invite", () => {
     // log and nothing else unless the account is named here.
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    userFindUnique.mockResolvedValue(null);
+    txUserFindUnique.mockResolvedValue(null);
 
     await callPost(VALID);
 

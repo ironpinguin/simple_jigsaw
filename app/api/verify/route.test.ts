@@ -1,9 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { userUpdate, consumeTokenMock, recordClaimFailureMock, transaction, tx, txState } =
+const {
+  txUserUpdate,
+  prismaUserUpdate,
+  consumeTokenMock,
+  recordClaimFailureMock,
+  transaction,
+  tx,
+  txState,
+} =
   vi.hoisted(() => {
-  const userUpdate = vi.fn();
-  const tx = { user: { update: userUpdate } };
+  const txUserUpdate = vi.fn();
+  const tx = { user: { update: txUserUpdate } };
+  // A separate double for the module-level client: sharing one would make the
+  // assertions below unfalsifiable, since a route that confirmed the address on
+  // a second connection — outside the rollback's reach — would still pass them.
+  const prismaUserUpdate = vi.fn();
   // Prisma's own rollback cannot be exercised against a mock, so the double
   // records the one thing that stands in for it: whether the callback came back
   // or threw. A thrown callback is exactly what makes Prisma roll the claim
@@ -20,7 +32,8 @@ const { userUpdate, consumeTokenMock, recordClaimFailureMock, transaction, tx, t
     }
   });
   return {
-    userUpdate,
+    txUserUpdate,
+    prismaUserUpdate,
     consumeTokenMock: vi.fn(),
     recordClaimFailureMock: vi.fn(),
     transaction,
@@ -30,7 +43,7 @@ const { userUpdate, consumeTokenMock, recordClaimFailureMock, transaction, tx, t
   });
 
 vi.mock("@/lib/db", () => ({
-  prisma: { user: { update: userUpdate }, $transaction: transaction },
+  prisma: { user: { update: prismaUserUpdate }, $transaction: transaction },
 }));
 vi.mock("@/lib/tokens", () => ({
   consumeToken: consumeTokenMock,
@@ -57,7 +70,7 @@ beforeEach(() => {
   txState.committed = 0;
   txState.rolledBack = 0;
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
-  userUpdate.mockResolvedValue({});
+  txUserUpdate.mockResolvedValue({});
 });
 
 describe("POST /api/verify", () => {
@@ -67,7 +80,7 @@ describe("POST /api/verify", () => {
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ ok: true });
     expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY", tx);
-    expect(userUpdate).toHaveBeenCalledWith({
+    expect(txUserUpdate).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: { emailVerified: expect.any(Date) },
     });
@@ -80,7 +93,7 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "verifyInvalid" });
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("answers 503 when the claim could not be attempted", async () => {
@@ -103,7 +116,7 @@ describe("POST /api/verify", () => {
 
     await callPost({ token: "tok" });
 
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("rejects a body with no token before touching the database", async () => {
@@ -152,7 +165,7 @@ describe("POST /api/verify", () => {
     // authorises, so a write that threw here left the address unconfirmed with
     // the token already gone — and EMAIL_VERIFY is only minted at registration,
     // which a second attempt answers 409. Nothing brought the link back.
-    userUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
+    txUserUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
 
     await expect(callPost({ token: "tok" })).rejects.toThrow("SQLITE_BUSY");
 
@@ -167,5 +180,12 @@ describe("POST /api/verify", () => {
 
     expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY", tx);
     expect(txState.committed).toBe(1);
+  });
+
+  it("confirms through the transaction, never the module client", async () => {
+    await callPost({ token: "tok" });
+
+    expect(txUserUpdate).toHaveBeenCalledTimes(1);
+    expect(prismaUserUpdate).not.toHaveBeenCalled();
   });
 });
