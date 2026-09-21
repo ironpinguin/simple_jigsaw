@@ -18,17 +18,27 @@
  * because the date-only string carries no zone of its own.
  */
 
+import { routing } from "@/i18n/routing";
+
+/**
+ * The one zone every rendered date is pinned to, here and in
+ * `i18n/request.ts`, which hands it to next-intl so its own ICU date arguments
+ * are pinned the same way (#54). One constant because two formatting paths
+ * disagreeing about the zone is the bug, not the fix.
+ */
+export const DISPLAY_TIME_ZONE = "UTC";
+
 /** Locale-aware date and time in UTC — `08.08.2026, 12:53:18 UTC` for `de`. */
 export function formatDateTimeUtc(iso: string, locale: string): string {
   // `timeStyle: "long"` is what appends the "UTC" label. The label is the point
   // — an audit trail showing a clock that is not the reader's has to say whose
   // it is — so don't downgrade this to "medium".
-  return format(iso, locale, { dateStyle: "medium", timeStyle: "long", timeZone: "UTC" });
+  return format(iso, locale, { dateStyle: "medium", timeStyle: "long", timeZone: DISPLAY_TIME_ZONE });
 }
 
 /** Locale-aware calendar day in UTC — `08.08.2026` for `de`. */
 export function formatDateUtc(iso: string, locale: string): string {
-  return format(iso, locale, { dateStyle: "medium", timeZone: "UTC" });
+  return format(iso, locale, { dateStyle: "medium", timeZone: DISPLAY_TIME_ZONE });
 }
 
 function format(iso: string, locale: string, options: Intl.DateTimeFormatOptions): string {
@@ -54,7 +64,32 @@ function format(iso: string, locale: string, options: Intl.DateTimeFormatOptions
     warnUnrenderable(iso);
     return iso;
   }
-  return new Intl.DateTimeFormat(locale, options).format(date);
+  try {
+    return new Intl.DateTimeFormat(locale, options).format(date);
+  } catch {
+    // Only a structurally invalid tag lands here — "", "en_US", "  ". A
+    // well-formed but unknown one ("xx") is resolved by the platform and never
+    // throws, so this does not fire for it. The caller passing a malformed tag
+    // is a bug in the caller; taking the reader's page down mid-render with a
+    // RangeError is not the way to report it (#57).
+    warnUnrenderableLocale(locale);
+    return new Intl.DateTimeFormat(routing.defaultLocale, options).format(date);
+  }
+}
+
+let warnedUnrenderableLocale = false;
+
+/**
+ * Say once per process that a caller handed over a locale the platform cannot
+ * parse. Once, for the reason `warnUnrenderable` gives: this runs per row.
+ */
+function warnUnrenderableLocale(locale: unknown): void {
+  if (warnedUnrenderableLocale) return;
+  warnedUnrenderableLocale = true;
+  console.warn(
+    `[dates] falling back to ${routing.defaultLocale}: unusable locale tag ` +
+      `${JSON.stringify(locale)}`,
+  );
 }
 
 let warnedUnrenderable = false;
