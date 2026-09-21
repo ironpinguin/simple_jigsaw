@@ -1,11 +1,55 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { consumeToken } from "@/lib/tokens";
+import { consumeToken, recordClaimFailure, type ClaimRefusal } from "@/lib/tokens";
 import { checkEmailBanned } from "@/lib/moderation";
+import { isTransientTransactionError } from "@/lib/prisma-errors";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
 import { getErrorT, resolveBrowserLocale } from "@/lib/i18n-server";
+
+/** Why an activation was refused, beyond the two a claim itself can report. */
+type InviteRefusal = ClaimRefusal | "accountNotFound" | "emailBanned";
+
+/**
+ * A refusal decided inside the transaction. Thrown rather than returned so the
+ * claim rolls back with it — the route's answer is chosen from it afterwards.
+ * Without this an invitation died on a moderation decision that an admin can
+ * reverse, while the link it killed stayed dead (#50).
+ */
+class Refused extends Error {
+  constructor(
+    readonly reason: InviteRefusal,
+    /** Whose activation this was, once the claim has told us. For the log. */
+    readonly userId?: string,
+  ) {
+    super(reason);
+  }
+}
+
+/**
+ * The answer to a moderation refusal, and the log line that goes with it.
+ * Shared by the cheap pre-check and the authoritative one inside the
+ * transaction so the two cannot drift into answering differently.
+ *
+ * These two are the refusals nothing else records. A silent early return here
+ * is how "my invite does not work" becomes unanswerable: an operator sees a 404
+ * or a 403 in an access log and nothing that names the account. The id, never
+ * the address — this lands in a log for someone who may since have asked to be
+ * erased.
+ */
+function refuse(
+  t: (key: string) => string,
+  reason: "accountNotFound" | "emailBanned",
+  userId?: string,
+): NextResponse {
+  if (reason === "accountNotFound") {
+    console.warn(`[invite] user ${userId ?? "?"} activated an invite but no longer exists`);
+    return NextResponse.json({ error: t("accountNotFound") }, { status: 404 });
+  }
+  console.warn(`[invite] user ${userId ?? "?"} activated an invite from a banned address`);
+  return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
+}
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -14,46 +58,110 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t(signupErrorKey(parsed.error.issues)) }, { status: 400 });
   }
 
-  const claim = await consumeToken(parsed.data.token, "INVITE");
-  if (!claim.ok) {
-    // 503, not 400, when the claim could not be attempted: the invite is still
-    // valid and the row is still there, so a retry may work — and this is the
-    // one route where refusing wrongly means an account nobody but an admin can
-    // rescue, because there is no self-service resend. See lib/tokens.ts.
-    return claim.reason === "unavailable"
-      ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
-      : NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
-  }
-
-  const user = await prisma.user.findUnique({ where: { id: claim.userId } });
-  if (!user) {
-    return NextResponse.json({ error: t("accountNotFound") }, { status: 404 });
-  }
-  if (await checkEmailBanned(user.email)) {
-    return NextResponse.json({ error: t("emailBanned") }, { status: 403 });
-  }
-
-  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash,
-      emailVerified: new Date(),
-      // The invite went out in the admin's language, so the row still carries
-      // the default. This request is the first one the invitee themselves makes
-      // — the only signal of their language before something mails them without
-      // being asked.
-      //
-      // Accept-Language only (resolveBrowserLocale), never NEXT_LOCALE: the
-      // invitee arrived through a link whose `/de` prefix the *admin* chose, and
-      // next-intl's middleware writes that prefix into the cookie on their first
-      // page view. Reading it back would pin the admin's language on them
-      // permanently — the exact failure this column exists to end.
-      locale: await resolveBrowserLocale(),
-      termsAcceptedAt: new Date(),
-      termsVersion: TERMS_VERSION,
-    },
+  // Cheap indexed reads before the expensive part, the way api/register orders
+  // the same two steps. This route is unauthenticated, outside the proxy's
+  // matcher and unthrottled, and the refusals below no longer spend the token —
+  // so the holder of an invitation that cannot currently be used can replay it
+  // for the rest of its TTL. Deciding after the hash would hand them ~100ms of
+  // CPU and an interactive write transaction every time; on the SQLite stack
+  // that transaction serialises against every other writer.
+  //
+  // A filter, not the decision: the authoritative single-use delete and the
+  // checks that go with it are still the ones inside the transaction, so
+  // nothing here can be raced into an activation — only into wasted work.
+  const known = await prisma.verificationToken.findFirst({
+    where: { token: parsed.data.token, type: "INVITE" },
+    select: { user: { select: { id: true, email: true } } },
   });
+  if (!known) {
+    return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
+  }
+  if (!known.user) return refuse(t, "accountNotFound");
+  if (await checkEmailBanned(known.user.email)) return refuse(t, "emailBanned", known.user.id);
+
+  // Both before the transaction, and deliberately so. bcrypt at cost 10 is
+  // ~100ms of CPU: inside, it would hold a write lock for that long — on SQLite,
+  // against every other writer — for work that needs no database at all.
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  // The invite went out in the admin's language, so the row still carries the
+  // default. This request is the first one the invitee themselves makes — the
+  // only signal of their language before something mails them without being
+  // asked.
+  //
+  // Accept-Language only (resolveBrowserLocale), never NEXT_LOCALE: the invitee
+  // arrived through a link whose `/de` prefix the *admin* chose, and next-intl's
+  // handler writes that prefix into the cookie on their first page view. Reading
+  // it back would pin the admin's language on them permanently — the exact
+  // failure this column exists to end.
+  const locale = await resolveBrowserLocale();
+
+  // Everything that can refuse the activation runs inside one transaction, so
+  // that none of it spends the invitation. The claim is irreversible on its own
+  // and lands before the work it authorises: a deleted account, a ban, or a
+  // write that threw each used to leave the invitee unactivated with a dead
+  // link, and INVITE is minted only by an admin (no self-service resend), so
+  // only an operator could rescue them.
+  try {
+    await prisma.$transaction(async (tx) => {
+      const claim = await consumeToken(parsed.data.token, "INVITE", tx);
+      if (!claim.ok) throw new Refused(claim.reason);
+
+      const user = await tx.user.findUnique({ where: { id: claim.userId } });
+      if (!user) throw new Refused("accountNotFound", claim.userId);
+      if (await checkEmailBanned(user.email, tx)) throw new Refused("emailBanned", user.id);
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          emailVerified: new Date(),
+          locale,
+          termsAcceptedAt: new Date(),
+          termsVersion: TERMS_VERSION,
+        },
+      });
+    });
+  } catch (error) {
+    // A transaction that never started, or that ran out its deadline, throws
+    // here rather than inside the claim — on the SQLite stack, whose single
+    // connection one activation holds for the length of the whole callback,
+    // that is the shape a second concurrent activation takes. It means exactly
+    // what a failed claim means: nothing was spent and a retry may work. Left
+    // as an unknown error it would be a bare 500, and the claim counters would
+    // stay clean while every activation in the instance failed.
+    if (isTransientTransactionError(error)) {
+      recordClaimFailure("INVITE", error);
+      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
+    }
+    // Anything else — a failed write, a bug in here — is a 500. What changed is
+    // that the invitation survives it.
+    if (!(error instanceof Refused)) throw error;
+
+    switch (error.reason) {
+      // 503, not 400, when the claim could not be attempted: the invite is still
+      // valid and the row is still there, so a retry may work — and this is the
+      // one route where refusing wrongly means an account nobody but an admin
+      // can rescue, because there is no self-service resend. See lib/tokens.ts.
+      case "unavailable":
+        return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
+      case "invalid":
+        return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
+      // Reached only when the state changed under the pre-check above — a ban
+      // or a deletion that landed in the gap. Same answer, and the claim rolls
+      // back with it.
+      case "accountNotFound":
+      case "emailBanned":
+        return refuse(t, error.reason, error.userId);
+      // The success response sits directly after this switch, so falling out of
+      // it would report an activation that never happened. A reason added to
+      // InviteRefusal and not to this switch fails the build here, and anything
+      // that still reaches it at runtime becomes a 500 rather than an `ok`.
+      default: {
+        const unhandled: never = error.reason;
+        throw new Error(`[invite] unhandled refusal ${String(unhandled)}`);
+      }
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- An invitation or confirmation link is no longer used up when the activation it
+  authorises fails. Clicking a valid invite and getting an error — the account
+  had been deleted, the address had since been banned, or the write itself
+  failed — left the link dead and the account unactivated, and since invitations
+  are only issued by an administrator and a second registration is refused, only
+  an administrator could put it right. The link now survives every one of those
+  and still works once the cause is gone: lift a ban, and the original invite
+  activates. It is still single-use once an activation actually succeeds. The
+  two refusals an administrator could previously not explain — a deleted account
+  and a banned address — now say so in the server log, naming the account rather
+  than the address. (#50)
+
 ### Changed
 - Release pages now link the changelog instead of naming the file in passing, so
   the page a release lands on says where to read what shipped. The link points at

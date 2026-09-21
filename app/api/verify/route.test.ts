@@ -1,12 +1,54 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { userUpdate, consumeTokenMock } = vi.hoisted(() => ({
-  userUpdate: vi.fn(),
-  consumeTokenMock: vi.fn(),
-}));
+const {
+  txUserUpdate,
+  prismaUserUpdate,
+  consumeTokenMock,
+  recordClaimFailureMock,
+  transaction,
+  tx,
+  txState,
+} =
+  vi.hoisted(() => {
+  const txUserUpdate = vi.fn();
+  const tx = { user: { update: txUserUpdate } };
+  // A separate double for the module-level client: sharing one would make the
+  // assertions below unfalsifiable, since a route that confirmed the address on
+  // a second connection — outside the rollback's reach — would still pass them.
+  const prismaUserUpdate = vi.fn();
+  // Prisma's own rollback cannot be exercised against a mock, so the double
+  // records the one thing that stands in for it: whether the callback came back
+  // or threw. A thrown callback is exactly what makes Prisma roll the claim
+  // back, so "rolledBack" here means "the real client would have undone it".
+  const txState = { committed: 0, rolledBack: 0 };
+  const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => {
+    try {
+      const result = await fn(tx);
+      txState.committed += 1;
+      return result;
+    } catch (error) {
+      txState.rolledBack += 1;
+      throw error;
+    }
+  });
+  return {
+    txUserUpdate,
+    prismaUserUpdate,
+    consumeTokenMock: vi.fn(),
+    recordClaimFailureMock: vi.fn(),
+    transaction,
+    tx,
+      txState,
+    };
+  });
 
-vi.mock("@/lib/db", () => ({ prisma: { user: { update: userUpdate } } }));
-vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
+vi.mock("@/lib/db", () => ({
+  prisma: { user: { update: prismaUserUpdate }, $transaction: transaction },
+}));
+vi.mock("@/lib/tokens", () => ({
+  consumeToken: consumeTokenMock,
+  recordClaimFailure: recordClaimFailureMock,
+}));
 // The key rather than the translation: these assertions are about which message
 // the route picks, and pinning the German copy would break on any rewording.
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
@@ -25,8 +67,10 @@ function callPost(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  txState.committed = 0;
+  txState.rolledBack = 0;
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
-  userUpdate.mockResolvedValue({});
+  txUserUpdate.mockResolvedValue({});
 });
 
 describe("POST /api/verify", () => {
@@ -35,8 +79,8 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ ok: true });
-    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY");
-    expect(userUpdate).toHaveBeenCalledWith({
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY", tx);
+    expect(txUserUpdate).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: { emailVerified: expect.any(Date) },
     });
@@ -49,7 +93,7 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "verifyInvalid" });
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("answers 503 when the claim could not be attempted", async () => {
@@ -72,7 +116,7 @@ describe("POST /api/verify", () => {
 
     await callPost({ token: "tok" });
 
-    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txUserUpdate).not.toHaveBeenCalled();
   });
 
   it("rejects a body with no token before touching the database", async () => {
@@ -90,5 +134,58 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(400);
     expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 when the transaction itself could not be run", async () => {
+    // P2028 comes out of `$transaction`, not out of `consumeToken`, so it would
+    // otherwise escape as a bare 500 — for a link that was never spent and that
+    // a retry may well redeem.
+    transaction.mockRejectedValueOnce(
+      Object.assign(new Error("Unable to start a transaction in the given time"), {
+        code: "P2028",
+      }),
+    );
+
+    const res = await callPost({ token: "tok" });
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
+    expect(recordClaimFailureMock).toHaveBeenCalledWith("EMAIL_VERIFY", expect.anything());
+  });
+
+  it("still fails loudly when the transaction throws something unexpected", async () => {
+    transaction.mockRejectedValueOnce(new TypeError("undefined is not a function"));
+
+    await expect(callPost({ token: "tok" })).rejects.toThrow(TypeError);
+    expect(recordClaimFailureMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the link claimable when the confirming write fails", async () => {
+    // #50: the claim used to be irreversible and to land before the work it
+    // authorises, so a write that threw here left the address unconfirmed with
+    // the token already gone — and EMAIL_VERIFY is only minted at registration,
+    // which a second attempt answers 409. Nothing brought the link back.
+    txUserUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
+
+    await expect(callPost({ token: "tok" })).rejects.toThrow("SQLITE_BUSY");
+
+    expect(txState.rolledBack).toBe(1);
+    expect(txState.committed).toBe(0);
+  });
+
+  it("claims the token on the transaction's own client", async () => {
+    // The claim has to run on the connection the rollback governs; on any other
+    // one the delete commits by itself and the link is gone regardless.
+    await callPost({ token: "tok" });
+
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY", tx);
+    expect(txState.committed).toBe(1);
+  });
+
+  it("confirms through the transaction, never the module client", async () => {
+    await callPost({ token: "tok" });
+
+    expect(txUserUpdate).toHaveBeenCalledTimes(1);
+    expect(prismaUserUpdate).not.toHaveBeenCalled();
   });
 });
