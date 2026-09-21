@@ -21,7 +21,10 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
   const [err, setErr] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  // A set, not one id: two removals can overlap, and a single slot would be
+  // cleared by whichever answered first — re-enabling a button whose own
+  // request is still out, which is how the same row gets deleted twice.
+  const [removing, setRemoving] = useState<ReadonlySet<string>>(() => new Set());
 
   /** A row is only safe to render once every field the table reads is there. */
   function isBanRow(value: unknown): value is BanRow {
@@ -76,7 +79,7 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
 
   async function remove(ban: BanRow) {
     setErr(null);
-    setRemovingId(ban.id);
+    setRemoving((ids) => new Set(ids).add(ban.id));
     try {
       const res = await tryFetch("admin", `/api/admin/bans/${ban.id}`, { method: "DELETE" });
       if (res?.ok) {
@@ -90,7 +93,11 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
       const data = await res?.json().catch(() => null);
       setErr(data?.error || t("banRemoveFailed", { value: ban.value }));
     } finally {
-      setRemovingId(null);
+      setRemoving((ids) => {
+        const next = new Set(ids);
+        next.delete(ban.id);
+        return next;
+      });
     }
   }
 
@@ -155,7 +162,7 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
                   <button
                     className="button secondary"
                     type="button"
-                    disabled={removingId === b.id}
+                    disabled={removing.has(b.id)}
                     onClick={() => remove(b)}
                   >
                     {t("banRemove")}

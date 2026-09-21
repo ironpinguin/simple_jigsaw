@@ -244,6 +244,48 @@ describe("BansAdmin remove", () => {
     expect(container.textContent).not.toContain("spam.example");
   });
 
+  it("keeps each overlapping removal disabled until its own request answers", async () => {
+    // A single in-flight slot is wrong the moment two removals overlap: the
+    // first response clears it, so the second row's button re-enables while its
+    // DELETE is still out and a second click sends a duplicate.
+    const answers: ((value: Response) => void)[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            answers.push(resolve);
+          }),
+      ),
+    );
+
+    mount([BAN, { ...BAN, id: "ban-2", value: "other.example" }]);
+    const [first, second] = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent === messages.admin.banRemove,
+    ) as HTMLButtonElement[];
+
+    act(() => {
+      first.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    act(() => {
+      second.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(first.disabled).toBe(true);
+    expect(second.disabled).toBe(true);
+
+    // The first row answers; the second is still waiting and must stay locked.
+    await act(async () => {
+      answers[0](new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      await Promise.resolve();
+    });
+
+    const stillThere = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent === messages.admin.banRemove,
+    ) as HTMLButtonElement[];
+    expect(stillThere).toHaveLength(1);
+    expect(stillThere[0].disabled).toBe(true);
+  });
+
   it("prefers the reason the server gave", async () => {
     vi.stubGlobal(
       "fetch",

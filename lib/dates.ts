@@ -32,11 +32,16 @@ export function formatDateUtc(iso: string, locale: string): string {
 }
 
 function format(iso: string, locale: string, options: Intl.DateTimeFormatOptions): string {
-  // The signature says `string`, but two call sites push unvalidated API JSON
-  // straight into typed state (`BansAdmin.add`, `UsersAdmin.refresh`), so a
-  // null or a missing field genuinely reaches this. It has to be caught before
-  // `new Date`: `new Date(null)` is the epoch rather than an Invalid Date, and
-  // a confident "01.01.1970" in a moderation audit trail is worse than a blank.
+  // The signature says `string`, but `UsersAdmin.refresh` pushes unvalidated
+  // API JSON straight into typed state — it checks the payload is an array,
+  // not that each row's fields are strings — so a null or a missing field
+  // genuinely reaches this. It has to be caught before `new Date`:
+  // `new Date(null)` is the epoch rather than an Invalid Date, and a confident
+  // "01.01.1970" in a moderation audit trail is worse than a blank.
+  //
+  // `BansAdmin.add` was the second such call site until #56 gave it a row
+  // guard of its own. That is the shape to copy, not a reason to drop this:
+  // the guard is the last line for every caller that has not grown one.
   if (typeof iso !== "string") {
     warnUnrenderable(iso);
     return "";
