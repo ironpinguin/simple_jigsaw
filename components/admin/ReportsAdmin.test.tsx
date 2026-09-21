@@ -39,15 +39,19 @@ const OPEN: ReportRow = {
   message: "This image is sexually explicit.",
   reporterEmail: "me@example.com",
   status: "OPEN",
-  createdAt: "2026-08-07T10:00:00.000Z",
+  // Deliberately the far side of midnight from the suite's zone (see the
+  // components project in vitest.config.ts): 02:30 UTC is the previous day in
+  // America/New_York, so a call site that formats in the runtime's zone renders
+  // "Aug 6" and the assertions below fail (#55).
+  createdAt: "2026-08-07T02:30:00.000Z",
   resolvedAt: null,
   puzzleExists: true,
 };
 
-function mount(open: ReportRow[] = [OPEN], resolved: ReportRow[] = []) {
+function mount(open: ReportRow[] = [OPEN], resolved: ReportRow[] = [], locale = "en") {
   act(() => {
     root.render(
-      <NextIntlClientProvider locale="en" messages={messages}>
+      <NextIntlClientProvider locale={locale} messages={messages}>
         <ReportsAdmin initialOpen={open} initialResolved={resolved} />
       </NextIntlClientProvider>,
     );
@@ -57,6 +61,40 @@ function mount(open: ReportRow[] = [OPEN], resolved: ReportRow[] = []) {
 function buttonByText(text: string) {
   return [...container.querySelectorAll("button")].find((b) => b.textContent === text);
 }
+
+describe("ReportsAdmin timestamps", () => {
+  // lib/dates.test.ts pins the formatting; these pin the wiring, which is the
+  // half that regresses when someone edits a table. Until #55 every timestamp
+  // here was a fixture input that no assertion ever read, so reverting a call
+  // site to toLocaleString left the whole suite green — the way the hydration
+  // bug in #38 reached production.
+
+  it("shows the report time in UTC, not the runtime's zone", () => {
+    mount();
+
+    expect(container.textContent).toContain("Aug 7, 2026, 2:30:00 AM UTC");
+    // What the same instant renders as unpinned in this suite's zone.
+    expect(container.textContent).not.toContain("Aug 6");
+  });
+
+  it("shows the resolution time in UTC in the audit list", () => {
+    mount([], [{ ...OPEN, status: "DISMISSED", resolvedAt: "2026-08-08T02:45:00.000Z" }]);
+
+    expect(container.textContent).toContain("Aug 8, 2026, 2:45:00 AM UTC");
+    // Broad on purpose: the exact local rendering depends on the suite zone's
+    // offset, so spelling it out would keep passing while asserting nothing if
+    // that zone ever changed.
+    expect(container.textContent).not.toContain("Aug 7");
+  });
+
+  it("formats the timestamp in the locale being browsed", () => {
+    // #53 threaded useLocale() in; nothing proved it reached the formatter, so
+    // a component that hard-coded a locale looked identical under `en`.
+    mount([OPEN], [], "de");
+
+    expect(container.textContent).toContain("07.08.2026, 02:30:00 UTC");
+  });
+});
 
 describe("ReportsAdmin", () => {
   it("dismisses a report and moves it to the resolved list", async () => {
@@ -213,7 +251,7 @@ describe("ReportsAdmin", () => {
           ...OPEN,
           status: "ACCOUNT_DELETED",
           reporterEmail: null,
-          resolvedAt: "2026-08-08T10:00:00.000Z",
+          resolvedAt: "2026-08-08T02:45:00.000Z",
           puzzleExists: false,
         },
       ],

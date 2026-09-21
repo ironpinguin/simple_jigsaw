@@ -26,6 +26,15 @@ export default defineConfig({
     //
     // vitest 5 flattened `poolOptions.forks.execArgv` to a plain `execArgv`.
     execArgv: ["--no-experimental-webstorage"],
+    // Deliberately not UTC, and deliberately here rather than per project. CI
+    // runners are UTC, and code that formats dates in the *runtime's* zone is
+    // indistinguishable from code that pins UTC when the runtime already is —
+    // which is how the hydration bug in #38 stayed invisible to a green suite.
+    // At the root it covers every project, so a date call site added under
+    // app/ is held to the same standard as the ones in lib/ and components/.
+    // The admin fixtures sit either side of midnight in this zone on purpose:
+    // a call site that drops `timeZone: "UTC"` renders the wrong day (#55).
+    env: { TZ: "America/New_York" },
     // Split by directory rather than per-file docblocks: a component test that
     // forgets one fails confusingly, and the pure lib tests keep node's faster
     // startup.
@@ -35,12 +44,6 @@ export default defineConfig({
         test: {
           name: "lib",
           environment: "node",
-          // Deliberately not UTC. CI runners are UTC, and a helper that formats
-          // dates in the *runtime's* zone is indistinguishable from one that
-          // pins UTC when the runtime already is UTC — which is how the
-          // hydration bug in #38 stayed invisible to a green suite. Anything
-          // that leans on the ambient zone now fails here first.
-          env: { TZ: "America/New_York" },
           include: ["lib/**/*.test.ts"],
         },
       },
