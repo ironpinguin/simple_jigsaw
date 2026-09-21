@@ -175,17 +175,48 @@ describe("a locale tag the platform refuses", () => {
     warn.mockRestore();
   });
 
-  it("leaves a well-formed but unknown tag to the platform's own fallback", () => {
-    // "xx" does not throw — Intl resolves it to its default — so there is
-    // nothing to catch and nothing to warn about.
+  it("leaves a well-formed but unknown tag to the platform's own fallback", async () => {
+    // "xx" is well-formed, so the platform resolves it to its own default and
+    // there is nothing to warn about. The fresh module matters as much as the
+    // assertion: the once-per-process latch is already tripped by the tests
+    // above, so on the shared module `not.toHaveBeenCalled` would hold no
+    // matter what this call did.
+    vi.resetModules();
+    const { formatDateUtc: freshFormatDateUtc } = await import("./dates");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    expect(() => formatDateUtc(ISO, "xx")).not.toThrow();
+    expect(() => freshFormatDateUtc(ISO, "xx")).not.toThrow();
 
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
+
+  it("falls back when there is no locale at all", async () => {
+    // The one malformed locale that reproduces #38 rather than throwing:
+    // `new Intl.DateTimeFormat(undefined, …)` resolves to the *runtime's*
+    // locale, so the server pass and the hydration pass render different
+    // strings with nothing raised and nothing logged. A caller reading a
+    // missing NEXT_LOCALE cookie or an empty Accept-Language header hands over
+    // `undefined`, not `""`.
+    vi.resetModules();
+    const { formatDateUtc: freshFormatDateUtc } = await import("./dates");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(freshFormatDateUtc(ISO, undefined as unknown as string)).toBe(
+      formatDateUtc(ISO, routing.defaultLocale),
+    );
+
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 });
+
+/** The version stamp's calendar day as `{date, date, long}` renders it. */
+function dayIn(timeZone: string): string {
+  return new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone }).format(
+    new Date(TERMS_VERSION),
+  );
+}
 
 describe("the zone next-intl formats in", () => {
   // lib/dates.ts is not the only formatting path: a message using an ICU date
@@ -204,8 +235,13 @@ describe("the zone next-intl formats in", () => {
       timeZone: DISPLAY_TIME_ZONE,
     });
 
+    // Derived, not spelled out: docs/terms-versioning.md says bumping
+    // TERMS_VERSION needs nothing else changed, and it should not fail a
+    // date-formatting suite that has no opinion about which version is current.
+    // Still load-bearing — the control below derives the day before and they
+    // must differ.
     expect(t("legal.termsUpdated", { date: new Date(TERMS_VERSION) })).toBe(
-      "Last updated: August 5, 2026",
+      `Last updated: ${dayIn(DISPLAY_TIME_ZONE)}`,
     );
   });
 
@@ -215,8 +251,11 @@ describe("the zone next-intl formats in", () => {
     const unpinned = createTranslator({ locale: "en", messages: enMessages });
 
     expect(unpinned("legal.termsUpdated", { date: new Date(TERMS_VERSION) })).toBe(
-      "Last updated: August 4, 2026",
+      `Last updated: ${dayIn("America/New_York")}`,
     );
+    // …and the two really are different days, or the assertion above would
+    // hold whatever the zone did.
+    expect(dayIn("America/New_York")).not.toBe(dayIn(DISPLAY_TIME_ZONE));
   });
 
   it("is the zone i18n/request.ts hands to next-intl", () => {

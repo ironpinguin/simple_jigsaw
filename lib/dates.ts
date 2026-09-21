@@ -64,16 +64,43 @@ function format(iso: string, locale: string, options: Intl.DateTimeFormatOptions
     warnUnrenderable(iso);
     return iso;
   }
-  try {
-    return new Intl.DateTimeFormat(locale, options).format(date);
-  } catch {
-    // Only a structurally invalid tag lands here — "", "en_US", "  ". A
-    // well-formed but unknown one ("xx") is resolved by the platform and never
-    // throws, so this does not fire for it. The caller passing a malformed tag
-    // is a bug in the caller; taking the reader's page down mid-render with a
-    // RangeError is not the way to report it (#57).
+  return new Intl.DateTimeFormat(usableLocale(locale), options).format(date);
+}
+
+/**
+ * The tag to format with: the caller's, or the default when theirs is one
+ * `Intl.DateTimeFormat` would refuse (#57).
+ *
+ * Checked rather than caught. A `try` around the construction would also
+ * swallow the *other* thing Intl validates — `options` — and then retry with
+ * the same options and fail identically, uncaught, having logged a perfectly
+ * good locale as the culprit. A mistyped `DISPLAY_TIME_ZONE` is our bug and
+ * belongs in a stack trace on the first render, not behind a message pointing
+ * at the wrong argument.
+ *
+ * Two shapes get turned away, for opposite reasons:
+ *
+ * - **Not a string.** `undefined` is the dangerous one: Intl accepts it and
+ *   resolves to the *runtime's* locale, so the server pass and the hydration
+ *   pass disagree — #38 again, silently, inside the guard meant to prevent it.
+ *   A caller reading a missing cookie or an empty header produces exactly this.
+ * - **A malformed tag** — `""`, `"en_US"`, `"  "` — which `getCanonicalLocales`
+ *   rejects and `DateTimeFormat` would throw on.
+ *
+ * A well-formed but unknown tag (`"xx"`) is neither: the platform resolves it
+ * deterministically, so it is passed through untouched and unlogged.
+ */
+function usableLocale(locale: string): string {
+  if (typeof locale !== "string") {
     warnUnrenderableLocale(locale);
-    return new Intl.DateTimeFormat(routing.defaultLocale, options).format(date);
+    return routing.defaultLocale;
+  }
+  try {
+    Intl.getCanonicalLocales(locale);
+    return locale;
+  } catch {
+    warnUnrenderableLocale(locale);
+    return routing.defaultLocale;
   }
 }
 
