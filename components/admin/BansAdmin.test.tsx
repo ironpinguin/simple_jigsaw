@@ -137,6 +137,30 @@ describe("BansAdmin add", () => {
     expect(container.textContent).toContain(messages.admin.listStale);
   });
 
+  it("keeps warning that the list is behind after a later add succeeds", async () => {
+    // The first add's row never made it into the table, and adding a different
+    // ban does nothing to put it there. Clearing the warning on the next action
+    // would hand the admin a table they have no reason to distrust and one row
+    // short — UsersAdmin only clears its own `stale` once a reload succeeded.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ unexpected: true }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ban: BAN }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    mount();
+    typeValue("lost.example");
+    await submit();
+    expect(container.textContent).toContain(messages.admin.listStale);
+
+    typeValue("spam.example");
+    await submit();
+
+    expect(container.textContent).toContain("spam.example");
+    expect(container.textContent).toContain(messages.admin.listStale);
+  });
+
   it("adds the returned ban to the table on success", async () => {
     vi.stubGlobal(
       "fetch",
@@ -164,8 +188,60 @@ describe("BansAdmin remove", () => {
     mount([BAN]);
     await clickRemove();
 
-    expect(container.querySelector(".error")?.textContent).toBe(messages.admin.banRemoveFailed);
+    expect(container.querySelector(".error")?.textContent).toContain("spam.example");
     expect(container.textContent).toContain("spam.example");
+  });
+
+  it("names the row it could not remove", async () => {
+    // One page-level message for a table of rows: "Removing failed." leaves the
+    // admin to guess which click it belongs to, and the next action wipes it.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({}), { status: 403 })),
+    );
+
+    mount([BAN, { ...BAN, id: "ban-2", value: "other.example" }]);
+    const second = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent === messages.admin.banRemove,
+    )[1] as HTMLButtonElement;
+    await act(async () => {
+      second.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.querySelector(".error")?.textContent).toContain("other.example");
+    expect(container.querySelector(".error")?.textContent).not.toContain("spam.example");
+  });
+
+  it("disables only the row being removed while the request is in flight", async () => {
+    // Otherwise a slow connection gives no sign the click registered — the same
+    // ambiguity this card is about, on the latency side instead of the error
+    // side — and the row can be submitted twice.
+    let release!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => pending),
+    );
+
+    mount([BAN, { ...BAN, id: "ban-2", value: "other.example" }]);
+    const [first, second] = [...container.querySelectorAll("button")].filter(
+      (b) => b.textContent === messages.admin.banRemove,
+    ) as HTMLButtonElement[];
+    act(() => {
+      first.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(first.disabled).toBe(true);
+    expect(second.disabled).toBe(false);
+
+    await act(async () => {
+      release(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      await pending;
+    });
+
+    expect(container.textContent).not.toContain("spam.example");
   });
 
   it("prefers the reason the server gave", async () => {
@@ -192,14 +268,15 @@ describe("BansAdmin remove", () => {
     mount([BAN]);
     await clickRemove();
 
-    expect(container.querySelector(".error")?.textContent).toBe(messages.admin.banRemoveFailed);
-    expect(container.textContent).toContain("spam.example");
+    expect(container.querySelector(".error")?.textContent).toContain("spam.example");
+    expect(container.querySelectorAll("tbody tr").length).toBe(1);
   });
 
   it("drops the row when the server accepts", async () => {
+    // What the route actually answers (app/api/admin/bans/[id]/route.ts).
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(null, { status: 204 })),
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
     );
 
     mount([BAN]);

@@ -21,6 +21,7 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
   const [err, setErr] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   /** A row is only safe to render once every field the table reads is there. */
   function isBanRow(value: unknown): value is BanRow {
@@ -36,7 +37,6 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    setStale(false);
     setBusy(true);
     try {
       const res = await tryFetch("admin", "/api/admin/bans", {
@@ -60,6 +60,9 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
       // blanking the whole page.
       if (!isBanRow(data?.ban)) {
         console.error("[admin] the ban response carried no usable ban");
+        // Deliberately never cleared here: the row that went missing is still
+        // missing, and a later add that works says nothing about it. Only
+        // reloading the page — what the message asks for — rebuilds the table.
         setStale(true);
         return;
       }
@@ -71,17 +74,24 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
     }
   }
 
-  async function remove(id: string) {
+  async function remove(ban: BanRow) {
     setErr(null);
-    const res = await tryFetch("admin", `/api/admin/bans/${id}`, { method: "DELETE" });
-    if (res?.ok) {
-      setBans((list) => list.filter((b) => b.id !== id));
-      return;
+    setRemovingId(ban.id);
+    try {
+      const res = await tryFetch("admin", `/api/admin/bans/${ban.id}`, { method: "DELETE" });
+      if (res?.ok) {
+        setBans((list) => list.filter((b) => b.id !== ban.id));
+        return;
+      }
+      // Without this the row simply stayed: no message, no log, and no way for
+      // the admin to tell a refusal from a click that never registered. Named,
+      // because one page-level line above a table of rows otherwise leaves them
+      // to guess which click it belongs to.
+      const data = await res?.json().catch(() => null);
+      setErr(data?.error || t("banRemoveFailed", { value: ban.value }));
+    } finally {
+      setRemovingId(null);
     }
-    // Without this the row simply stayed: no message, no log, and no way for
-    // the admin to tell a refusal from a click that never registered.
-    const data = await res?.json().catch(() => null);
-    setErr(data?.error || t("banRemoveFailed"));
   }
 
   return (
@@ -142,7 +152,12 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
                 <td>{b.type === "EMAIL" ? t("banTypeEmail") : t("banTypeDomain")}</td>
                 <td className="muted">{formatDateUtc(b.createdAt, locale)}</td>
                 <td>
-                  <button className="button secondary" type="button" onClick={() => remove(b.id)}>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    disabled={removingId === b.id}
+                    onClick={() => remove(b)}
+                  >
                     {t("banRemove")}
                   </button>
                 </td>

@@ -217,7 +217,7 @@
     "banTypeEmail": "E-Mail",
     "banAdd": "Bannen",
     "banAddFailed": "Hinzufügen fehlgeschlagen.",
-    "banRemoveFailed": "Entfernen fehlgeschlagen.",
+    "banRemoveFailed": "Entfernen von {value} fehlgeschlagen.",
     "banColValue": "Wert",
     "banColType": "Typ",
     "banColSince": "Seit (UTC)",
