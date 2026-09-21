@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release pages now link the changelog instead of naming the file in passing, so
   the page a release lands on says where to read what shipped. The link points at
   the changelog as it stood for that tag, not at the current one. (#94)
+- Locale routing moved to the `proxy` file convention Next 16 replaced
+  `middleware.ts` with. What it does is unchanged — `/` still redirects to a
+  language, the `/de` `/en` `/it` prefixes and the `NEXT_LOCALE` cookie behave
+  exactly as before — but it now runs in the Node.js server process instead of
+  the Edge runtime, and `next dev` and `next build` no longer print a
+  deprecation warning on every start. Nothing to configure when deploying. (#85)
 
 ## [0.7.0] - 2026-09-20
 
