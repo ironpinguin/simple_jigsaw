@@ -217,6 +217,7 @@
     "banTypeEmail": "Email",
     "banAdd": "Ban",
     "banAddFailed": "Adding failed.",
+    "banRemoveFailed": "Removing {value} failed.",
     "banColValue": "Value",
     "banColType": "Type",
     "banColSince": "Since (UTC)",

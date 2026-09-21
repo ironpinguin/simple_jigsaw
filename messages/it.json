@@ -217,6 +217,7 @@
     "banTypeEmail": "E-mail",
     "banAdd": "Blocca",
     "banAddFailed": "Aggiunta non riuscita.",
+    "banRemoveFailed": "Rimozione di {value} non riuscita.",
     "banColValue": "Valore",
     "banColType": "Tipo",
     "banColSince": "Dal (UTC)",

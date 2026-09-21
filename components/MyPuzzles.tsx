@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
+import { tryFetch } from "@/lib/try-fetch";
 
 interface PuzzleSummary {
   id: string;
@@ -30,23 +31,11 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
     }
   }
 
-  // Catches only the network call — a bug in the response handling must not
-  // be reported to the user as a failed request (the request may well have
-  // succeeded by then).
-  async function tryFetch(input: string, init?: RequestInit): Promise<Response | null> {
-    try {
-      return await fetch(input, init);
-    } catch (err) {
-      console.error(`[my] request to ${input} failed:`, err);
-      return null;
-    }
-  }
-
   async function remove(id: string) {
     if (!confirm(t("confirmDelete"))) return;
     setBusyId(id);
     try {
-      const res = await tryFetch(`/api/puzzles/${id}`, { method: "DELETE" });
+      const res = await tryFetch("my", `/api/puzzles/${id}`, { method: "DELETE" });
       if (!res) {
         alert(t("deleteFailed"));
       } else if (res.ok) {
@@ -65,7 +54,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
   async function toggleVisibility(id: string, isPublic: boolean) {
     setBusyId(id);
     try {
-      const res = await tryFetch(`/api/puzzles/${id}`, {
+      const res = await tryFetch("my", `/api/puzzles/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isPublic }),
