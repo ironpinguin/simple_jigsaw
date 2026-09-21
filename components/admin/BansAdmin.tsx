@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDateUtc } from "@/lib/dates";
+import { tryFetch } from "@/lib/try-fetch";
 
 interface BanRow {
   id: string;
@@ -18,36 +19,76 @@ export default function BansAdmin({ initial }: { initial: BanRow[] }) {
   const [value, setValue] = useState("");
   const [type, setType] = useState<"EMAIL" | "DOMAIN">("DOMAIN");
   const [err, setErr] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  /** A row is only safe to render once every field the table reads is there. */
+  function isBanRow(value: unknown): value is BanRow {
+    const row = value as Partial<BanRow> | null;
+    return (
+      typeof row?.id === "string" &&
+      typeof row.value === "string" &&
+      typeof row.type === "string" &&
+      typeof row.createdAt === "string"
+    );
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    setStale(false);
     setBusy(true);
-    const res = await fetch("/api/admin/bans", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value, type }),
-    });
-    setBusy(false);
-    const data = await res.json().catch(() => ({}));
-    if (res.ok) {
-      setBans((list) => [data.ban, ...list]);
+    try {
+      const res = await tryFetch("admin", "/api/admin/bans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ value, type }),
+      });
+      const data = await res?.json().catch((parseError) => {
+        console.error("[admin] the ban response could not be parsed:", parseError);
+        return null;
+      });
+      if (!res?.ok) {
+        setErr(data?.error || t("banAddFailed"));
+        return;
+      }
       setValue("");
-    } else {
-      setErr(data.error || t("banAddFailed"));
+      // The ban exists either way — the server said 2xx — so an unusable body
+      // is a table that cannot show it, not an add that failed. Saying
+      // "adding failed" here would be a lie the admin acts on; pushing the row
+      // unchecked puts `undefined` in the list and throws on `b.value` below,
+      // blanking the whole page.
+      if (!isBanRow(data?.ban)) {
+        console.error("[admin] the ban response carried no usable ban");
+        setStale(true);
+        return;
+      }
+      setBans((list) => [data.ban, ...list]);
+    } finally {
+      // In the finally so a request that never reaches the server cannot leave
+      // the form disabled with nothing to explain it.
+      setBusy(false);
     }
   }
 
   async function remove(id: string) {
-    const res = await fetch(`/api/admin/bans/${id}`, { method: "DELETE" });
-    if (res.ok) setBans((list) => list.filter((b) => b.id !== id));
+    setErr(null);
+    const res = await tryFetch("admin", `/api/admin/bans/${id}`, { method: "DELETE" });
+    if (res?.ok) {
+      setBans((list) => list.filter((b) => b.id !== id));
+      return;
+    }
+    // Without this the row simply stayed: no message, no log, and no way for
+    // the admin to tell a refusal from a click that never registered.
+    const data = await res?.json().catch(() => null);
+    setErr(data?.error || t("banRemoveFailed"));
   }
 
   return (
     <div>
       <p className="muted">{t("bansDesc")}</p>
       {err && <p className="error">{err}</p>}
+      {stale && <p className="error">{t("listStale")}</p>}
 
       <form className="card" onSubmit={add} style={{ maxWidth: 520, marginBottom: 24 }}>
         <h3 style={{ marginTop: 0 }}>{t("banAddTitle")}</h3>

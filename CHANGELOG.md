@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The ban list in **Administration → Bans** now says when something goes wrong.
+  Adding a ban while the connection was down left the *Ban* button greyed out
+  for good with nothing on screen to explain it — the form had to be reloaded to
+  be usable again. A removal that the server refused did nothing at all: the row
+  stayed and no message appeared, so there was no way to tell a refusal from a
+  click that had not registered. Both now report what happened and leave the
+  page usable, and a reply the browser cannot make sense of can no longer blank
+  the whole admin page. (#56)
 - An invitation or confirmation link is no longer used up when the activation it
   authorises fails. Clicking a valid invite and getting an error — the account
   had been deleted, the address had since been banned, or the write itself

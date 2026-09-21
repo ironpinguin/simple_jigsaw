@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { formatDateTimeUtc } from "@/lib/dates";
+import { tryFetch } from "@/lib/try-fetch";
 import { isReportCategory, type ReportDecision, type ReportStatus } from "@/lib/reports";
 
 export interface ReportRow {
@@ -33,17 +34,6 @@ export default function ReportsAdmin({
   const [resolved, setResolved] = useState(initialResolved);
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // Catches only the network call — a bug in the response handling must not
-  // be reported as a failed request (same pattern as MyPuzzles).
-  async function tryFetch(input: string, init?: RequestInit): Promise<Response | null> {
-    try {
-      return await fetch(input, init);
-    } catch (err) {
-      console.error(`[admin] request to ${input} failed:`, err);
-      return null;
-    }
-  }
-
   // Mirrors what the server did: move the reports out of the open list,
   // stamp decision + timestamp, drop the reporter contact (anonymized).
   function resolveLocally(ids: Set<string>, status: ReportDecision) {
@@ -65,7 +55,9 @@ export default function ReportsAdmin({
     if (!confirm(t("confirmTakedown"))) return;
     setBusyId(report.id);
     try {
-      const res = await tryFetch(`/api/admin/puzzles/${report.puzzleId}`, { method: "DELETE" });
+      const res = await tryFetch("admin", `/api/admin/puzzles/${report.puzzleId}`, {
+        method: "DELETE",
+      });
       if (res?.ok) {
         // The takedown succeeded, but the owner may not know: tell the admin
         // to contact them manually instead of pretending everything worked.
@@ -95,7 +87,7 @@ export default function ReportsAdmin({
   async function dismiss(report: ReportRow) {
     setBusyId(report.id);
     try {
-      const res = await tryFetch(`/api/admin/reports/${report.id}`, {
+      const res = await tryFetch("admin", `/api/admin/reports/${report.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "dismiss" }),
