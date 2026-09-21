@@ -41,7 +41,9 @@ const ORPHAN: UserRow = {
   role: "USER",
   verified: false,
   hasPassword: false,
-  createdAt: "2026-08-07T10:00:00.000Z",
+  // The far side of midnight from the suite's zone, so a call site that drops
+  // the UTC pin renders the previous day and the assertion below fails (#55).
+  createdAt: "2026-08-07T02:30:00.000Z",
 };
 
 function mount(initial: UserRow[] = []) {
@@ -84,6 +86,17 @@ async function click(button: HTMLButtonElement) {
     button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 }
+
+describe("UsersAdmin timestamps", () => {
+  it("shows the signup date in UTC, not the runtime's zone", () => {
+    // The timestamp was a fixture input no assertion read, so reverting this
+    // call site to toLocaleDateString left the suite green (#55).
+    mount([ORPHAN]);
+
+    expect(container.textContent).toContain("Aug 7, 2026");
+    expect(container.textContent).not.toContain("Aug 6, 2026");
+  });
+});
 
 describe("UsersAdmin invite form", () => {
   it("reloads the list when the invite fails, so the stranded row is visible", async () => {

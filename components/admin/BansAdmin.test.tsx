@@ -33,7 +33,10 @@ const BAN = {
   id: "ban-1",
   value: "spam.example",
   type: "DOMAIN",
-  createdAt: "2026-08-07T10:00:00.000Z",
+  // See the components project in vitest.config.ts: 02:30 UTC is the previous
+  // day in the suite's zone, so a call site formatting in the runtime's zone
+  // renders "Aug 6" and the date assertion below fails (#55).
+  createdAt: "2026-08-07T02:30:00.000Z",
 };
 
 function mount(initial = [] as (typeof BAN)[]) {
@@ -79,6 +82,19 @@ async function clickRemove() {
 function submitButton() {
   return container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
 }
+
+describe("BansAdmin rendering", () => {
+  it("shows the value, the type and the date the ban was added in UTC", () => {
+    // This component had no test file at all until #56, and nothing proved it
+    // called the shared formatter rather than formatting in the runtime's zone.
+    mount([BAN]);
+
+    expect(container.textContent).toContain("spam.example");
+    expect(container.textContent).toContain(messages.admin.banTypeDomain);
+    expect(container.textContent).toContain("Aug 7, 2026");
+    expect(container.textContent).not.toContain("Aug 6, 2026");
+  });
+});
 
 describe("BansAdmin add", () => {
   it("re-enables the form and says so when the request never reaches the server", async () => {

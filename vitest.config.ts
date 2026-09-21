@@ -49,6 +49,14 @@ export default defineConfig({
         test: {
           name: "components",
           environment: "jsdom",
+          // Same reasoning as the lib project above, and the same zone: a
+          // component that formats in the *runtime's* zone is indistinguishable
+          // from one that pins UTC while the runner is already UTC, which is how
+          // the hydration bug in #38 stayed invisible to a green suite. The
+          // admin date fixtures sit either side of midnight here on purpose, so
+          // a call site that drops `timeZone: "UTC"` renders the wrong day and
+          // fails (#55).
+          env: { TZ: "America/New_York" },
           include: ["components/**/*.test.{ts,tsx}"],
         },
       },
