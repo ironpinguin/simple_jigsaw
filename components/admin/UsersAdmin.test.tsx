@@ -46,10 +46,10 @@ const ORPHAN: UserRow = {
   createdAt: "2026-08-07T02:30:00.000Z",
 };
 
-function mount(initial: UserRow[] = []) {
+function mount(initial: UserRow[] = [], locale = "en") {
   act(() => {
     root.render(
-      <NextIntlClientProvider locale="en" messages={messages}>
+      <NextIntlClientProvider locale={locale} messages={messages}>
         <UsersAdmin initial={initial} currentUserId="admin-1" />
       </NextIntlClientProvider>,
     );
@@ -95,6 +95,16 @@ describe("UsersAdmin timestamps", () => {
 
     expect(container.textContent).toContain("Aug 7, 2026");
     expect(container.textContent).not.toContain("Aug 6, 2026");
+  });
+
+  it("formats the signup date in the locale being browsed", () => {
+    // The other half of the wiring: pinning the zone proves the formatter is
+    // called, not that the locale reaches it. A call site that hard-coded "en"
+    // renders identically under `en` and leaves a German admin reading dates in
+    // the wrong format.
+    mount([ORPHAN], "de");
+
+    expect(container.textContent).toContain("07.08.2026");
   });
 });
 

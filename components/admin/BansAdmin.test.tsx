@@ -39,10 +39,10 @@ const BAN = {
   createdAt: "2026-08-07T02:30:00.000Z",
 };
 
-function mount(initial = [] as (typeof BAN)[]) {
+function mount(initial = [] as (typeof BAN)[], locale = "en") {
   act(() => {
     root.render(
-      <NextIntlClientProvider locale="en" messages={messages}>
+      <NextIntlClientProvider locale={locale} messages={messages}>
         <BansAdmin initial={initial} />
       </NextIntlClientProvider>,
     );
@@ -93,6 +93,14 @@ describe("BansAdmin rendering", () => {
     expect(container.textContent).toContain(messages.admin.banTypeDomain);
     expect(container.textContent).toContain("Aug 7, 2026");
     expect(container.textContent).not.toContain("Aug 6, 2026");
+  });
+
+  it("formats the date in the locale being browsed", () => {
+    // Pinning the zone proves the formatter is called; this proves the locale
+    // reaches it. A hard-coded "en" is invisible under `en`.
+    mount([BAN], "de");
+
+    expect(container.textContent).toContain("07.08.2026");
   });
 });
 

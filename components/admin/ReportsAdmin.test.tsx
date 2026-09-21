@@ -81,7 +81,10 @@ describe("ReportsAdmin timestamps", () => {
     mount([], [{ ...OPEN, status: "DISMISSED", resolvedAt: "2026-08-08T02:45:00.000Z" }]);
 
     expect(container.textContent).toContain("Aug 8, 2026, 2:45:00 AM UTC");
-    expect(container.textContent).not.toContain("Aug 7, 2026, 10:45");
+    // Broad on purpose: the exact local rendering depends on the suite zone's
+    // offset, so spelling it out would keep passing while asserting nothing if
+    // that zone ever changed.
+    expect(container.textContent).not.toContain("Aug 7");
   });
 
   it("formats the timestamp in the locale being browsed", () => {
