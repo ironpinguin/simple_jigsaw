@@ -11,6 +11,14 @@ export type ClaimRefusal = "invalid" | "unavailable";
 /** The outcome of a redemption. The row is gone if and only if `ok` is true. */
 export type TokenClaim = { ok: true; userId: string } | { ok: false; reason: ClaimRefusal };
 
+/**
+ * The slice of the Prisma client a claim touches. Narrow on purpose, so a caller
+ * inside `prisma.$transaction` can hand `consumeToken` the transaction's own
+ * client: a delete that ran on a second connection would commit by itself and
+ * outlive the rollback meant to hand a failed activation its link back (#50).
+ */
+export type TokenDb = Pick<typeof prisma, "verificationToken">;
+
 type ClaimState = {
   /** Failed claims since the last delete that actually removed a row. */
   failures: number;
@@ -131,9 +139,18 @@ export async function revokeTokens(userId: string, type: TokenKind): Promise<num
  *   only minted at registration and INVITE only by an admin, so a holder who
  *   keeps hitting this needs an operator — `tokenClaimStatus` and the log line
  *   below are how the operator finds out.
+ *
+ * Given a transaction's client in `db`, "spent" means spent once that
+ * transaction commits: a caller that rolls back hands the link back intact.
+ * That is how the activation routes keep a failure after the claim from leaving
+ * an account nobody but an admin can rescue (#50).
  */
-export async function consumeToken(token: string, type: TokenKind): Promise<TokenClaim> {
-  const row = await prisma.verificationToken.findUnique({ where: { token } });
+export async function consumeToken(
+  token: string,
+  type: TokenKind,
+  db: TokenDb = prisma,
+): Promise<TokenClaim> {
+  const row = await db.verificationToken.findUnique({ where: { token } });
   if (!row || row.type !== type) return { ok: false, reason: "invalid" };
 
   let claimed: number;
@@ -142,7 +159,7 @@ export async function consumeToken(token: string, type: TokenKind): Promise<Toke
     // clicked leaves nothing behind either. `type` is redundant with the guard
     // above — kept so the delete cannot outlive that check if this function is
     // ever reordered.
-    ({ count: claimed } = await prisma.verificationToken.deleteMany({ where: { token, type } }));
+    ({ count: claimed } = await db.verificationToken.deleteMany({ where: { token, type } }));
   } catch (error) {
     claims.failures += 1;
     claims.lastFailureAt = Date.now();

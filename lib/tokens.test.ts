@@ -14,7 +14,7 @@ vi.mock("./db", () => ({
 }));
 vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
 
-import { consumeToken, createToken, revokeTokens, tokenClaimStatus } from "./tokens";
+import { consumeToken, createToken, revokeTokens, tokenClaimStatus, type TokenDb } from "./tokens";
 import { tokenExpiry } from "./token-ttl";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
@@ -118,6 +118,31 @@ describe("consumeToken", () => {
       userId: "user-1",
     });
     expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "EMAIL_VERIFY" } });
+  });
+
+  it("claims through the client it is given rather than the module's own", async () => {
+    // What lets a route put the claim inside a transaction (#50): the delete has
+    // to run on the transaction's connection, or the rollback that hands a
+    // failed activation its link back would have nothing to undo.
+    const txFindUnique = vi.fn().mockResolvedValue(row);
+    const txDeleteMany = vi.fn().mockResolvedValue({ count: 1 });
+    // Cast because TokenDb is the real delegate type, not a structural stand-in:
+    // keeping it exact is what stops a route handing `consumeToken` something
+    // that is not the transaction's client. A double only needs the two calls.
+    const tx = {
+      verificationToken: { findUnique: txFindUnique, deleteMany: txDeleteMany },
+    } as unknown as TokenDb;
+
+    await expect(consumeToken("abc", "EMAIL_VERIFY", tx)).resolves.toEqual({
+      ok: true,
+      userId: "user-1",
+    });
+
+    expect(txDeleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "EMAIL_VERIFY" } });
+    // Not the module-level client: a claim that deleted on a second connection
+    // would commit on its own and survive the transaction rolling back.
+    expect(findUnique).not.toHaveBeenCalled();
+    expect(deleteMany).not.toHaveBeenCalled();
   });
 
   it("claims an INVITE by its own type", async () => {

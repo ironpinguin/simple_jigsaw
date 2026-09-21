@@ -9,18 +9,46 @@ const {
   checkEmailBannedMock,
   resolveRequestLocaleMock,
   resolveBrowserLocaleMock,
-} =
-  vi.hoisted(() => ({
-    userFindUnique: vi.fn(),
-    userUpdate: vi.fn(),
+  transaction,
+  tx,
+  txState,
+} = vi.hoisted(() => {
+  const userFindUnique = vi.fn();
+  const userUpdate = vi.fn();
+  const tx = { user: { findUnique: userFindUnique, update: userUpdate } };
+  // Prisma's own rollback cannot be exercised against a mock, so the double
+  // records the one thing that stands in for it: whether the callback came back
+  // or threw. A thrown callback is exactly what makes Prisma roll the claim
+  // back, so "rolledBack" here means "the real client would have undone it".
+  const txState = { committed: 0, rolledBack: 0 };
+  const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => {
+    try {
+      const result = await fn(tx);
+      txState.committed += 1;
+      return result;
+    } catch (error) {
+      txState.rolledBack += 1;
+      throw error;
+    }
+  });
+  return {
+    userFindUnique,
+    userUpdate,
     consumeTokenMock: vi.fn(),
     checkEmailBannedMock: vi.fn(),
     resolveRequestLocaleMock: vi.fn(),
     resolveBrowserLocaleMock: vi.fn(),
-  }));
+    transaction,
+    tx,
+    txState,
+  };
+});
 
 vi.mock("@/lib/db", () => ({
-  prisma: { user: { findUnique: userFindUnique, update: userUpdate } },
+  prisma: {
+    user: { findUnique: userFindUnique, update: userUpdate },
+    $transaction: transaction,
+  },
 }));
 vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: checkEmailBannedMock }));
@@ -51,6 +79,8 @@ function callPost(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  txState.committed = 0;
+  txState.rolledBack = 0;
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
   userFindUnique.mockResolvedValue({ id: "user-1", email: "invited@example.com" });
   checkEmailBannedMock.mockResolvedValue(false);
@@ -79,7 +109,7 @@ describe("POST /api/invite", () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ ok: true });
-    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "INVITE");
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "INVITE", tx);
 
     const { where, data } = userUpdate.mock.calls[0][0];
     expect(where).toEqual({ id: "user-1" });
@@ -160,5 +190,103 @@ describe("POST /api/invite", () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "termsNotAccepted" });
     expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the invitation claimable when the activating write fails", async () => {
+    // The symptom #50 opens with: the claim is irreversible and lands before the
+    // work it authorises, so a write that threw left the account unactivated
+    // with the link already dead. INVITE is minted only by an admin and a second
+    // registration answers 409, so nothing but an operator could rescue it.
+    userUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
+
+    await expect(callPost(VALID)).rejects.toThrow("SQLITE_BUSY");
+
+    expect(txState.rolledBack).toBe(1);
+    expect(txState.committed).toBe(0);
+  });
+
+  it("does not burn the invitation when the invited account has gone", async () => {
+    userFindUnique.mockResolvedValue(null);
+
+    await callPost(VALID);
+
+    expect(txState.rolledBack).toBe(1);
+    expect(txState.committed).toBe(0);
+  });
+
+  it("does not burn the invitation when the address has since been banned", async () => {
+    // A ban is a moderation decision that can be reversed; the link dying with
+    // it is not. Unbanning should leave the original invitation usable.
+    checkEmailBannedMock.mockResolvedValue(true);
+
+    await callPost(VALID);
+
+    expect(txState.rolledBack).toBe(1);
+    expect(txState.committed).toBe(0);
+  });
+
+  it("claims the invitation on the transaction's own client", async () => {
+    // The claim has to run on the connection the rollback governs; on any other
+    // one the delete commits by itself and the invitation is gone regardless.
+    await callPost(VALID);
+
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "INVITE", tx);
+    expect(checkEmailBannedMock).toHaveBeenCalledWith("invited@example.com", tx);
+    expect(txState.committed).toBe(1);
+  });
+
+  it("hashes the password before opening the transaction", async () => {
+    // bcrypt at cost 10 is ~100ms of CPU. Held inside the transaction it would
+    // sit on a write lock for that long — on SQLite, blocking every other
+    // writer — for work that needs no database at all.
+    const hash = vi.spyOn(bcrypt, "hash");
+
+    await callPost(VALID);
+
+    expect(hash).toHaveBeenCalled();
+    expect(hash.mock.invocationCallOrder[0]).toBeLessThan(transaction.mock.invocationCallOrder[0]);
+  });
+
+  it("never answers ok for a refusal it does not recognise", async () => {
+    // The switch over the refusal reasons has no safe fallthrough: the success
+    // response sits right after it, so a reason added to the union and not to
+    // the switch would activate nobody and report success. An unknown refusal
+    // has to fail loudly instead.
+    consumeTokenMock.mockResolvedValue({ ok: false, reason: "something-new" });
+
+    await expect(callPost(VALID)).rejects.toThrow();
+
+    expect(userUpdate).not.toHaveBeenCalled();
+  });
+
+  it("names the account in the log when the invited account has gone", async () => {
+    // An operator answering "my invite does not work" gets a 404 in an access
+    // log and nothing else unless the account is named here.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    userFindUnique.mockResolvedValue(null);
+
+    await callPost(VALID);
+
+    const logged = [...warn.mock.calls, ...error.mock.calls].map((args) => String(args[0]));
+    expect(logged.some((line) => line.includes("user-1"))).toBe(true);
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("names the account in the log when the address has since been banned", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    checkEmailBannedMock.mockResolvedValue(true);
+
+    await callPost(VALID);
+
+    const logged = [...warn.mock.calls, ...error.mock.calls].map((args) => String(args[0]));
+    expect(logged.some((line) => line.includes("user-1"))).toBe(true);
+    // Never the address itself: this line lands in an operator's log for an
+    // account that may since have asked to be erased.
+    expect(logged.some((line) => line.includes("invited@example.com"))).toBe(false);
+    warn.mockRestore();
+    error.mockRestore();
   });
 });

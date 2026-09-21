@@ -1,11 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { userUpdate, consumeTokenMock } = vi.hoisted(() => ({
-  userUpdate: vi.fn(),
-  consumeTokenMock: vi.fn(),
-}));
+const { userUpdate, consumeTokenMock, transaction, tx, txState } = vi.hoisted(() => {
+  const userUpdate = vi.fn();
+  const tx = { user: { update: userUpdate } };
+  // Prisma's own rollback cannot be exercised against a mock, so the double
+  // records the one thing that stands in for it: whether the callback came back
+  // or threw. A thrown callback is exactly what makes Prisma roll the claim
+  // back, so "rolledBack" here means "the real client would have undone it".
+  const txState = { committed: 0, rolledBack: 0 };
+  const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => {
+    try {
+      const result = await fn(tx);
+      txState.committed += 1;
+      return result;
+    } catch (error) {
+      txState.rolledBack += 1;
+      throw error;
+    }
+  });
+  return { userUpdate, consumeTokenMock: vi.fn(), transaction, tx, txState };
+});
 
-vi.mock("@/lib/db", () => ({ prisma: { user: { update: userUpdate } } }));
+vi.mock("@/lib/db", () => ({
+  prisma: { user: { update: userUpdate }, $transaction: transaction },
+}));
 vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
 // The key rather than the translation: these assertions are about which message
 // the route picks, and pinning the German copy would break on any rewording.
@@ -25,6 +43,8 @@ function callPost(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  txState.committed = 0;
+  txState.rolledBack = 0;
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
   userUpdate.mockResolvedValue({});
 });
@@ -35,7 +55,7 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ ok: true });
-    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY");
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY", tx);
     expect(userUpdate).toHaveBeenCalledWith({
       where: { id: "user-1" },
       data: { emailVerified: expect.any(Date) },
@@ -90,5 +110,27 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(400);
     expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the link claimable when the confirming write fails", async () => {
+    // #50: the claim used to be irreversible and to land before the work it
+    // authorises, so a write that threw here left the address unconfirmed with
+    // the token already gone — and EMAIL_VERIFY is only minted at registration,
+    // which a second attempt answers 409. Nothing brought the link back.
+    userUpdate.mockRejectedValue(new Error("SQLITE_BUSY"));
+
+    await expect(callPost({ token: "tok" })).rejects.toThrow("SQLITE_BUSY");
+
+    expect(txState.rolledBack).toBe(1);
+    expect(txState.committed).toBe(0);
+  });
+
+  it("claims the token on the transaction's own client", async () => {
+    // The claim has to run on the connection the rollback governs; on any other
+    // one the delete commits by itself and the link is gone regardless.
+    await callPost({ token: "tok" });
+
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok", "EMAIL_VERIFY", tx);
+    expect(txState.committed).toBe(1);
   });
 });
