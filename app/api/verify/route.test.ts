@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { userUpdate, consumeTokenMock, transaction, tx, txState } = vi.hoisted(() => {
+const { userUpdate, consumeTokenMock, recordClaimFailureMock, transaction, tx, txState } =
+  vi.hoisted(() => {
   const userUpdate = vi.fn();
   const tx = { user: { update: userUpdate } };
   // Prisma's own rollback cannot be exercised against a mock, so the double
@@ -18,13 +19,23 @@ const { userUpdate, consumeTokenMock, transaction, tx, txState } = vi.hoisted(()
       throw error;
     }
   });
-  return { userUpdate, consumeTokenMock: vi.fn(), transaction, tx, txState };
-});
+  return {
+    userUpdate,
+    consumeTokenMock: vi.fn(),
+    recordClaimFailureMock: vi.fn(),
+    transaction,
+    tx,
+      txState,
+    };
+  });
 
 vi.mock("@/lib/db", () => ({
   prisma: { user: { update: userUpdate }, $transaction: transaction },
 }));
-vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
+vi.mock("@/lib/tokens", () => ({
+  consumeToken: consumeTokenMock,
+  recordClaimFailure: recordClaimFailureMock,
+}));
 // The key rather than the translation: these assertions are about which message
 // the route picks, and pinning the German copy would break on any rewording.
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
@@ -110,6 +121,30 @@ describe("POST /api/verify", () => {
 
     expect(res.status).toBe(400);
     expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 when the transaction itself could not be run", async () => {
+    // P2028 comes out of `$transaction`, not out of `consumeToken`, so it would
+    // otherwise escape as a bare 500 — for a link that was never spent and that
+    // a retry may well redeem.
+    transaction.mockRejectedValueOnce(
+      Object.assign(new Error("Unable to start a transaction in the given time"), {
+        code: "P2028",
+      }),
+    );
+
+    const res = await callPost({ token: "tok" });
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
+    expect(recordClaimFailureMock).toHaveBeenCalledWith("EMAIL_VERIFY", expect.anything());
+  });
+
+  it("still fails loudly when the transaction throws something unexpected", async () => {
+    transaction.mockRejectedValueOnce(new TypeError("undefined is not a function"));
+
+    await expect(callPost({ token: "tok" })).rejects.toThrow(TypeError);
+    expect(recordClaimFailureMock).not.toHaveBeenCalled();
   });
 
   it("leaves the link claimable when the confirming write fails", async () => {

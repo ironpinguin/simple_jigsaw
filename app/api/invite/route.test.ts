@@ -5,6 +5,8 @@ import { TERMS_VERSION } from "@/lib/legal";
 const {
   userFindUnique,
   userUpdate,
+  tokenFindFirst,
+  recordClaimFailureMock,
   consumeTokenMock,
   checkEmailBannedMock,
   resolveRequestLocaleMock,
@@ -15,6 +17,7 @@ const {
 } = vi.hoisted(() => {
   const userFindUnique = vi.fn();
   const userUpdate = vi.fn();
+  const tokenFindFirst = vi.fn();
   const tx = { user: { findUnique: userFindUnique, update: userUpdate } };
   // Prisma's own rollback cannot be exercised against a mock, so the double
   // records the one thing that stands in for it: whether the callback came back
@@ -34,6 +37,8 @@ const {
   return {
     userFindUnique,
     userUpdate,
+    tokenFindFirst,
+    recordClaimFailureMock: vi.fn(),
     consumeTokenMock: vi.fn(),
     checkEmailBannedMock: vi.fn(),
     resolveRequestLocaleMock: vi.fn(),
@@ -47,10 +52,14 @@ const {
 vi.mock("@/lib/db", () => ({
   prisma: {
     user: { findUnique: userFindUnique, update: userUpdate },
+    verificationToken: { findFirst: tokenFindFirst },
     $transaction: transaction,
   },
 }));
-vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock }));
+vi.mock("@/lib/tokens", () => ({
+  consumeToken: consumeTokenMock,
+  recordClaimFailure: recordClaimFailureMock,
+}));
 vi.mock("@/lib/moderation", () => ({ checkEmailBanned: checkEmailBannedMock }));
 // The key rather than the translation: these assertions are about which message
 // the route picks, and pinning the German copy would break on any rewording.
@@ -82,6 +91,7 @@ beforeEach(() => {
   txState.committed = 0;
   txState.rolledBack = 0;
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
+  tokenFindFirst.mockResolvedValue({ id: "vt-1" });
   userFindUnique.mockResolvedValue({ id: "user-1", email: "invited@example.com" });
   checkEmailBannedMock.mockResolvedValue(false);
   userUpdate.mockResolvedValue({});
@@ -190,6 +200,61 @@ describe("POST /api/invite", () => {
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "termsNotAccepted" });
     expect(consumeTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("does not hash a password for a token that does not exist", async () => {
+    // bcrypt at cost 10 is ~100ms of CPU, and this route is unauthenticated,
+    // outside the proxy matcher and unthrottled. Hashing before the token is so
+    // much as looked up hands any caller that cost for a made-up token; the
+    // repo's own pattern is the cheap indexed read first (api/register).
+    tokenFindFirst.mockResolvedValue(null);
+    const hash = vi.spyOn(bcrypt, "hash");
+
+    const res = await callPost(VALID);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "inviteInvalid" });
+    expect(hash).not.toHaveBeenCalled();
+    // Cheap enough to skip the transaction too: nothing to claim.
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("answers 503 when the transaction itself could not be run", async () => {
+    // P2028 comes out of `$transaction`, not out of `consumeToken`, so it used
+    // to escape the refusal switch as a bare 500. The invitation is untouched
+    // and a retry may work — the same thing a failed claim means — and this is
+    // the answer an operator's monitoring already watches.
+    transaction.mockRejectedValueOnce(
+      Object.assign(new Error("Unable to start a transaction in the given time"), {
+        code: "P2028",
+      }),
+    );
+
+    const res = await callPost(VALID);
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
+  });
+
+  it("marks the redeem path degraded when the transaction could not be run", async () => {
+    // Without this the readiness probe keeps reporting tokens "ok" while every
+    // activation in the instance is failing — the exact blind spot
+    // tokenClaimStatus exists to close, and one a claim that never ran cannot
+    // record for itself.
+    transaction.mockRejectedValueOnce(Object.assign(new Error("timed out"), { code: "P2028" }));
+
+    await callPost(VALID);
+
+    expect(recordClaimFailureMock).toHaveBeenCalledWith("INVITE", expect.anything());
+  });
+
+  it("still fails loudly when the transaction throws something unexpected", async () => {
+    // Only the transient transaction errors become a retry. A bug in the route
+    // must not hide behind "try again" — it is a 500, with the link intact.
+    transaction.mockRejectedValueOnce(new TypeError("undefined is not a function"));
+
+    await expect(callPost(VALID)).rejects.toThrow(TypeError);
+    expect(recordClaimFailureMock).not.toHaveBeenCalled();
   });
 
   it("leaves the invitation claimable when the activating write fails", async () => {

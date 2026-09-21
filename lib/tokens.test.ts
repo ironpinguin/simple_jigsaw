@@ -14,7 +14,14 @@ vi.mock("./db", () => ({
 }));
 vi.mock("./retention", () => ({ maybePurgeExpiredTokens: maybePurge }));
 
-import { consumeToken, createToken, revokeTokens, tokenClaimStatus, type TokenDb } from "./tokens";
+import {
+  consumeToken,
+  createToken,
+  recordClaimFailure,
+  revokeTokens,
+  tokenClaimStatus,
+  type TokenDb,
+} from "./tokens";
 import { tokenExpiry } from "./token-ttl";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
@@ -251,6 +258,40 @@ describe("consumeToken", () => {
       ok: false,
       reason: "invalid",
     });
+  });
+});
+
+describe("recordClaimFailure", () => {
+  it("degrades the redeem path for a claim that never got to run", async () => {
+    // A transaction that cannot start throws around `consumeToken`, not inside
+    // it, so the claim records nothing for itself — and the readiness probe goes
+    // on reporting a healthy redeem path while every activation fails (#50).
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    recordClaimFailure("INVITE", new Error("Unable to start a transaction"));
+
+    expect(tokenClaimStatus()).toMatchObject({ failures: 1, degraded: true, lastFailureAt: NOW });
+    // Named the same way a failed delete is, so one grep finds both.
+    expect(String(error.mock.calls[0][0])).toContain("[tokens]");
+    expect(String(error.mock.calls[0][0])).toContain("INVITE");
+    error.mockRestore();
+  });
+
+  it("is cleared by the next claim that actually removes a row", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue({
+      token: "abc",
+      type: "EMAIL_VERIFY",
+      userId: "user-1",
+      expiresAt: new Date(NOW + 1000),
+    });
+
+    recordClaimFailure("EMAIL_VERIFY", new Error("timed out"));
+    expect(tokenClaimStatus().degraded).toBe(true);
+
+    await consumeToken("abc", "EMAIL_VERIFY");
+
+    expect(tokenClaimStatus().degraded).toBe(false);
   });
 });
 

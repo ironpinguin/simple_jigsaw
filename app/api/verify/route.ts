@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { consumeToken, type ClaimRefusal } from "@/lib/tokens";
+import { consumeToken, recordClaimFailure, type ClaimRefusal } from "@/lib/tokens";
+import { isTransientTransactionError } from "@/lib/prisma-errors";
 import { getErrorT } from "@/lib/i18n-server";
 
 const Schema = z.object({ token: z.string().min(1) });
@@ -39,8 +40,17 @@ export async function POST(request: Request) {
       });
     });
   } catch (error) {
-    // Anything else — a failed write, a lock timeout — is a 500 the way it
-    // always was. What changed is that the token survives it.
+    // A transaction that never started, or that ran out its deadline, throws
+    // here rather than inside the claim, and means the same thing a failed
+    // claim means: nothing was spent and a retry may work. Left as an unknown
+    // error it would be a bare 500, and the claim counters would stay clean
+    // while every confirmation in the instance failed.
+    if (isTransientTransactionError(error)) {
+      recordClaimFailure("EMAIL_VERIFY", error);
+      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
+    }
+    // Anything else — a failed write, a bug in here — is a 500. What changed is
+    // that the token survives it.
     if (!(error instanceof Refused)) throw error;
 
     // A claim that could not be attempted is not a bad link: the row is still

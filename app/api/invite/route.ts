@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { consumeToken, type ClaimRefusal } from "@/lib/tokens";
+import { consumeToken, recordClaimFailure, type ClaimRefusal } from "@/lib/tokens";
 import { checkEmailBanned } from "@/lib/moderation";
+import { isTransientTransactionError } from "@/lib/prisma-errors";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
 import { getErrorT, resolveBrowserLocale } from "@/lib/i18n-server";
@@ -31,6 +32,20 @@ export async function POST(request: Request) {
   const parsed = InviteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: t(signupErrorKey(parsed.error.issues)) }, { status: 400 });
+  }
+
+  // A cheap indexed read before the expensive part, the way api/register orders
+  // the same two steps. This route is unauthenticated, outside the proxy's
+  // matcher and unthrottled, so hashing first would hand any caller ~100ms of
+  // CPU per made-up token. Not the claim and not a precondition — purely a way
+  // to stop early; the authoritative single-use delete is still the one inside
+  // the transaction, so nothing here can be raced into an activation.
+  const known = await prisma.verificationToken.findFirst({
+    where: { token: parsed.data.token, type: "INVITE" },
+    select: { id: true },
+  });
+  if (!known) {
+    return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
   }
 
   // Both before the transaction, and deliberately so. bcrypt at cost 10 is
@@ -76,8 +91,19 @@ export async function POST(request: Request) {
       });
     });
   } catch (error) {
-    // Anything else — a failed write, a lock timeout — is a 500 the way it
-    // always was. What changed is that the invitation survives it.
+    // A transaction that never started, or that ran out its deadline, throws
+    // here rather than inside the claim — on the SQLite stack, whose single
+    // connection one activation holds for the length of the whole callback,
+    // that is the shape a second concurrent activation takes. It means exactly
+    // what a failed claim means: nothing was spent and a retry may work. Left
+    // as an unknown error it would be a bare 500, and the claim counters would
+    // stay clean while every activation in the instance failed.
+    if (isTransientTransactionError(error)) {
+      recordClaimFailure("INVITE", error);
+      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
+    }
+    // Anything else — a failed write, a bug in here — is a 500. What changed is
+    // that the invitation survives it.
     if (!(error instanceof Refused)) throw error;
 
     switch (error.reason) {

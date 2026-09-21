@@ -8,7 +8,11 @@ import { maybePurgeExpiredTokens } from "./retention";
 /** Why a redemption was refused. Only `unavailable` is worth retrying. */
 export type ClaimRefusal = "invalid" | "unavailable";
 
-/** The outcome of a redemption. The row is gone if and only if `ok` is true. */
+/**
+ * The outcome of a redemption. The row is gone if and only if `ok` is true —
+ * within the caller's transaction, which for a transactional caller is the
+ * whole story only once it commits. See `consumeToken`.
+ */
 export type TokenClaim = { ok: true; userId: string } | { ok: false; reason: ClaimRefusal };
 
 /**
@@ -71,6 +75,23 @@ export function tokenClaimStatus(): {
     lost: claims.lost,
     degraded: claims.failures > 0,
   };
+}
+
+/**
+ * Book a claim that could not be attempted at all, for a caller that knows the
+ * attempt failed before `consumeToken` could say so itself — a `$transaction`
+ * that never started or ran out its deadline throws around the claim, not
+ * inside it (#50). Without this the counters stay clean and the readiness probe
+ * keeps reporting a healthy redeem path while every activation in the instance
+ * is failing, which is the one thing `tokenClaimStatus` exists to prevent.
+ *
+ * Logged like the failure next door and cleared the same way: only a delete
+ * that actually removes a row proves the redeem path works again.
+ */
+export function recordClaimFailure(type: TokenKind, error: unknown): void {
+  claims.failures += 1;
+  claims.lastFailureAt = Date.now();
+  console.error(`[tokens] could not attempt a ${type} claim; refusing it:`, error);
 }
 
 export async function createToken(
@@ -144,6 +165,14 @@ export async function revokeTokens(userId: string, type: TokenKind): Promise<num
  * transaction commits: a caller that rolls back hands the link back intact.
  * That is how the activation routes keep a failure after the claim from leaving
  * an account nobody but an admin can rescue (#50).
+ *
+ * One consequence worth naming, because it reverses what this function does on
+ * its own: an expired row is deleted here *before* the expiry is read, so that
+ * a click removes the link whatever the verdict — but the verdict is `invalid`,
+ * and a transactional caller that refuses on it rolls that delete back. The row
+ * therefore survives an expired click and waits for the retention sweep instead
+ * (`maybePurgeExpiredTokens`). It is still expired and still refused; only the
+ * housekeeping moves.
  */
 export async function consumeToken(
   token: string,
