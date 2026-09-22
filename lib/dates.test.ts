@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTranslator } from "next-intl";
+import enMessages from "@/messages/en.json";
+import { TERMS_VERSION } from "@/lib/legal";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { DISPLAY_TIME_ZONE } from "./dates";
+import { routing } from "@/i18n/routing";
 import { formatDateTimeUtc, formatDateUtc } from "./dates";
 
 // The timestamp from the hydration mismatch in #38: 12:53:18 UTC, which the
@@ -120,5 +127,154 @@ describe("input that is not a timestamp", () => {
     expect(warn.mock.calls.map(([message]) => message)).toEqual([
       expect.stringContaining("[dates]"),
     ]);
+  });
+});
+
+describe("a locale tag the platform refuses", () => {
+  // `mockRestore()` at the end of a test is skipped when an assertion throws
+  // before it, which would leave console.warn stubbed for the rest of the file.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // The file promises to degrade rather than throw and delivered half of it:
+  // `iso` was guarded, `locale` — the second argument of the same expression —
+  // was not. `new Intl.DateTimeFormat("")` throws a RangeError, and a RangeError
+  // raised during a client render takes the page down, which is strictly worse
+  // than the hydration warning #38 was about (#57).
+  //
+  // Unreachable from today's callers: every one passes `useLocale()`, which
+  // i18n/routing.ts restricts to de/en/it. The next caller is the one that
+  // derives a locale from the NEXT_LOCALE cookie or an Accept-Language header.
+
+  it("falls back to the default locale instead of throwing", () => {
+    // "en_US" with an underscore is the shape a hand-built tag actually takes.
+    expect(() => formatDateUtc(ISO, "en_US")).not.toThrow();
+    expect(formatDateUtc(ISO, "en_US")).toBe(formatDateUtc(ISO, routing.defaultLocale));
+  });
+
+  it("falls back for an empty tag too", () => {
+    expect(formatDateUtc(ISO, "")).toBe(formatDateUtc(ISO, routing.defaultLocale));
+  });
+
+  it("keeps the zone pinned while falling back", () => {
+    // The fallback must not quietly drop the UTC pin along with the locale —
+    // that would trade a crash for the wrong day.
+    expect(formatDateTimeUtc(ISO, "en_US")).toContain("UTC");
+  });
+
+  it("says so on the console rather than falling back in silence", async () => {
+    // Same latch problem as the unrenderable-timestamp test above: the once
+    // flag lives at module scope, so this needs a module the tests before it
+    // have not already tripped, or it would pass or fail on test ordering.
+    vi.resetModules();
+    const { formatDateUtc: freshFormatDateUtc } = await import("./dates");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    freshFormatDateUtc(ISO, "en_US");
+    freshFormatDateUtc(ISO, "");
+
+    expect(warn.mock.calls.map(([message]) => message)).toEqual([
+      expect.stringContaining("[dates]"),
+    ]);
+    expect(String(warn.mock.calls[0][0])).toContain("en_US");
+    warn.mockRestore();
+  });
+
+  it("falls back for a tag this app does not ship, however well-formed", async () => {
+    // The dangerous half of "malformed". "xx" survives getCanonicalLocales and
+    // is then resolved by ICU to the *runtime's* locale — measured: the same
+    // call renders "August 5, 2026", "2026年8月5日", "5 agosto 2026" or
+    // "5. August 2026" depending only on the host's LANG. Server and browser
+    // disagree, which is #38 exactly, and NEXT_LOCALE is a cookie a visitor
+    // can set to anything.
+    vi.resetModules();
+    const { formatDateUtc: freshFormatDateUtc } = await import("./dates");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // The warning is the environment-independent half of this assertion: the
+    // rendering below also matches on a host whose own locale happens to be
+    // German, but only this guard can make the warning fire.
+    expect(warn).not.toHaveBeenCalled();
+    expect(freshFormatDateUtc(ISO, "xx")).toBe(formatDateUtc(ISO, routing.defaultLocale));
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("falls back when there is no locale at all", async () => {
+    // The one malformed locale that reproduces #38 rather than throwing:
+    // `new Intl.DateTimeFormat(undefined, …)` resolves to the *runtime's*
+    // locale, so the server pass and the hydration pass render different
+    // strings with nothing raised and nothing logged. A caller reading a
+    // missing NEXT_LOCALE cookie or an empty Accept-Language header hands over
+    // `undefined`, not `""`.
+    vi.resetModules();
+    const { formatDateUtc: freshFormatDateUtc } = await import("./dates");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    expect(freshFormatDateUtc(ISO, undefined as unknown as string)).toBe(
+      formatDateUtc(ISO, routing.defaultLocale),
+    );
+
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+/** The version stamp's calendar day as `{date, date, long}` renders it. */
+function dayIn(timeZone: string): string {
+  return new Intl.DateTimeFormat("en", { dateStyle: "long", timeZone }).format(
+    new Date(TERMS_VERSION),
+  );
+}
+
+describe("the zone next-intl formats in", () => {
+  // lib/dates.ts is not the only formatting path: a message using an ICU date
+  // argument — `{date, date, long}` — is formatted by next-intl and never
+  // touches this file. Without a `timeZone` in the request config that path
+  // reads the *runtime's* zone, which is the #38 mechanism in a place
+  // lib/dates.ts cannot reach (#54).
+
+  it("renders a version stamp on its own day, not the container's", async () => {
+    // TERMS_VERSION is a bare date, so `new Date` reads it as UTC midnight —
+    // the instant most likely to land on the previous day west of UTC. This
+    // suite runs in America/New_York, so an unpinned render says August 4.
+    const t = createTranslator({
+      locale: "en",
+      messages: enMessages,
+      timeZone: DISPLAY_TIME_ZONE,
+    });
+
+    // Derived, not spelled out: docs/terms-versioning.md says bumping
+    // TERMS_VERSION needs nothing else changed, and it should not fail a
+    // date-formatting suite that has no opinion about which version is current.
+    // Still load-bearing — the control below derives the day before and they
+    // must differ.
+    expect(t("legal.termsUpdated", { date: new Date(TERMS_VERSION) })).toBe(
+      `Last updated: ${dayIn(DISPLAY_TIME_ZONE)}`,
+    );
+  });
+
+  it("would render the day before without the pin", () => {
+    // The negative control: proof that the assertion above is load-bearing
+    // rather than passing because the runner happens to be UTC.
+    const unpinned = createTranslator({ locale: "en", messages: enMessages });
+
+    expect(unpinned("legal.termsUpdated", { date: new Date(TERMS_VERSION) })).toBe(
+      `Last updated: ${dayIn("America/New_York")}`,
+    );
+    // …and the two really are different days, or the assertion above would
+    // hold whatever the zone did.
+    expect(dayIn("America/New_York")).not.toBe(dayIn(DISPLAY_TIME_ZONE));
+  });
+
+  it("is the zone i18n/request.ts hands to next-intl", () => {
+    // next-intl's server build refuses to load under the test resolver, so the
+    // wiring is read from the source rather than executed. Weaker than running
+    // it, and the only thing that fails if the line is deleted.
+    const source = readFileSync(fileURLToPath(new URL("../i18n/request.ts", import.meta.url)), "utf8");
+
+    expect(source).toContain("DISPLAY_TIME_ZONE");
+    expect(source).toMatch(/timeZone:\s*DISPLAY_TIME_ZONE/);
   });
 });

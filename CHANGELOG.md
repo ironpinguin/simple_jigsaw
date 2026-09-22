@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- The *Last updated* date on the Terms and Privacy pages now shows the date the
+  document actually carries. An installation running west of UTC showed the day
+  before — 4 August where the terms say 5 August — because the date was
+  formatted in the server's own timezone rather than the one the version is
+  written in. The dates in the administration area were already pinned; this was
+  the second, separate formatting path. (#54)
 - The ban list in **Administration → Bans** now says when something goes wrong.
   Adding a ban while the connection was down left the *Ban* button greyed out
   for good with nothing on screen to explain it — the form had to be reloaded to
