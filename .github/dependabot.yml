@@ -32,6 +32,20 @@ updates:
       # The first run disproved it: thirteen accumulated majors arrived as a
       # single PR (#61), which is not reviewable at all. Grouping majors only
       # looks tidy while there are none pending.
+    ignore:
+      # Pinned to whatever next-intl depends on rather than to the newest
+      # release. This devDependency exists for one reason: so that
+      # lib/accept-language.negotiation.test.ts can compare our locale matcher
+      # against *the same copy* next-intl resolves. A range npm cannot dedupe
+      # with next-intl's nests a second copy, and the test then refuses to run
+      # — correctly, since it would be comparing two different matchers.
+      #
+      # 0.x ranges do not cross minor versions, so ^0.9.0 and next-intl's
+      # ^0.8.1 cannot share an install. Lift this when next-intl itself moves
+      # to 0.9; the test is the backstop either way, and it caught exactly this
+      # in the group PR that introduced the rule.
+      - dependency-name: "@formatjs/intl-localematcher"
+        versions: [">=0.9.0"]
     labels: [dependencies]
 
   # ---------------------------------------------------------------------------

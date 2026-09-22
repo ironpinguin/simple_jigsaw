@@ -19,7 +19,8 @@ const DEFAULT = routing.defaultLocale;
 
 /**
  * next-intl's `getAcceptLanguageLocale`, transcribed from
- * `next-intl/dist/esm/development/middleware/resolveLocale.js` (4.13.4).
+ * `next-intl/dist/esm/development/middleware/resolveLocale.js` (4.14.5 —
+ * re-read at that version, unchanged from 4.13.4).
  * Returns `undefined` when its matcher cannot decide — the case where the
  * middleware writes a cookie instead.
  */

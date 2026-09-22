@@ -4,8 +4,8 @@
 //
 // On a document navigation next-intl's middleware writes NEXT_LOCALE when the
 // locale being browsed differs from the one it negotiates from Accept-Language
-// (syncCookie, next-intl 4.13.4 — an unexported internal, so re-check it on
-// upgrade). A cookie is therefore the stronger signal and wins. Its absence
+// (syncCookie, next-intl 4.14.5 — an unexported internal, so re-check it on
+// upgrade; last confirmed at that version). A cookie is therefore the stronger signal and wins. Its absence
 // usually means the browser language already matches the locale being browsed,
 // which makes Accept-Language a better answer than the default — though a
 // cleared or blocked cookie looks the same, so this is a good guess rather than

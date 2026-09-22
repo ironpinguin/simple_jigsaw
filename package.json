@@ -40,7 +40,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.7",
-    "@formatjs/intl-localematcher": "^0.9.0",
+    "@formatjs/intl-localematcher": "^0.8.14",
     "@types/negotiator": "^0.6.4",
     "@types/node": "^26.6.2",
     "@types/nodemailer": "^8.0.2",
