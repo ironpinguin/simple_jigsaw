@@ -18,6 +18,7 @@
  * because the date-only string carries no zone of its own.
  */
 
+import { hasLocale } from "next-intl";
 import { routing } from "@/i18n/routing";
 
 /**
@@ -68,54 +69,56 @@ function format(iso: string, locale: string, options: Intl.DateTimeFormatOptions
 }
 
 /**
- * The tag to format with: the caller's, or the default when theirs is one
- * `Intl.DateTimeFormat` would refuse (#57).
+ * The tag to format with: the caller's, or the default when theirs is not one
+ * this app ships (#57).
  *
- * Checked rather than caught. A `try` around the construction would also
- * swallow the *other* thing Intl validates — `options` — and then retry with
- * the same options and fail identically, uncaught, having logged a perfectly
- * good locale as the culprit. A mistyped `DISPLAY_TIME_ZONE` is our bug and
- * belongs in a stack trace on the first render, not behind a message pointing
- * at the wrong argument.
+ * Membership, not validity. `Intl.DateTimeFormat` accepts far more than three
+ * locales, and what it does with the rest is the problem: a well-formed tag it
+ * has no data for — `"xx"`, or a real one a given runtime lacks — resolves to
+ * the *runtime's* own locale. Measured: one call renders "August 5, 2026",
+ * "2026年8月5日", "5 agosto 2026" or "5. August 2026" depending only on the
+ * host's LANG. Server and browser disagree, which is #38, and `NEXT_LOCALE` is
+ * a cookie a visitor can set to anything. Checking the tag is *parseable* would
+ * let all of that through; checking it is one of ours cannot.
  *
- * Two shapes get turned away, for opposite reasons:
+ * `undefined` is turned away by the same check, and is the case that made this
+ * necessary: Intl accepts it and resolves to the runtime's locale with nothing
+ * thrown and nothing logged. A caller reading a missing cookie or an empty
+ * Accept-Language header produces exactly that.
  *
- * - **Not a string.** `undefined` is the dangerous one: Intl accepts it and
- *   resolves to the *runtime's* locale, so the server pass and the hydration
- *   pass disagree — #38 again, silently, inside the guard meant to prevent it.
- *   A caller reading a missing cookie or an empty header produces exactly this.
- * - **A malformed tag** — `""`, `"en_US"`, `"  "` — which `getCanonicalLocales`
- *   rejects and `DateTimeFormat` would throw on.
+ * Blunt on purpose: `"en-GB"` falls back to German rather than to English,
+ * because this is the last line rather than a negotiator. A caller that wants
+ * `en` for `en-GB` should negotiate first — `matchAcceptLanguage` in
+ * lib/accept-language.ts does — and hand over the result.
  *
- * A well-formed but unknown tag (`"xx"`) is neither: the platform resolves it
- * deterministically, so it is passed through untouched and unlogged.
+ * Checked rather than caught, too. A `try` around the construction would also
+ * swallow the other thing Intl validates, `options`, and then retry with the
+ * same options and fail identically, uncaught, having logged a perfectly good
+ * locale as the culprit. A mistyped `DISPLAY_TIME_ZONE` is our bug and belongs
+ * in a stack trace on the first render.
  */
 function usableLocale(locale: string): string {
-  if (typeof locale !== "string") {
-    warnUnrenderableLocale(locale);
-    return routing.defaultLocale;
-  }
-  try {
-    Intl.getCanonicalLocales(locale);
-    return locale;
-  } catch {
-    warnUnrenderableLocale(locale);
-    return routing.defaultLocale;
-  }
+  if (hasLocale(routing.locales, locale)) return locale;
+  warnUnrenderableLocale(locale);
+  return routing.defaultLocale;
 }
 
 let warnedUnrenderableLocale = false;
 
 /**
- * Say once per process that a caller handed over a locale the platform cannot
- * parse. Once, for the reason `warnUnrenderable` gives: this runs per row.
+ * Say once per process that a caller handed over a locale this app does not
+ * ship. Once, for the reason `warnUnrenderable` gives: this runs per row.
+ *
+ * Not "invalid" — `"en-GB"` and `"xx"` are perfectly good tags — but rendering
+ * them is what makes the server and the browser disagree, so the message names
+ * what was actually wrong with it.
  */
 function warnUnrenderableLocale(locale: unknown): void {
   if (warnedUnrenderableLocale) return;
   warnedUnrenderableLocale = true;
   console.warn(
-    `[dates] falling back to ${routing.defaultLocale}: unusable locale tag ` +
-      `${JSON.stringify(locale)}`,
+    `[dates] falling back to ${routing.defaultLocale}: ` +
+      `${JSON.stringify(locale)} is not a locale this app ships`,
   );
 }
 

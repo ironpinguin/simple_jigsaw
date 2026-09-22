@@ -131,6 +131,12 @@ describe("input that is not a timestamp", () => {
 });
 
 describe("a locale tag the platform refuses", () => {
+  // `mockRestore()` at the end of a test is skipped when an assertion throws
+  // before it, which would leave console.warn stubbed for the rest of the file.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   // The file promises to degrade rather than throw and delivered half of it:
   // `iso` was guarded, `locale` — the second argument of the same expression —
   // was not. `new Intl.DateTimeFormat("")` throws a RangeError, and a RangeError
@@ -175,19 +181,23 @@ describe("a locale tag the platform refuses", () => {
     warn.mockRestore();
   });
 
-  it("leaves a well-formed but unknown tag to the platform's own fallback", async () => {
-    // "xx" is well-formed, so the platform resolves it to its own default and
-    // there is nothing to warn about. The fresh module matters as much as the
-    // assertion: the once-per-process latch is already tripped by the tests
-    // above, so on the shared module `not.toHaveBeenCalled` would hold no
-    // matter what this call did.
+  it("falls back for a tag this app does not ship, however well-formed", async () => {
+    // The dangerous half of "malformed". "xx" survives getCanonicalLocales and
+    // is then resolved by ICU to the *runtime's* locale — measured: the same
+    // call renders "August 5, 2026", "2026年8月5日", "5 agosto 2026" or
+    // "5. August 2026" depending only on the host's LANG. Server and browser
+    // disagree, which is #38 exactly, and NEXT_LOCALE is a cookie a visitor
+    // can set to anything.
     vi.resetModules();
     const { formatDateUtc: freshFormatDateUtc } = await import("./dates");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    expect(() => freshFormatDateUtc(ISO, "xx")).not.toThrow();
-
+    // The warning is the environment-independent half of this assertion: the
+    // rendering below also matches on a host whose own locale happens to be
+    // German, but only this guard can make the warning fire.
     expect(warn).not.toHaveBeenCalled();
+    expect(freshFormatDateUtc(ISO, "xx")).toBe(formatDateUtc(ISO, routing.defaultLocale));
+    expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
 
