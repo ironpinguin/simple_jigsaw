@@ -46,6 +46,34 @@ updates:
       # in the group PR that introduced the rule.
       - dependency-name: "@formatjs/intl-localematcher"
         versions: [">=0.9.0"]
+      # ESLint 10 cannot lint this project yet, and not for a reason we can fix
+      # here. eslint-config-next depends on eslint-plugin-react ^7.37.0, whose
+      # newest release (7.37.5) still calls `context.getFilename()` — removed in
+      # ESLint 10 — so every React file dies with "contextOrFilename.getFilename
+      # is not a function" before a single rule runs. eslint-config-next 16.3.5
+      # and its canary both still declare `eslint: >=9.0.0`, which permits 10
+      # without supporting it.
+      #
+      # Lift this when eslint-config-next ships an eslint-plugin-react that uses
+      # `context.filename`. Minor and patch updates to ESLint 9 keep arriving in
+      # the meantime; only the major is held.
+      - dependency-name: "eslint"
+        versions: [">=10.0.0"]
+      # Prisma 7 is a migration, not a bump, and #112 tracks it: the datasource
+      # `url` is no longer allowed in the schema, connection config moves to a
+      # prisma.config.ts, and PrismaClient refuses to construct without a driver
+      # adapter. With two providers driven from one schema (see
+      # scripts/prisma.mjs) that means an adapter each and a runtime choice
+      # where DATABASE_PROVIDER is currently a build-time schema rewrite.
+      #
+      # Dependabot offered it as two PRs — the CLI and the client — which fail
+      # separately because they are halves of one change, and between them
+      # occupied two of the five slots above. Prisma 6 minors and patches keep
+      # arriving; lift this when #112 lands.
+      - dependency-name: "prisma"
+        versions: [">=7.0.0"]
+      - dependency-name: "@prisma/client"
+        versions: [">=7.0.0"]
     labels: [dependencies]
 
   # ---------------------------------------------------------------------------
