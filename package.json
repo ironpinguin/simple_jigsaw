@@ -41,7 +41,6 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@formatjs/intl-localematcher": "^0.8.13",
-    "@types/bcryptjs": "^3.0.0",
     "@types/negotiator": "^0.6.4",
     "@types/node": "^26.5.1",
     "@types/nodemailer": "^8.0.1",
