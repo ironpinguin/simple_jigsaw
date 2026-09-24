@@ -86,6 +86,33 @@ describe("celebrate", () => {
     await settle(); // an unhandled rejection would fail the run here
   });
 
+  it.each([
+    ["a click", () => new PointerEvent("pointerdown", { bubbles: true })],
+    ["a key press", () => new KeyboardEvent("keydown", { key: "Escape", bubbles: true })],
+  ])("ends on %s anywhere on the page", async (_, event) => {
+    const { celebrate } = await import("./celebrate");
+    celebrate({ sound: true });
+    await settle();
+
+    document.body.dispatchEvent(event());
+    expect(played[0].pause).toHaveBeenCalled();
+    expect(confetti.reset).toHaveBeenCalled();
+
+    // And stops listening: a later press does nothing more.
+    confetti.reset.mockClear();
+    document.body.dispatchEvent(event());
+    expect(confetti.reset).not.toHaveBeenCalled();
+  });
+
+  it("is not ended by a bare modifier key", async () => {
+    const { celebrate } = await import("./celebrate");
+    celebrate({ sound: true });
+    await settle();
+
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", bubbles: true }));
+    expect(played[0].pause).not.toHaveBeenCalled();
+  });
+
   it("stops the sound and clears the fireworks when stopped", async () => {
     const { celebrate, stopCelebration } = await import("./celebrate");
     celebrate({ sound: true });

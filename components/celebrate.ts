@@ -67,7 +67,7 @@ async function applause(): Promise<() => void> {
  * Celebrate once. `sound: false` skips the applause; `prefers-reduced-motion`
  * skips the fireworks. Anything the browser refuses — audio blocked, the file
  * missing — is dropped quietly: the solved banner is the message, this is
- * decoration.
+ * decoration. The next click, tap or key press anywhere ends it.
  */
 export function celebrate({ sound }: { sound: boolean }): void {
   stopCelebration();
@@ -80,13 +80,30 @@ export function celebrate({ sound }: { sound: boolean }): void {
     );
   if (!prefersReducedMotion()) keep(fireworks());
   if (sound) keep(applause());
+
+  // Any click, tap or key ends it early. Listened for rather than caught: the
+  // confetti canvas lets pointer events through, and the press should still do
+  // what it does — pick up a piece, press a button — besides ending the show.
+  // Capture phase, so a handler that stops propagation cannot swallow it.
+  const onPress = (e: Event) => {
+    if (e instanceof KeyboardEvent && ["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+    stopCelebration();
+  };
+  document.addEventListener("pointerdown", onPress, true);
+  document.addEventListener("keydown", onPress, true);
+
   stopCurrent = () => {
     stopped = true;
+    document.removeEventListener("pointerdown", onPress, true);
+    document.removeEventListener("keydown", onPress, true);
     for (const stop of stops) stop();
   };
 }
 
-/** End a running celebration early, e.g. when the solver starts over. */
+/**
+ * End a running celebration early — on the next click or key press, or when the
+ * solver starts over.
+ */
 export function stopCelebration(): void {
   stopCurrent?.();
   stopCurrent = null;

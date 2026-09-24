@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of recorded applause when the last piece snaps in. The *Solved!* banner stays as
   before. It plays once, for the drop that completes the picture — not when a
   finished puzzle is reopened, and not when the finished picture is moved
-  again. **🔊 Applause** in the toolbar mutes the sound, and the choice is
+  again. A click, tap or key press ends it early — and still does what it
+  would have done. **🔊 Applause** in the toolbar mutes the sound, and the choice is
   remembered in this browser for every puzzle. With *reduce motion* set in the
   operating system the fireworks are left out. Installations can swap the
   applause for their own recording without a rebuild — see *Applaus
