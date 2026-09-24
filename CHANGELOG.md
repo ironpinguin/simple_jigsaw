@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than the address. (#50)
 
 ### Changed
+- Pieces now start spread evenly over the board instead of at independent
+  random spots, so none lies hidden under another. At 300 pieces the old
+  placement could bury a couple of pieces completely, and they could only be
+  found by moving the ones on top. Every piece now also starts fully on the
+  board, instead of a few overhanging the edge until first moved. A shared link
+  still gives everyone the same layout, but it is a different layout from the
+  one the same link showed before. (#3)
 - Release pages now link the changelog instead of naming the file in passing, so
   the page a release lands on says where to read what shipped. The link points at
   the changelog as it stood for that tag, not at the current one. (#94)

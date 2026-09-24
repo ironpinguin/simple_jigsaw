@@ -43,8 +43,9 @@ a group a piece always sits at `(col*pieceW, row*pieceH)` relative to the group
 origin. Two groups are correctly adjacent exactly when their origins coincide —
 which is why snapping compares origins, not piece corners.
 
-**`TAB` lives in `outline.ts` and is imported by `board.ts`** so the bitmap is
-big enough for the knob. Don't re-declare the protrusion factor.
+**`TAB` lives in `outline.ts`.** Don't re-declare the protrusion factor
+elsewhere; anything that needs a piece's size (the bitmap, scatter placement)
+takes it from `pieceBox`, which measures the real outline.
 
 ## Testing
 

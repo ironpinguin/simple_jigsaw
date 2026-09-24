@@ -278,10 +278,9 @@ describe("restoreSolveState", () => {
       cols: b.cols,
       rows: b.rows,
       seed: 4242,
-      pieceW: b.geo.pieceW,
-      pieceH: b.geo.pieceH,
       stageW: b.stageW,
       stageH: b.stageH,
+      rectOf: (id) => b.rectOf(id)!,
     });
     const rowGroups: PieceGroup[] = [];
     for (let r = 0; r < b.rows; r++) {

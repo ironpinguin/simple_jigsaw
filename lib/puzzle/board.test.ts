@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { generateEdges } from "./edges";
 import { computeGrid, PIECE_PRESETS } from "./grid";
 import { pieceOutlinePoints } from "./outline";
-import { parsePieceId, resolveConnections, pieceId, type PieceGroup } from "./groups";
+import { renderOrder, resolveConnections, pieceId, type PieceGroup } from "./groups";
 import {
   boardGeometry,
   clampGroupPosition,
@@ -103,9 +103,52 @@ describe("pieceBox", () => {
 });
 
 describe("scatterGroups", () => {
-  function geo(cols: number, rows: number) {
-    const g = boardGeometry({ ...STAGE, cols, rows });
-    return { cols, rows, pieceW: g.pieceW, pieceH: g.pieceH, stageW: g.stageW, stageH: g.stageH };
+  /** A real board: stage sizing plus the real jittered/tabbed bitmap rects. */
+  function board(cols: number, rows: number, stage = STAGE, edgeSeed = 777) {
+    const g = boardGeometry({ ...stage, cols, rows });
+    const grid = generateEdges(cols, rows, edgeSeed);
+    const rects = new Map<string, Rect>();
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        rects.set(pieceId(r, c), pieceBox(grid, r, c, g.pieceW, g.pieceH).rect);
+      }
+    }
+    return {
+      cols,
+      rows,
+      stageW: g.stageW,
+      stageH: g.stageH,
+      rectOf: (id: string) => rects.get(id)!,
+    };
+  }
+
+  /** Every piece's bitmap in stage coordinates, in draw order (last on top). */
+  function stageRects(groups: PieceGroup[], rectOf: (id: string) => Rect): Rect[] {
+    return renderOrder(groups).map((g) => {
+      const r = rectOf(g.members[0]);
+      return { x: g.x + r.x, y: g.y + r.y, width: r.width, height: r.height };
+    });
+  }
+
+  /**
+   * Share of each rect not covered by anything drawn above it, sampled on an
+   * n x n lattice. Konva hit-tests an Image as its whole rect, so this is the
+   * share of the piece a click can still reach.
+   */
+  function grabbableShares(rects: Rect[], n = 8): number[] {
+    const inside = (r: Rect, x: number, y: number) =>
+      x > r.x && x < r.x + r.width && y > r.y && y < r.y + r.height;
+    return rects.map((r, i) => {
+      let free = 0;
+      for (let a = 0; a < n; a++) {
+        for (let b = 0; b < n; b++) {
+          const x = r.x + ((a + 0.5) / n) * r.width;
+          const y = r.y + ((b + 0.5) / n) * r.height;
+          if (!rects.slice(i + 1).some((o) => inside(o, x, y))) free++;
+        }
+      }
+      return free / (n * n);
+    });
   }
 
   it("creates exactly one single-piece group per cell, covering every id once", () => {
@@ -116,7 +159,7 @@ describe("scatterGroups", () => {
       [8, 6],
       [20, 15],
     ] as const) {
-      const groups = scatterGroups({ ...geo(cols, rows), seed: 12345 });
+      const groups = scatterGroups({ ...board(cols, rows), seed: 12345 });
 
       expect(groups.length).toBe(cols * rows);
       const members = groups.flatMap((g) => g.members);
@@ -131,24 +174,59 @@ describe("scatterGroups", () => {
   });
 
   it("is deterministic for a seed and differs between seeds", () => {
-    const args = geo(8, 6);
+    const args = board(8, 6);
     expect(scatterGroups({ ...args, seed: 42 })).toEqual(scatterGroups({ ...args, seed: 42 }));
     expect(scatterGroups({ ...args, seed: 42 })).not.toEqual(scatterGroups({ ...args, seed: 43 }));
   });
 
-  it("starts every piece's cell inside the stage", () => {
-    // The cell, not the bitmap: the margins use a nominal cell-plus-tab box, so
-    // a small fraction of bitmaps overhang by a few px until first drop. See the
-    // note on scatterGroups and issue #3.
-    const args = geo(20, 15);
-    for (const g of scatterGroups({ ...args, seed: 999 })) {
-      const { row, col } = parsePieceId(g.members[0]);
-      const cornerX = g.x + col * args.pieceW;
-      const cornerY = g.y + row * args.pieceH;
-      expect(cornerX).toBeGreaterThanOrEqual(0);
-      expect(cornerY).toBeGreaterThanOrEqual(0);
-      expect(cornerX + args.pieceW).toBeLessThanOrEqual(args.stageW);
-      expect(cornerY + args.pieceH).toBeLessThanOrEqual(args.stageH);
+  it("starts every piece's whole bitmap inside the stage", () => {
+    // The exact bitmap, not a nominal cell-plus-tab box: nothing should shift
+    // on its first drop because it started past the edge.
+    for (const containerW of [320, 1400, 2560]) {
+      for (const availableH of [290, 870, 1230]) {
+        const args = board(20, 15, { containerW, availableH, aspect: 4 / 3 });
+        for (const r of stageRects(scatterGroups({ ...args, seed: 999 }), args.rectOf)) {
+          expect(r.x).toBeGreaterThanOrEqual(-1e-9);
+          expect(r.y).toBeGreaterThanOrEqual(-1e-9);
+          expect(r.x + r.width).toBeLessThanOrEqual(args.stageW + 1e-9);
+          expect(r.y + r.height).toBeLessThanOrEqual(args.stageH + 1e-9);
+        }
+      }
+    }
+  });
+
+  it("leaves no piece without grabbable area, even at 300 pieces", () => {
+    // The acceptance criterion from issue #3: uniform random placement left up
+    // to two pieces per board entirely under others at 300 pieces on 1440x900.
+    // Checked down to the minimum stage, where slots are smaller than bitmaps.
+    for (const [containerW, availableH] of [
+      [320, 290],
+      [768, 510],
+      [1440, 900],
+      [1920, 1080],
+    ]) {
+      for (const aspect of [3 / 4, 4 / 3, 16 / 9]) {
+        const { cols, rows } = computeGrid(300, aspect);
+        const args = board(cols, rows, { containerW, availableH, aspect });
+        for (const seed of [1, 42, 999, 2024, 31337]) {
+          const shares = grabbableShares(stageRects(scatterGroups({ ...args, seed }), args.rectOf));
+          expect(Math.min(...shares)).toBeGreaterThan(0.5);
+        }
+      }
+    }
+  });
+
+  it("does not overlap bitmaps at all on a desktop-sized window", () => {
+    for (const [containerW, availableH] of [
+      [1440, 900],
+      [1920, 1080],
+    ]) {
+      for (const preset of PIECE_PRESETS) {
+        const { cols, rows } = computeGrid(preset, 4 / 3);
+        const args = board(cols, rows, { containerW, availableH, aspect: 4 / 3 });
+        const shares = grabbableShares(stageRects(scatterGroups({ ...args, seed: 7 }), args.rectOf));
+        expect(shares.every((s) => s === 1)).toBe(true);
+      }
     }
   });
 });

@@ -5,7 +5,7 @@
 // only the rasterising and the event wiring on top.
 
 import type { EdgeGrid } from "./edges";
-import { pieceOutlinePoints, TAB } from "./outline";
+import { pieceOutlinePoints } from "./outline";
 import { mulberry32 } from "./prng";
 import { pieceId, type PieceGroup } from "./groups";
 
@@ -150,55 +150,74 @@ export interface ScatterInput {
   cols: number;
   rows: number;
   seed: number;
-  pieceW: number;
-  pieceH: number;
   stageW: number;
   stageH: number;
+  /** A piece's bitmap rect in group coordinates — `pieceBox(...).rect`. */
+  rectOf: (id: string) => Rect;
 }
 
 /**
- * The starting position of every piece: one single-piece group per cell, its
- * cell corner dropped somewhere in the stage. The group origin is the scattered
- * corner minus the piece's solved corner, which keeps the shared puzzle
- * coordinate frame intact.
+ * The starting position of every piece: one single-piece group per cell,
+ * spread over the stage so that no piece hides another.
+ *
+ * The stage is divided into a grid of at least `cols * rows` equal slots, the
+ * pieces are dealt onto a seeded shuffle of those slots, and each bitmap is
+ * jittered within whatever room its slot leaves. Where a slot is at least as
+ * big as the bitmap (any desktop-sized window) no two bitmaps overlap at all; on
+ * a stage too small for that they overlap only by the shortfall, centred on the
+ * slot, so each still keeps most of its hit area. Uniform random placement put
+ * a few pieces entirely under others at 300 pieces (issue #3).
+ *
+ * Positions come from the exact bitmap rect and are clamped like a drop, so a
+ * piece starts wholly inside the stage — `settleGroup` would leave it alone.
+ * The group origin is the placed rect minus the piece's own rect offset, which
+ * keeps the shared puzzle coordinate frame intact.
  *
  * Deterministic in its inputs, and the random stream depends only on `seed`, so
  * the same link produces the same relative arrangement for everyone. Absolute
  * positions still scale with the viewport, because `stageW`/`stageH` are
  * viewport-derived.
- *
- * Note the margins use a nominal cell-plus-tab box rather than the exact
- * `pieceBox` extent, so ~0.3% of pieces start a few pixels outside the area
- * `settleGroup` would allow and shift inwards on first drop. Overlap-free
- * placement (issue #3) is where that is worth reworking.
  */
 export function scatterGroups({
   cols,
   rows,
   seed,
-  pieceW,
-  pieceH,
   stageW,
   stageH,
+  rectOf,
 }: ScatterInput): PieceGroup[] {
-  const tabV = TAB * pieceW;
-  const tabH = TAB * pieceH;
-  const boxW = pieceW + 2 * tabV;
-  const boxH = pieceH + 2 * tabH;
+  const count = cols * rows;
   const rng = mulberry32(seed ^ 0x9e3779b9);
 
+  // Slots as close to square as the stage allows, enough for every piece.
+  const slotCols = Math.max(1, Math.round(Math.sqrt((count * stageW) / stageH)));
+  const slotRows = Math.ceil(count / slotCols);
+  const slotW = stageW / slotCols;
+  const slotH = stageH / slotRows;
+
+  const slots = Array.from({ length: slotCols * slotRows }, (_, i) => i);
+  for (let i = slots.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+  }
+
+  /** Near edge of the bitmap along one axis: jittered if it fits, else centred. */
+  function place(slotStart: number, slotSize: number, size: number): number {
+    const slack = slotSize - size;
+    const t = rng(); // drawn either way, so the stream does not depend on sizes
+    return slotStart + (slack >= 0 ? t * slack : slack / 2);
+  }
+
   const groups: PieceGroup[] = [];
-  let gid = 1;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const cornerX = tabV + 6 + rng() * Math.max(1, stageW - boxW - 12);
-      const cornerY = tabH + 6 + rng() * Math.max(1, stageH - boxH - 12);
-      groups.push({
-        id: gid++,
-        x: cornerX - c * pieceW,
-        y: cornerY - r * pieceH,
-        members: [pieceId(r, c)],
-      });
+      const id = pieceId(r, c);
+      const slot = slots[groups.length];
+      const rect = rectOf(id);
+      const x = place((slot % slotCols) * slotW, slotW, rect.width);
+      const y = place(Math.floor(slot / slotCols) * slotH, slotH, rect.height);
+      const pos = clampGroupPosition({ x: x - rect.x, y: y - rect.y }, rect, stageW, stageH);
+      groups.push({ id: groups.length + 1, x: pos.x, y: pos.y, members: [id] });
     }
   }
   return groups;
