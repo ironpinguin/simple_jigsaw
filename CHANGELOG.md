@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Solving a puzzle is now celebrated: fireworks over the page and a short round
+  of applause when the last piece snaps in. The *Solved!* banner stays as
+  before. It plays once, for the drop that completes the picture — not when a
+  finished puzzle is reopened, and not when the finished picture is moved
+  again. **🔊 Applause** in the toolbar mutes the sound, and the choice is
+  remembered in this browser for every puzzle. With *reduce motion* set in the
+  operating system the fireworks are left out. (#117)
 - **🧲 Gather loose pieces** in the puzzle toolbar collects every piece that is
   not yet part of an assembly into the free space of the board, in neat rows
   from the top-left and clear of what has already been put together. Once most

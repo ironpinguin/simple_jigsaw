@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import type { BoardActions, PuzzleData } from "./PuzzleBoard";
 import ReportDialog from "@/components/ReportDialog";
+import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import {
   MAX_STORED_SOLVES,
@@ -45,6 +46,12 @@ function withStorage<T>(fn: (store: Storage) => T, whenUnavailable: T): T {
     return whenUnavailable;
   }
 }
+
+/**
+ * Whether the solver muted the applause, for every puzzle. Outside the `solve:`
+ * prefix on purpose: `storedSolves` treats every key under it as a solve state.
+ */
+const SOUND_KEY = "celebration:sound";
 
 /** Every stored solve state, so `saveSolveState` can prune the least recent. */
 function storedSolves(store: Storage): Array<{ key: string; raw: string | null }> {
@@ -108,13 +115,34 @@ export default function PuzzleSolver({
   const [showRef, setShowRef] = useState(true);
   const [showMap, setShowMap] = useState(true);
   const [copied, setCopied] = useState(false);
+  // On by default (issue #117); applied after mount like the piece count, for
+  // the same hydration reason.
+  const [sound, setSound] = useState(true);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
+    if (withStorage((s) => s.getItem(SOUND_KEY), null) === "off") setSound(false);
+  }, []);
+
+  function toggleSound() {
+    const next = !sound;
+    setSound(next);
+    withStorage((s) => s.setItem(SOUND_KEY, next ? "on" : "off"), undefined);
+  }
 
   const onProgress = useCallback((groups: number, boardTotal: number) => {
     setProgress({ groups, total: boardTotal });
     setSolved(groups === 1);
   }, []);
 
-  const onSolved = useCallback(() => setSolved(true), []);
+  // The celebration hangs off this, not off `solved`: `onProgress` also marks a
+  // puzzle solved when a finished one is restored, and a reload must not replay it.
+  const onSolved = useCallback(() => {
+    setSolved(true);
+    celebrate({ sound });
+  }, [sound]);
+
+  useEffect(() => stopCelebration, []);
 
   // --- The solve state -------------------------------------------------------
   //
@@ -189,6 +217,7 @@ export default function PuzzleSolver({
     // connected instead of leaving the old count — and the solved banner up.
     setProgress(null);
     setSolved(false);
+    stopCelebration();
   }
 
   // Connections made; total-1 when solved. An unbuilt or just-resized board has
@@ -270,6 +299,14 @@ export default function PuzzleSolver({
           onClick={() => boardActions.current?.gatherLoose()}
         >
           {t("gather")}
+        </button>
+        <button
+          className={`button secondary ${sound ? "active" : ""}`}
+          type="button"
+          aria-pressed={sound}
+          onClick={toggleSound}
+        >
+          {sound ? "🔊" : "🔇"} {t("sound")}
         </button>
         <button className="button secondary" type="button" onClick={share}>
           {copied ? t("copied") : t("share")}
