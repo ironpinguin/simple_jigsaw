@@ -216,7 +216,14 @@ function buildLayout(
     }
   }
 
-  const initialGroups = scatterGroups({ cols, rows, seed, pieceW, pieceH, stageW, stageH });
+  const initialGroups = scatterGroups({
+    cols,
+    rows,
+    seed,
+    stageW,
+    stageH,
+    rectOf: (id) => pieces.get(id)!.rect,
+  });
 
   return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
 }
