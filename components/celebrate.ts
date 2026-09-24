@@ -1,8 +1,6 @@
 // The moment a puzzle is solved: fireworks over the page and a round of applause
 // (issue #117). Browser-only — call it from an event handler, never a render.
 
-import { applauseSamples } from "@/lib/applause";
-
 const FIREWORKS_MS = 3500;
 
 /** Clears whatever the current celebration still has running. */
@@ -43,41 +41,32 @@ async function fireworks(): Promise<() => void> {
   };
 }
 
+/**
+ * The applause recording. A plain file under `public/` so an installation can
+ * swap it without a rebuild — see "Applaus austauschen" in the README. The
+ * bundled one is CC0; its source is in NOTICE.
+ */
+export const APPLAUSE_URL = "/sounds/applause.mp3";
+
 async function applause(): Promise<() => void> {
-  const Ctx =
-    window.AudioContext ??
-    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!Ctx) return () => {};
-  const ctx = new Ctx();
+  const audio = new Audio(APPLAUSE_URL);
+  audio.volume = 0.8;
   // Autoplay rules allow sound only after a user gesture. Releasing the last
-  // piece is one, but a browser may still refuse; that rejects here.
-  await ctx.resume();
-
-  const samples = applauseSamples(ctx.sampleRate);
-  const buffer = ctx.createBuffer(1, samples.length, ctx.sampleRate);
-  buffer.copyToChannel(samples, 0);
-
-  // Take the hiss off both ends so it reads as hands, not static.
-  const band = ctx.createBiquadFilter();
-  band.type = "bandpass";
-  band.frequency.value = 1500;
-  band.Q.value = 0.6;
-
-  const source = ctx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(band).connect(ctx.destination);
-  source.onended = () => void ctx.close();
-  source.start();
+  // piece is one, but a browser may still refuse, and a missing or unreadable
+  // file fails the same way; either rejects here.
+  await audio.play();
   return () => {
-    source.onended = null;
-    void ctx.close();
+    audio.pause();
+    // Dropping the source (rather than setting "") ends the download too.
+    audio.removeAttribute("src");
+    audio.load();
   };
 }
 
 /**
  * Celebrate once. `sound: false` skips the applause; `prefers-reduced-motion`
- * skips the fireworks. Anything the browser refuses — audio blocked, no Web
- * Audio at all — is dropped quietly: the solved banner is the message, this is
+ * skips the fireworks. Anything the browser refuses — audio blocked, the file
+ * missing — is dropped quietly: the solved banner is the message, this is
  * decoration.
  */
 export function celebrate({ sound }: { sound: boolean }): void {

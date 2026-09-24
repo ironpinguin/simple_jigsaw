@@ -63,6 +63,24 @@ docker compose -f docker-compose.yml up -d --build
 Für echten Betrieb außerdem die RustFS-Zugangsdaten (`S3_ACCESS_KEY_ID`,
 `S3_SECRET_ACCESS_KEY`) und ggf. das Postgres-Passwort setzen.
 
+### Applaus austauschen
+
+Beim Lösen eines Puzzles spielt `public/sounds/applause.mp3` (CC0, Quelle in
+[NOTICE](NOTICE)). Die Datei wird zur Laufzeit ausgeliefert, lässt sich also
+ohne neuen Build ersetzen: im Repo die Datei überschreiben, oder im laufenden
+Container per Volume darüberlegen, z. B. in einer `docker-compose.override.yml`:
+
+```yaml
+services:
+  app:
+    volumes:
+      - ./mein-applaus.mp3:/app/public/sounds/applause.mp3:ro
+```
+
+MP3 spielt in allen Browsern; ein paar Sekunden mit Ausblenden am Ende passen
+am besten. Fehlt die Datei oder ist sie unlesbar, bleibt es still — das Banner
+und das Feuerwerk kommen trotzdem.
+
 ## Minimal ohne Postgres (SQLite)
 
 Die Datenbank ist zwischen **PostgreSQL** (Standard) und **SQLite** umschaltbar
