@@ -15,28 +15,6 @@ const eslintConfig = [
     // skipped it implicitly; the ESLint CLI does not, so say so here.
     ignores: ["node_modules/**", ".next/**", "lib/generated/**", "next-env.d.ts"],
   },
-  {
-    // Scoped to the one file that still trips them (#87). Everywhere else these
-    // three are back to the errors eslint-config-next ships them as: #84 fixed
-    // VerifyPage outright, and CreateForm and PuzzleSolver each carry a
-    // one-line disable with a test behind it — in both of those the rule's
-    // preferred fix introduced a defect, a leaked object URL and a hydration
-    // mismatch respectively.
-    //
-    // PuzzleBoard is different: its group model lives in a ref that Konva drag
-    // handlers mutate, with bump() forcing the re-render that reads it back.
-    // Four of the five findings are that escape hatch rather than a mistake,
-    // and the file has no test coverage — jsdom has no canvas — so the redesign
-    // needs its own change and its own browser verification. Delete this block
-    // when #87 closes.
-    name: "jigsaw/puzzleboard-react-compiler-rules-pending-87",
-    files: ["components/PuzzleBoard.tsx"],
-    rules: {
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/refs": "warn",
-      "react-hooks/purity": "warn",
-    },
-  },
 ];
 
 export default eslintConfig;
