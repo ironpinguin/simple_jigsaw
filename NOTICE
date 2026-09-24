@@ -2,3 +2,13 @@ Jigsaw
 Copyright 2026 Michele Catalano
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party material
+--------------------
+
+public/sounds/applause.mp3
+  "applause-2" by Sandermotions — audience applauding in De Doelen,
+  Rotterdam, field recording, 2015. CC0 1.0 (public domain dedication).
+  https://freesound.org/people/Sandermotions/sounds/277021/
+  via https://commons.wikimedia.org/wiki/File:277021_sandermotions_applause-2.wav
+  Converted to MP3 with a one-second fade-out and loudness normalisation.

@@ -250,6 +250,10 @@ interface Props {
   /** `PuzzleSolver` owns the toggle. */
   showMinimap: boolean;
   onProgress: (groups: number, total: number) => void;
+  /**
+   * Called on the drop that completes the picture — never on a restore, and not
+   * again when the finished picture is moved.
+   */
   onSolved: () => void;
   /**
    * The raw stored solve state to resume from, or `null` to scatter — the board
@@ -433,7 +437,14 @@ export default function PuzzleBoard({
     start.x = node.x();
     start.y = node.y();
 
-    const { survivorId } = resolveConnections(groups, p2g, groupId, rows, cols, current.snapDist);
+    const { survivorId, changed } = resolveConnections(
+      groups,
+      p2g,
+      groupId,
+      rows,
+      cols,
+      current.snapDist,
+    );
 
     // Dragging is unbounded so that a piece can always reach a neighbour parked
     // against an edge; the drop is what has to land on the board. A merge snaps
@@ -462,11 +473,15 @@ export default function PuzzleBoard({
 
     bump();
     onProgress(groups.size, total);
-    if (groups.size === 1) onSolved();
 
     // Drops are far too rare for debouncing to buy anything. (The seeding effect
     // also replaces the model, and deliberately does not save — see there.)
     persist(current);
+
+    // Only the drop that joins the last two groups: moving the finished picture
+    // around afterwards also leaves one group, and must not celebrate again.
+    // After the save, so nothing the celebration does can cost the solve.
+    if (changed && groups.size === 1) onSolved();
   }
 
   // --- Zoom & pan -----------------------------------------------------------

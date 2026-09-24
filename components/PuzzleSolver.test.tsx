@@ -25,6 +25,8 @@ const board = vi.hoisted<{
   resetNonce: number | null;
   /** How often the solver asked the board to gather its loose pieces. */
   gathered: number;
+  /** The completion callback, so a test can finish the puzzle like a drop. */
+  onSolved: (() => void) | null;
 }>(() => ({
   reportsFor: () => true,
   groupsFor: (total) => total,
@@ -33,7 +35,12 @@ const board = vi.hoisted<{
   saveSolveState: null,
   resetNonce: null,
   gathered: 0,
+  onSolved: null,
 }));
+
+// Canvas and Web Audio are beyond jsdom; what matters here is when it is asked.
+const celebration = vi.hoisted(() => ({ celebrate: vi.fn(), stopCelebration: vi.fn() }));
+vi.mock("./celebrate", () => celebration);
 
 vi.mock("./PuzzleBoard", () => {
   function BoardStub({
@@ -41,6 +48,7 @@ vi.mock("./PuzzleBoard", () => {
     rows,
     showMinimap,
     onProgress,
+    onSolved,
     loadSolveState,
     saveSolveState,
     resetNonce,
@@ -50,6 +58,7 @@ vi.mock("./PuzzleBoard", () => {
     rows: number;
     showMinimap: boolean;
     onProgress: (groups: number, total: number) => void;
+    onSolved: () => void;
     loadSolveState: () => string | null;
     saveSolveState: (raw: string) => void;
     resetNonce: number;
@@ -62,6 +71,9 @@ vi.mock("./PuzzleBoard", () => {
     useEffect(() => {
       board.showMinimap = showMinimap;
     }, [showMinimap]);
+    useEffect(() => {
+      board.onSolved = onSolved;
+    }, [onSolved]);
     useEffect(() => {
       board.loadSolveState = loadSolveState;
       board.saveSolveState = saveSolveState;
@@ -175,6 +187,9 @@ describe("PuzzleSolver", () => {
     board.groupsFor = (total) => total;
     board.showMinimap = null;
     board.gathered = 0;
+    board.onSolved = null;
+    celebration.celebrate.mockClear();
+    celebration.stopCelebration.mockClear();
     board.loadSolveState = null;
     board.saveSolveState = null;
     board.resetNonce = null;
@@ -327,6 +342,66 @@ describe("PuzzleSolver", () => {
 
     await act(async () => toggle(messages.solve.gather)!.click());
     expect(board.gathered).toBe(1);
+  });
+
+  describe("the celebration", () => {
+    /** The sound toggle, whichever state it is in. */
+    function soundToggle() {
+      return [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.endsWith(messages.solve.sound),
+      );
+    }
+
+    it("celebrates the drop that completes the picture, with sound by default", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await act(async () => board.onSolved!());
+      expect(celebration.celebrate).toHaveBeenCalledTimes(1);
+      expect(celebration.celebrate).toHaveBeenCalledWith({ sound: true });
+      expect(container.querySelector(".solved-banner")).not.toBeNull();
+    });
+
+    it("does not celebrate a puzzle that was already solved when it loaded", async () => {
+      // Restoring a finished solve reports a single group, which shows the
+      // banner — but nothing was just solved.
+      board.groupsFor = () => 1;
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(container.querySelector(".solved-banner")).not.toBeNull();
+      expect(celebration.celebrate).not.toHaveBeenCalled();
+    });
+
+    it("remembers a muted applause across a reload", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(soundToggle()?.getAttribute("aria-pressed")).toBe("true");
+      await act(async () => soundToggle()!.click());
+      expect(soundToggle()?.getAttribute("aria-pressed")).toBe("false");
+      expect(localStorage.getItem("celebration:sound")).toBe("off");
+
+      await act(async () => root!.unmount());
+      root = undefined;
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(soundToggle()?.getAttribute("aria-pressed")).toBe("false");
+      await act(async () => board.onSolved!());
+      expect(celebration.celebrate).toHaveBeenCalledWith({ sound: false });
+    });
+
+    it("stops a running celebration when the solver starts over", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await act(async () => board.onSolved!());
+
+      celebration.stopCelebration.mockClear();
+      await reset();
+      expect(celebration.stopCelebration).toHaveBeenCalled();
+    });
   });
 
   it("keeps the count when the solver declines to discard progress", async () => {

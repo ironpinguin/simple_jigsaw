@@ -26,6 +26,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@prisma/client": "^6.2.1",
     "bcryptjs": "^3.0.3",
+    "canvas-confetti": "^1.9.4",
     "konva": "^10.3.0",
     "next": "^16.3.0",
     "next-auth": "^5.0.0-beta.25",
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.7",
     "@formatjs/intl-localematcher": "^0.8.14",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/negotiator": "^0.6.5",
     "@types/node": "^26.6.2",
     "@types/nodemailer": "^8.0.2",
