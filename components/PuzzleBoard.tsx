@@ -168,8 +168,8 @@ const FALLBACK_AVAILABLE_H = 590;
  * whatever follows that `<main>` — assuming, as the solve view does, that the
  * board is the last thing inside it.
  */
-function availableBoardHeight(wrap: HTMLElement | null): number {
-  if (typeof window === "undefined" || !wrap) return FALLBACK_AVAILABLE_H;
+function availableBoardHeight(wrap: HTMLElement): number {
+  if (typeof window === "undefined") return FALLBACK_AVAILABLE_H;
   const main = wrap.closest("main");
   if (!main) return FALLBACK_AVAILABLE_H;
 
@@ -296,17 +296,19 @@ export default function PuzzleBoard({
   resetNonce,
   actionsRef,
 }: Props) {
-  const wrapRef = useRef<HTMLDivElement>(null);
+  // The wrapper element as state (a callback ref), not a ref object: building
+  // the layout measures the room around it, and a memo that reads a ref cannot
+  // say it depends on it.
+  const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
-  // Measured once, when the board first has a width. The available height is
-  // taken at the same moment and kept with it, rather than read from the DOM
-  // while the layout is built during render.
-  const [measured, setMeasured] = useState<{ w: number; availableH: number } | null>(null);
+  const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
   // The group model — see `groupStore` for why it is a store rather than state
   // or refs. Written on drop, gather and seeding, never per drag frame.
-  const groupStore = useMemo(() => createGroupStore(), []);
+  // State rather than useMemo: React may drop a memo (it does on every Fast
+  // Refresh), which would swap in an empty store.
+  const [groupStore] = useState(createGroupStore);
   const model = useSyncExternalStore(groupStore.subscribe, groupStore.get, groupStore.get);
 
   // The group being dragged, so it can be drawn on top declaratively (see
@@ -314,7 +316,7 @@ export default function PuzzleBoard({
   // react-konva reorders nodes only when the React child order changes.
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
-  const viewStore = useMemo(() => createViewStore(), []);
+  const [viewStore] = useState(() => createViewStore());
 
   /** Call after every write to the stage transform — see `viewStore`. */
   const publishView = useCallback(() => {
@@ -325,31 +327,30 @@ export default function PuzzleBoard({
 
   const total = cols * rows;
 
+  // The width, once the wrapper has one. A ResizeObserver reports the current
+  // size as soon as it starts observing, so this needs no synchronous read in the
+  // effect — and it keeps waiting when the wrapper starts out at zero width.
   useEffect(() => {
-    const wrap = wrapRef.current;
-    if (!wrap || measured) return;
-    // Measured here rather than inside buildLayout so lib/puzzle stays free of
-    // the DOM. Read once: a later window resize does not re-lay-out the board.
-    const measure = (w: number) => setMeasured({ w, availableH: availableBoardHeight(wrap) });
-    const w = wrap.clientWidth;
-    if (w > 0) measure(w);
-    else {
-      const ro = new ResizeObserver((entries) => {
-        const cw = entries[0]?.contentRect.width ?? 0;
-        if (cw > 0) {
-          measure(cw);
-          ro.disconnect();
-        }
-      });
-      ro.observe(wrap);
-      return () => ro.disconnect();
-    }
-  }, [measured]);
+    if (!wrap || containerW > 0) return;
+    const ro = new ResizeObserver((entries) => {
+      const cw = entries[0]?.contentRect.width ?? 0;
+      if (cw > 0) {
+        setContainerW(cw);
+        ro.disconnect();
+      }
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [wrap, containerW]);
 
   const layout = useMemo(() => {
-    if (!image || !measured) return null;
-    return buildLayout(puzzle, image, measured.w, cols, rows, measured.availableH);
-  }, [image, measured, puzzle, cols, rows]);
+    if (!image || !wrap || containerW === 0) return null;
+    // Measured here rather than inside buildLayout so lib/puzzle stays free of
+    // the DOM, and here rather than once on mount so that every new layout —
+    // another piece count, say — gets the room the window has now. The width,
+    // like before, is read once: a later resize does not re-lay-out the board.
+    return buildLayout(puzzle, image, containerW, cols, rows, availableBoardHeight(wrap));
+  }, [image, wrap, containerW, puzzle, cols, rows]);
 
   // Seed the group model whenever the layout is (re)built: resume the stored solve
   // if there is a usable one, otherwise scatter.
@@ -427,7 +428,7 @@ export default function PuzzleBoard({
 
     if (!groupStore.get().groups.has(groupId)) return;
 
-    const { changed, size } = groupStore.update((groups, p2g) => {
+    const { changed, size, syncTo } = groupStore.update((groups, p2g) => {
       const start = groups.get(groupId)!;
       start.x = node.x();
       start.y = node.y();
@@ -458,15 +459,18 @@ export default function PuzzleBoard({
       if (settled) {
         survivor.x = settled.x;
         survivor.y = settled.y;
-        // react-konva writes the x/y props only when they differ from the previous
-        // render, and the node was moved by Konva behind React's back during the
-        // drag. Settling onto the value last rendered would therefore be skipped
-        // and leave the node where it was dropped — off the board, which is the
-        // whole thing being fixed. Sync the dragged node explicitly.
-        if (survivor.id === groupId) node.position({ x: survivor.x, y: survivor.y });
       }
-      return { changed, size: groups.size };
+      const syncTo = settled && survivor.id === groupId ? { x: survivor.x, y: survivor.y } : null;
+      return { changed, size: groups.size, syncTo };
     });
+
+    // react-konva writes the x/y props only when they differ from the previous
+    // render, and the node was moved by Konva behind React's back during the
+    // drag. Settling onto the value last rendered would therefore be skipped and
+    // leave the node where it was dropped — off the board, which is the whole
+    // thing being fixed. Sync the dragged node explicitly. (Outside the store
+    // update, which only works on its private copies.)
+    if (syncTo) node.position(syncTo);
 
     onProgress(size, total);
 
@@ -577,11 +581,16 @@ export default function PuzzleBoard({
   }, [zoomAround, layout]);
 
   // Largest groups at the back, so loose pieces are never buried under an
-  // assembled block (Konva hit-tests bitmaps by their full rectangle).
-  const groupList = renderOrder(model.groups.values(), draggingId);
+  // assembled block (Konva hit-tests bitmaps by their full rectangle). Memoised on
+  // the snapshot, which is never modified once published, so a re-render for
+  // anything else keeps the array — and with it the overview's marker memo.
+  const groupList = useMemo(
+    () => renderOrder(model.groups.values(), draggingId),
+    [model, draggingId],
+  );
 
   return (
-    <div ref={wrapRef} className="board-wrap" style={{ width: "100%", position: "relative" }}>
+    <div ref={setWrap} className="board-wrap" style={{ width: "100%", position: "relative" }}>
       {layout && (
         <>
           <ZoomControls

@@ -42,6 +42,21 @@ describe("createGroupStore", () => {
     expect(before.groups.get(1)).toEqual(beforeGroup);
   });
 
+  it("rebuilds the member index from the groups a change leaves behind", () => {
+    const store = createGroupStore();
+    store.replace(seed);
+    // Membership edited through `groups` alone, index left untouched.
+    store.update((groups) => {
+      groups.get(2)!.members.push(...groups.get(1)!.members);
+      groups.delete(1);
+    });
+    expect([...store.get().pieceToGroup]).toEqual([
+      ["0-1", 2],
+      ["0-2", 2],
+      ["0-0", 2],
+    ]);
+  });
+
   it("returns what the change returns", () => {
     const store = createGroupStore();
     store.replace(seed);

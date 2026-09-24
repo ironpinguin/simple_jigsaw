@@ -29,7 +29,15 @@ interface FakeNode {
 const groupProps = new WeakMap<Element, GroupProps>();
 
 vi.mock("react-konva", () => {
-  function Stage({ children, ref }: { children?: ReactNode; ref?: Ref<unknown> }) {
+  function Stage({
+    children,
+    ref,
+    height,
+  }: {
+    children?: ReactNode;
+    ref?: Ref<unknown>;
+    height?: number;
+  }) {
     const container = document.createElement("div");
     useImperativeHandle(ref, () => ({
       x: () => 0,
@@ -38,7 +46,11 @@ vi.mock("react-konva", () => {
       container: () => container,
       draggable: () => {},
     }));
-    return <div data-stage="">{children}</div>;
+    return (
+      <div data-stage="" data-h={height}>
+        {children}
+      </div>
+    );
   }
   function Layer({ children }: { children?: ReactNode }) {
     return <div data-layer="">{children}</div>;
@@ -96,7 +108,21 @@ function stubBrowser() {
       }
     },
   );
-  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1400);
+  // jsdom has no ResizeObserver. A real one reports the current size as soon as
+  // it starts observing, which is all the board relies on.
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() {
+        this.callback(
+          [{ contentRect: { width: 1400 } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver,
+        );
+      }
+      disconnect() {}
+    },
+  );
 }
 
 describe("PuzzleBoard", () => {
@@ -108,13 +134,13 @@ describe("PuzzleBoard", () => {
   let onSolved: ReturnType<typeof vi.fn<() => void>>;
   const actions = createRef<BoardActions | null>();
 
-  function board(resetNonce = 0) {
+  function board(resetNonce = 0, grid = { cols: COLS, rows: ROWS }) {
     return (
       <NextIntlClientProvider locale="en" messages={messages}>
         <PuzzleBoard
           puzzle={puzzle}
-          cols={COLS}
-          rows={ROWS}
+          cols={grid.cols}
+          rows={grid.rows}
           showMinimap={false}
           onProgress={onProgress}
           onSolved={onSolved}
@@ -132,9 +158,9 @@ describe("PuzzleBoard", () => {
     saved.push(raw);
   };
 
-  async function mount(resetNonce = 0) {
+  async function mount(resetNonce = 0, grid = { cols: COLS, rows: ROWS }) {
     await act(async () => {
-      root.render(board(resetNonce));
+      root.render(board(resetNonce, grid));
     });
     // The image "loads" in a microtask; let the layout build and seed.
     await act(async () => {});
@@ -158,7 +184,10 @@ describe("PuzzleBoard", () => {
     return groups().find((g) => g.pieces.some((p) => p.x === 0 && p.y === 0))!;
   }
 
-  /** Drop `el`'s group at `to`, the way Konva reports the end of a drag. */
+  /**
+   * Drop `el`'s group at `to`, the way Konva reports the end of a drag. Returns
+   * the dropped node, whose position the board may have moved.
+   */
   async function drop(el: Element, to: { x: number; y: number }) {
     const props = groupProps.get(el)!;
     let pos = { ...to };
@@ -171,6 +200,7 @@ describe("PuzzleBoard", () => {
     };
     await act(async () => props.onDragStart());
     await act(async () => props.onDragEnd({ currentTarget: node }));
+    return node;
   }
 
   /** Join every loose piece onto the anchor's assembly. */
@@ -263,6 +293,23 @@ describe("PuzzleBoard", () => {
     expect(saved).toHaveLength(1); // every drop is saved, joined or not
   });
 
+  it("pulls a group dropped off the board back on, dropped node included", async () => {
+    await mount();
+    const a = anchor();
+    const other = groups().find((g) => g.el !== a.el)!;
+
+    const node = await drop(other.el, { x: -5000, y: -5000 });
+
+    const x = Number(other.el.getAttribute("data-x"));
+    const y = Number(other.el.getAttribute("data-y"));
+    expect(x).toBeGreaterThan(-5000);
+    expect(y).toBeGreaterThan(-5000);
+    // react-konva would skip writing a settled position equal to the last
+    // rendered one, so the board has to move the dropped node itself.
+    expect({ x: node.x(), y: node.y() }).toEqual({ x, y });
+    expect(groups()).toHaveLength(COLS * ROWS);
+  });
+
   it("draws the group being dragged on top", async () => {
     await mount();
     const first = groups()[0];
@@ -320,6 +367,26 @@ describe("PuzzleBoard", () => {
 
     expect(groups()).toHaveLength(COLS * ROWS);
     expect(onProgress).toHaveBeenLastCalledWith(COLS * ROWS, COLS * ROWS);
+  });
+
+  it("re-measures the height it may take whenever it lays out a new grid", async () => {
+    // The board sits last in <main>; what it may take is the window below it.
+    // A taller window by the time the solver picks another piece count must
+    // give the new layout a taller stage, not the height from first mount.
+    const main = document.createElement("main");
+    document.body.appendChild(main);
+    main.appendChild(container);
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(700);
+    await mount();
+    const first = Number(container.querySelector("[data-stage]")!.getAttribute("data-h"));
+
+    vi.spyOn(window, "innerHeight", "get").mockReturnValue(1000);
+    await mount(0, { cols: 8, rows: 6 });
+    const second = Number(container.querySelector("[data-stage]")!.getAttribute("data-h"));
+
+    expect(first).toBe(700);
+    expect(second).toBe(1000);
+    main.remove();
   });
 
   it("gathers the loose pieces on request, leaving assemblies alone, and saves", async () => {

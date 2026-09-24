@@ -22,8 +22,11 @@ export interface GroupStore {
   replace(groups: Iterable<PieceGroup>): void;
   /**
    * Apply one change. `change` gets private copies it may mutate freely — the
-   * `lib/puzzle` helpers work in place — and they are published afterwards as
-   * the next snapshot. Returns whatever `change` returns.
+   * `lib/puzzle` helpers work in place — and the groups are published afterwards
+   * as the next snapshot. The member index handed in is scratch space for those
+   * helpers: the published one is rebuilt from the groups, so a change that only
+   * edits `groups` cannot leave the two disagreeing. Returns whatever `change`
+   * returns.
    */
   update<T>(change: (groups: Map<number, PieceGroup>, pieceToGroup: Map<string, number>) => T): T;
 }
@@ -54,8 +57,8 @@ function indexMembers(groups: ReadonlyMap<number, PieceGroup>): Map<string, numb
 export function createGroupStore(): GroupStore {
   let model: GroupModel = { groups: new Map(), pieceToGroup: new Map() };
   const listeners = new Set<() => void>();
-  const publish = (groups: Map<number, PieceGroup>, pieceToGroup: Map<string, number>) => {
-    model = { groups, pieceToGroup };
+  const publish = (groups: Map<number, PieceGroup>) => {
+    model = { groups, pieceToGroup: indexMembers(groups) };
     for (const listener of listeners) listener();
   };
   return {
@@ -67,14 +70,12 @@ export function createGroupStore(): GroupStore {
       };
     },
     replace(groups) {
-      const next = copyGroups(groups);
-      publish(next, indexMembers(next));
+      publish(copyGroups(groups));
     },
     update(change) {
       const groups = copyGroups(model.groups.values());
-      const pieceToGroup = new Map(model.pieceToGroup);
-      const result = change(groups, pieceToGroup);
-      publish(groups, pieceToGroup);
+      const result = change(groups, new Map(model.pieceToGroup));
+      publish(groups);
       return result;
     },
   };
