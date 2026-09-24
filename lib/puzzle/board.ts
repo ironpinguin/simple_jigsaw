@@ -242,14 +242,17 @@ function overlaps(a: Rect, b: Rect): boolean {
  * no assembly covers so the leftovers are in one predictable place instead of
  * strewn among the assemblies (issue #4). Assemblies stay where they are.
  *
- * The stage is cut into slots the size of the largest loose bitmap; a slot
- * touching an assembly's extent is taken. Loose pieces fill the free slots in
- * reading order from the top-left, keeping their own reading order by current
- * position — so gathering again changes nothing, and nothing is hinted about
- * where a piece belongs. If the free slots are too few the slots shrink, down
- * to half a bitmap, letting neighbours overlap a little; if even that is not
- * enough the rest spill onto slots over assemblies, where `renderOrder` still
- * draws them on top. Every position is clamped like a drop.
+ * Loose bitmaps are centred on a grid of slots whose pitch is the largest loose
+ * bitmap; a slot is taken when a bitmap of that size centred on it would touch
+ * an assembly's extent. The grid is inset by half a bitmap, so a centred bitmap
+ * never overhangs the stage and the drop clamp never has to move it. Loose
+ * pieces fill the free slots in reading order from the top-left, each keeping
+ * the rank of the slot nearest its current centre — so gathering again changes
+ * nothing, and nothing is hinted about where a piece belongs. If the free slots
+ * are too few the pitch shrinks, down to half a bitmap, letting neighbours
+ * overlap a little but never an assembly; if even that is not enough the rest
+ * spill onto slots over assemblies, where `renderOrder` still draws them on
+ * top. Every position is clamped like a drop.
  *
  * Returns the moved groups only, as copies; an empty array when there is
  * nothing loose to gather.
@@ -265,55 +268,67 @@ export function gatherLoose({ groups, stageW, stageH, rectOf }: GatherInput): Pi
   }
   if (loose.length === 0) return [];
 
-  // By centre, not corner: a gathered bitmap is centred in its slot, so centres
-  // in one slot row line up whatever each piece's tabs add. Rounded to the pixel
-  // so float noise cannot split a row.
-  const at = ({ g, rect }: (typeof loose)[number]) => ({
-    x: Math.round(g.x + rect.x + rect.width / 2),
-    y: Math.round(g.y + rect.y + rect.height / 2),
-  });
-  loose.sort((a, b) => at(a).y - at(b).y || at(a).x - at(b).x || a.g.id - b.g.id);
-
   const cellW = Math.max(...loose.map((l) => l.rect.width));
   const cellH = Math.max(...loose.map((l) => l.rect.height));
+  // Half a bitmap in from each edge; on a stage under two bitmaps wide, a
+  // quarter of the stage instead, so shrinking the pitch still adds slots.
+  const insetX = Math.min(cellW, stageW / 2) / 2;
+  const insetY = Math.min(cellH, stageH / 2) / 2;
 
-  /** Slots at `scale`, free ones first (each list in reading order). */
-  function slotsAt(scale: number): { free: Rect[]; all: Rect[] } {
+  /** Slot centres at `scale`, free ones first (each part in reading order). */
+  function slotsAt(scale: number) {
     const w = cellW * scale;
     const h = cellH * scale;
-    const cols = Math.max(1, Math.floor(stageW / w));
-    const rows = Math.max(1, Math.floor(stageH / h));
-    const free: Rect[] = [];
-    const over: Rect[] = [];
+    const cols = Math.max(1, Math.floor((stageW - 2 * insetX) / w) + 1);
+    const rows = Math.max(1, Math.floor((stageH - 2 * insetY) / h) + 1);
+    const free: number[] = [];
+    const over: number[] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
-        const slot = { x: c * w, y: r * h, width: w, height: h };
-        (taken.some((t) => overlaps(slot, t)) ? over : free).push(slot);
+        const cx = insetX + c * w;
+        const cy = insetY + r * h;
+        const footprint = { x: cx - cellW / 2, y: cy - cellH / 2, width: cellW, height: cellH };
+        (taken.some((t) => overlaps(footprint, t)) ? over : free).push(r * cols + c);
       }
     }
-    return { free, all: [...free, ...over] };
+    return { w, h, cols, rows, free, all: [...free, ...over] };
   }
 
-  function pickSlots(): Rect[] {
+  function pickLayout() {
     for (const scale of GATHER_SCALES) {
-      const { free } = slotsAt(scale);
-      if (free.length >= loose.length) return free;
+      const layout = slotsAt(scale);
+      if (layout.free.length >= loose.length) return { ...layout, order: layout.free };
     }
     // Keep shrinking past the floor only as far as the stage itself demands.
     let scale = GATHER_SCALES[GATHER_SCALES.length - 1];
-    let all = slotsAt(scale).all;
-    while (all.length < loose.length) {
+    let layout = slotsAt(scale);
+    while (layout.all.length < loose.length) {
       scale *= 0.9;
-      all = slotsAt(scale).all;
+      layout = slotsAt(scale);
     }
-    return all;
+    return { ...layout, order: layout.all };
   }
-  const slots = pickSlots();
+  const { w, h, cols, rows, all, order } = pickLayout();
 
-  return loose.map(({ g, rect }, i) => {
-    const slot = slots[i];
-    const x = slot.x + (slot.width - rect.width) / 2 - rect.x;
-    const y = slot.y + (slot.height - rect.height) / 2 - rect.y;
+  // Rank each piece by the slot nearest its centre, in the order slots are
+  // dealt. A gathered piece sits exactly on its slot, so it gets that slot's
+  // rank back whatever its tabs add; ties fall back to position, then id.
+  const rank = new Map(all.map((cell, i) => [cell, i]));
+  const clampIndex = (v: number, n: number) => Math.min(n - 1, Math.max(0, Math.round(v)));
+  const keyed = loose.map((l) => {
+    const cx = l.g.x + l.rect.x + l.rect.width / 2;
+    const cy = l.g.y + l.rect.y + l.rect.height / 2;
+    const cell = clampIndex((cy - insetY) / h, rows) * cols + clampIndex((cx - insetX) / w, cols);
+    return { ...l, cx, cy, rank: rank.get(cell)! };
+  });
+  keyed.sort((a, b) => a.rank - b.rank || a.cy - b.cy || a.cx - b.cx || a.g.id - b.g.id);
+
+  return keyed.map(({ g, rect }, i) => {
+    const cell = order[i];
+    const cx = insetX + (cell % cols) * w;
+    const cy = insetY + Math.floor(cell / cols) * h;
+    const x = cx - rect.width / 2 - rect.x;
+    const y = cy - rect.height / 2 - rect.y;
     const pos = clampGroupPosition({ x, y }, rect, stageW, stageH);
     return { ...g, members: [...g.members], x: pos.x, y: pos.y };
   });

@@ -305,6 +305,64 @@ describe("gatherLoose", () => {
     expect(again).toEqual(once);
   });
 
+  it("stays idempotent when the slots have to shrink below the bitmap size", () => {
+    // Enough loose pieces that bitmap-sized slots run out: the top and bottom
+    // rows then overhang the stage and are pulled back in by the clamp.
+    const { cols, rows } = computeGrid(300, 4 / 3);
+    for (const stage of [
+      { containerW: 1440, availableH: 900, aspect: 4 / 3 },
+      { containerW: 1024, availableH: 700, aspect: 4 / 3 },
+      { containerW: 320, availableH: 290, aspect: 4 / 3 },
+    ]) {
+      const { b, groups } = partlySolved(cols, rows, 2, stage);
+      const once = gatherLoose({ groups, ...b });
+      const byId = new Map(once.map((g) => [g.id, g]));
+      const again = gatherLoose({ groups: groups.map((g) => byId.get(g.id) ?? g), ...b });
+      expect(again).toEqual(once);
+    }
+  });
+
+  it("keeps whole bitmaps clear of the assemblies when the slots shrink", () => {
+    // Uniform 100px bitmaps on a 1000px stage: 10 x 10 at full size, too few for
+    // 130 loose pieces next to a 2 x 2 assembly, so the slots must shrink — yet
+    // there is still room for all of them in the free area.
+    const rectOf = (id: string): Rect => {
+      const [r, c] = id.split("-").map(Number);
+      return { x: c * 80 - 10, y: r * 80 - 10, width: 100, height: 100 };
+    };
+    const loose: PieceGroup[] = Array.from({ length: 130 }, (_, i) => ({
+      id: 2 + i,
+      x: (i * 37) % 800,
+      y: (i * 53) % 800,
+      members: [pieceId(10, i)],
+    }));
+    const b = { stageW: 1000, stageH: 1000, rectOf };
+    // Slide the assembly so its edges meet the shrunken slot grid at every phase.
+    for (let at = 380; at < 480; at += 7) {
+      const assembly: PieceGroup = { id: 1, x: at, y: at, members: ["0-0", "0-1", "1-0", "1-1"] };
+      const groups = [assembly, ...loose];
+      const moved = gatherLoose({ groups, ...b });
+      expect(moved.length).toBe(loose.length);
+
+      const a = stageRect(assembly, rectOf);
+      for (const g of moved) {
+        const r = stageRect(g, rectOf);
+        expect(overlap(r, a)).toBe(false);
+        expect(r.x).toBeGreaterThanOrEqual(-1e-9);
+        expect(r.y).toBeGreaterThanOrEqual(-1e-9);
+        expect(r.x + r.width).toBeLessThanOrEqual(1000 + 1e-9);
+        expect(r.y + r.height).toBeLessThanOrEqual(1000 + 1e-9);
+      }
+      // Shrunken slots do pack neighbours closer than a bitmap apart.
+      const xs = [...new Set(moved.map((g) => Math.round(stageRect(g, rectOf).x)))].sort((p, q) => p - q);
+      expect(xs[1] - xs[0]).toBeLessThan(100);
+
+      const byId = new Map(moved.map((g) => [g.id, g]));
+      const again = gatherLoose({ groups: groups.map((g) => byId.get(g.id) ?? g), ...b });
+      expect(again).toEqual(moved);
+    }
+  });
+
   it("has nothing to do once no piece is loose", () => {
     const { b, groups } = partlySolved(4, 3, 3);
     expect(gatherLoose({ groups, ...b })).toEqual([]);
