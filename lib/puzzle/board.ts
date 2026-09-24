@@ -223,6 +223,102 @@ export function scatterGroups({
   return groups;
 }
 
+export interface GatherInput {
+  groups: Iterable<PieceGroup>;
+  stageW: number;
+  stageH: number;
+  rectOf: (id: string) => Rect | undefined;
+}
+
+/** Scales tried, largest first, when slots of bitmap size do not all fit. */
+const GATHER_SCALES = [1, 0.9, 0.8, 0.7, 0.6, 0.5];
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+/**
+ * New positions for every loose (single-piece) group, collected into the area
+ * no assembly covers so the leftovers are in one predictable place instead of
+ * strewn among the assemblies (issue #4). Assemblies stay where they are.
+ *
+ * The stage is cut into slots the size of the largest loose bitmap; a slot
+ * touching an assembly's extent is taken. Loose pieces fill the free slots in
+ * reading order from the top-left, keeping their own reading order by current
+ * position — so gathering again changes nothing, and nothing is hinted about
+ * where a piece belongs. If the free slots are too few the slots shrink, down
+ * to half a bitmap, letting neighbours overlap a little; if even that is not
+ * enough the rest spill onto slots over assemblies, where `renderOrder` still
+ * draws them on top. Every position is clamped like a drop.
+ *
+ * Returns the moved groups only, as copies; an empty array when there is
+ * nothing loose to gather.
+ */
+export function gatherLoose({ groups, stageW, stageH, rectOf }: GatherInput): PieceGroup[] {
+  const loose: { g: PieceGroup; rect: Rect }[] = [];
+  const taken: Rect[] = [];
+  for (const g of groups) {
+    const extent = groupExtent(g.members, rectOf);
+    if (!extent) continue;
+    if (g.members.length === 1) loose.push({ g, rect: extent });
+    else taken.push({ ...extent, x: g.x + extent.x, y: g.y + extent.y });
+  }
+  if (loose.length === 0) return [];
+
+  // By centre, not corner: a gathered bitmap is centred in its slot, so centres
+  // in one slot row line up whatever each piece's tabs add. Rounded to the pixel
+  // so float noise cannot split a row.
+  const at = ({ g, rect }: (typeof loose)[number]) => ({
+    x: Math.round(g.x + rect.x + rect.width / 2),
+    y: Math.round(g.y + rect.y + rect.height / 2),
+  });
+  loose.sort((a, b) => at(a).y - at(b).y || at(a).x - at(b).x || a.g.id - b.g.id);
+
+  const cellW = Math.max(...loose.map((l) => l.rect.width));
+  const cellH = Math.max(...loose.map((l) => l.rect.height));
+
+  /** Slots at `scale`, free ones first (each list in reading order). */
+  function slotsAt(scale: number): { free: Rect[]; all: Rect[] } {
+    const w = cellW * scale;
+    const h = cellH * scale;
+    const cols = Math.max(1, Math.floor(stageW / w));
+    const rows = Math.max(1, Math.floor(stageH / h));
+    const free: Rect[] = [];
+    const over: Rect[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const slot = { x: c * w, y: r * h, width: w, height: h };
+        (taken.some((t) => overlaps(slot, t)) ? over : free).push(slot);
+      }
+    }
+    return { free, all: [...free, ...over] };
+  }
+
+  function pickSlots(): Rect[] {
+    for (const scale of GATHER_SCALES) {
+      const { free } = slotsAt(scale);
+      if (free.length >= loose.length) return free;
+    }
+    // Keep shrinking past the floor only as far as the stage itself demands.
+    let scale = GATHER_SCALES[GATHER_SCALES.length - 1];
+    let all = slotsAt(scale).all;
+    while (all.length < loose.length) {
+      scale *= 0.9;
+      all = slotsAt(scale).all;
+    }
+    return all;
+  }
+  const slots = pickSlots();
+
+  return loose.map(({ g, rect }, i) => {
+    const slot = slots[i];
+    const x = slot.x + (slot.width - rect.width) / 2 - rect.x;
+    const y = slot.y + (slot.height - rect.height) / 2 - rect.y;
+    const pos = clampGroupPosition({ x, y }, rect, stageW, stageH);
+    return { ...g, members: [...g.members], x: pos.x, y: pos.y };
+  });
+}
+
 /**
  * Smallest rect covering all of `rects`, or `null` for no input.
  *

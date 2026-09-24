@@ -6,6 +6,7 @@ import { renderOrder, resolveConnections, pieceId, type PieceGroup } from "./gro
 import {
   boardGeometry,
   clampGroupPosition,
+  gatherLoose,
   groupExtent,
   PIECE_PAD,
   pieceBox,
@@ -102,55 +103,55 @@ describe("pieceBox", () => {
   });
 });
 
-describe("scatterGroups", () => {
-  /** A real board: stage sizing plus the real jittered/tabbed bitmap rects. */
-  function board(cols: number, rows: number, stage = STAGE, edgeSeed = 777) {
-    const g = boardGeometry({ ...stage, cols, rows });
-    const grid = generateEdges(cols, rows, edgeSeed);
-    const rects = new Map<string, Rect>();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        rects.set(pieceId(r, c), pieceBox(grid, r, c, g.pieceW, g.pieceH).rect);
+/** A real board: stage sizing plus the real jittered/tabbed bitmap rects. */
+function board(cols: number, rows: number, stage = STAGE, edgeSeed = 777) {
+  const g = boardGeometry({ ...stage, cols, rows });
+  const grid = generateEdges(cols, rows, edgeSeed);
+  const rects = new Map<string, Rect>();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      rects.set(pieceId(r, c), pieceBox(grid, r, c, g.pieceW, g.pieceH).rect);
+    }
+  }
+  return {
+    cols,
+    rows,
+    stageW: g.stageW,
+    stageH: g.stageH,
+    rectOf: (id: string) => rects.get(id)!,
+  };
+}
+
+/** Every piece's bitmap in stage coordinates, in draw order (last on top). */
+function stageRects(groups: PieceGroup[], rectOf: (id: string) => Rect): Rect[] {
+  return renderOrder(groups).map((g) => {
+    const r = rectOf(g.members[0]);
+    return { x: g.x + r.x, y: g.y + r.y, width: r.width, height: r.height };
+  });
+}
+
+/**
+ * Share of each rect not covered by anything drawn above it, sampled on an
+ * n x n lattice. Konva hit-tests an Image as its whole rect, so this is the
+ * share of the piece a click can still reach.
+ */
+function grabbableShares(rects: Rect[], n = 8): number[] {
+  const inside = (r: Rect, x: number, y: number) =>
+    x > r.x && x < r.x + r.width && y > r.y && y < r.y + r.height;
+  return rects.map((r, i) => {
+    let free = 0;
+    for (let a = 0; a < n; a++) {
+      for (let b = 0; b < n; b++) {
+        const x = r.x + ((a + 0.5) / n) * r.width;
+        const y = r.y + ((b + 0.5) / n) * r.height;
+        if (!rects.slice(i + 1).some((o) => inside(o, x, y))) free++;
       }
     }
-    return {
-      cols,
-      rows,
-      stageW: g.stageW,
-      stageH: g.stageH,
-      rectOf: (id: string) => rects.get(id)!,
-    };
-  }
+    return free / (n * n);
+  });
+}
 
-  /** Every piece's bitmap in stage coordinates, in draw order (last on top). */
-  function stageRects(groups: PieceGroup[], rectOf: (id: string) => Rect): Rect[] {
-    return renderOrder(groups).map((g) => {
-      const r = rectOf(g.members[0]);
-      return { x: g.x + r.x, y: g.y + r.y, width: r.width, height: r.height };
-    });
-  }
-
-  /**
-   * Share of each rect not covered by anything drawn above it, sampled on an
-   * n x n lattice. Konva hit-tests an Image as its whole rect, so this is the
-   * share of the piece a click can still reach.
-   */
-  function grabbableShares(rects: Rect[], n = 8): number[] {
-    const inside = (r: Rect, x: number, y: number) =>
-      x > r.x && x < r.x + r.width && y > r.y && y < r.y + r.height;
-    return rects.map((r, i) => {
-      let free = 0;
-      for (let a = 0; a < n; a++) {
-        for (let b = 0; b < n; b++) {
-          const x = r.x + ((a + 0.5) / n) * r.width;
-          const y = r.y + ((b + 0.5) / n) * r.height;
-          if (!rects.slice(i + 1).some((o) => inside(o, x, y))) free++;
-        }
-      }
-      return free / (n * n);
-    });
-  }
-
+describe("scatterGroups", () => {
   it("creates exactly one single-piece group per cell, covering every id once", () => {
     // Regression guard for issue #1: a piece id falling out of the group model
     // would render as a permanently invisible piece.
@@ -228,6 +229,107 @@ describe("scatterGroups", () => {
         expect(shares.every((s) => s === 1)).toBe(true);
       }
     }
+  });
+});
+
+describe("gatherLoose", () => {
+  /** Scatter a real board, then join the first `joinRows` rows into assemblies. */
+  function partlySolved(cols: number, rows: number, joinRows: number, stage = STAGE) {
+    const b = board(cols, rows, stage);
+    const scattered = scatterGroups({ ...b, seed: 4242 });
+    const groups: PieceGroup[] = [];
+    for (let r = 0; r < rows; r++) {
+      if (r < joinRows) {
+        // Park each assembled row in the middle band so it cuts across the stage.
+        groups.push({
+          id: 1000 + r,
+          x: b.stageW * 0.3,
+          y: b.stageH * 0.2 + r * 3,
+          members: Array.from({ length: cols }, (_, c) => pieceId(r, c)),
+        });
+      } else {
+        groups.push(...scattered.slice(r * cols, (r + 1) * cols));
+      }
+    }
+    return { b, groups };
+  }
+
+  function stageRect(g: PieceGroup, rectOf: (id: string) => Rect): Rect {
+    const e = groupExtent(g.members, rectOf)!;
+    return { ...e, x: g.x + e.x, y: g.y + e.y };
+  }
+  const overlap = (a: Rect, b: Rect) =>
+    a.x < b.x + b.width - 1e-9 &&
+    b.x < a.x + a.width - 1e-9 &&
+    a.y < b.y + b.height - 1e-9 &&
+    b.y < a.y + a.height - 1e-9;
+
+  it("moves every loose piece and nothing else, without touching its input", () => {
+    const { b, groups } = partlySolved(8, 6, 2);
+    const before = structuredClone(groups);
+    const moved = gatherLoose({ groups, ...b });
+
+    expect(groups).toEqual(before);
+    const loose = groups.filter((g) => g.members.length === 1);
+    expect(moved.map((g) => g.id).sort()).toEqual(loose.map((g) => g.id).sort());
+    for (const g of moved) {
+      expect(g.members).toEqual(loose.find((l) => l.id === g.id)!.members);
+    }
+  });
+
+  it("collects the loose pieces clear of the assemblies and of each other", () => {
+    for (const [containerW, availableH] of [
+      [1440, 900],
+      [1920, 1080],
+    ]) {
+      const { b, groups } = partlySolved(12, 9, 3, { containerW, availableH, aspect: 4 / 3 });
+      const assemblies = groups.filter((g) => g.members.length > 1).map((g) => stageRect(g, b.rectOf));
+      const gathered = gatherLoose({ groups, ...b }).map((g) => stageRect(g, b.rectOf));
+
+      for (const [i, r] of gathered.entries()) {
+        expect(r.x).toBeGreaterThanOrEqual(-1e-9);
+        expect(r.y).toBeGreaterThanOrEqual(-1e-9);
+        expect(r.x + r.width).toBeLessThanOrEqual(b.stageW + 1e-9);
+        expect(r.y + r.height).toBeLessThanOrEqual(b.stageH + 1e-9);
+        for (const a of assemblies) expect(overlap(r, a)).toBe(false);
+        for (const o of gathered.slice(i + 1)) expect(overlap(r, o)).toBe(false);
+      }
+    }
+  });
+
+  it("is idempotent: gathering already gathered pieces moves nothing", () => {
+    const { b, groups } = partlySolved(8, 6, 2);
+    const once = gatherLoose({ groups, ...b });
+    const byId = new Map(once.map((g) => [g.id, g]));
+    const again = gatherLoose({ groups: groups.map((g) => byId.get(g.id) ?? g), ...b });
+    expect(again).toEqual(once);
+  });
+
+  it("has nothing to do once no piece is loose", () => {
+    const { b, groups } = partlySolved(4, 3, 3);
+    expect(gatherLoose({ groups, ...b })).toEqual([]);
+  });
+
+  it("still keeps every piece on the stage and grabbable when the free area is too small", () => {
+    // 300 pieces on the minimum stage: bitmap-sized slots cannot all fit, so the
+    // slots shrink and may spill over the assemblies.
+    const { cols, rows } = computeGrid(300, 4 / 3);
+    const { b, groups } = partlySolved(cols, rows, 2, { containerW: 320, availableH: 290, aspect: 4 / 3 });
+    const moved = gatherLoose({ groups, ...b });
+    expect(moved.length).toBe(groups.filter((g) => g.members.length === 1).length);
+
+    const byId = new Map(moved.map((g) => [g.id, g]));
+    const after = groups.map((g) => byId.get(g.id) ?? g);
+    const rects = stageRects(
+      after.filter((g) => g.members.length === 1),
+      b.rectOf,
+    );
+    for (const r of rects) {
+      expect(r.x).toBeGreaterThanOrEqual(-1e-9);
+      expect(r.x + r.width).toBeLessThanOrEqual(b.stageW + 1e-9);
+      expect(r.y + r.height).toBeLessThanOrEqual(b.stageH + 1e-9);
+    }
+    expect(Math.min(...grabbableShares(rects))).toBeGreaterThan(0);
   });
 });
 

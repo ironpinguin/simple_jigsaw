@@ -1,9 +1,9 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import type { PuzzleData } from "./PuzzleBoard";
+import type { BoardActions, PuzzleData } from "./PuzzleBoard";
 import ReportDialog from "@/components/ReportDialog";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import {
@@ -125,6 +125,9 @@ export default function PuzzleSolver({
   // the `pc:` one above already does.
 
   const [resetNonce, setResetNonce] = useState(0);
+
+  /** Filled by the board once its chunk has loaded; see `BoardActions`. */
+  const boardActions = useRef<BoardActions | null>(null);
 
   /**
    * Read by the board from its seeding effect, never during a render — this
@@ -261,6 +264,13 @@ export default function PuzzleSolver({
         >
           {showMap ? t("hideMap") : t("showMap")}
         </button>
+        <button
+          className="button secondary"
+          type="button"
+          onClick={() => boardActions.current?.gatherLoose()}
+        >
+          {t("gather")}
+        </button>
         <button className="button secondary" type="button" onClick={share}>
           {copied ? t("copied") : t("share")}
         </button>
@@ -296,6 +306,7 @@ export default function PuzzleSolver({
           loadSolveState={loadSolveState}
           saveSolveState={saveSolveState}
           resetNonce={resetNonce}
+          actionsRef={boardActions}
         />
       </div>
     </div>
