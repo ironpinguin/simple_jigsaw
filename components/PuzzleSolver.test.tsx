@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useImperativeHandle, type Ref } from "react";
 import { act } from "react";
 import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
@@ -23,6 +23,8 @@ const board = vi.hoisted<{
   saveSolveState: ((raw: string) => void) | null;
   /** Bumped by the solver to tell the board to scatter afresh. */
   resetNonce: number | null;
+  /** How often the solver asked the board to gather its loose pieces. */
+  gathered: number;
 }>(() => ({
   reportsFor: () => true,
   groupsFor: (total) => total,
@@ -30,6 +32,7 @@ const board = vi.hoisted<{
   loadSolveState: null,
   saveSolveState: null,
   resetNonce: null,
+  gathered: 0,
 }));
 
 vi.mock("./PuzzleBoard", () => {
@@ -41,6 +44,7 @@ vi.mock("./PuzzleBoard", () => {
     loadSolveState,
     saveSolveState,
     resetNonce,
+    actionsRef,
   }: {
     cols: number;
     rows: number;
@@ -49,8 +53,10 @@ vi.mock("./PuzzleBoard", () => {
     loadSolveState: () => string | null;
     saveSolveState: (raw: string) => void;
     resetNonce: number;
+    actionsRef?: Ref<{ gatherLoose: () => void } | null>;
   }) {
     const total = cols * rows;
+    useImperativeHandle(actionsRef, () => ({ gatherLoose: () => board.gathered++ }), []);
     // In an effect, not the render body: a render side effect would double-fire
     // the moment this suite ever runs under StrictMode.
     useEffect(() => {
@@ -168,6 +174,7 @@ describe("PuzzleSolver", () => {
     board.reportsFor = () => true;
     board.groupsFor = (total) => total;
     board.showMinimap = null;
+    board.gathered = 0;
     board.loadSolveState = null;
     board.saveSolveState = null;
     board.resetNonce = null;
@@ -312,6 +319,14 @@ describe("PuzzleSolver", () => {
 
     await act(async () => toggle(messages.solve.showMap)!.click());
     expect(board.showMinimap).toBe(true);
+  });
+
+  it("asks the board to gather its loose pieces", async () => {
+    container.innerHTML = serverHtml();
+    await hydrate();
+
+    await act(async () => toggle(messages.solve.gather)!.click());
+    expect(board.gathered).toBe(1);
   });
 
   it("keeps the count when the solver declines to discard progress", async () => {

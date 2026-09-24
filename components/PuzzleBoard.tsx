@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges, type EdgeGrid } from "@/lib/puzzle/edges";
@@ -13,6 +21,7 @@ import {
 } from "@/lib/puzzle/groups";
 import {
   boardGeometry,
+  gatherLoose,
   pieceBox,
   scatterGroups,
   settleGroup,
@@ -228,6 +237,12 @@ function buildLayout(
   return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
 }
 
+/** What the solver's toolbar can ask of the board. */
+export interface BoardActions {
+  /** Collect every loose piece into the area free of assemblies. */
+  gatherLoose: () => void;
+}
+
 interface Props {
   puzzle: PuzzleData;
   cols: number;
@@ -255,6 +270,12 @@ interface Props {
   saveSolveState: (raw: string) => void;
   /** Changes when the solver asks to start over; re-seeds from the scatter. */
   resetNonce: number;
+  /**
+   * Filled with the board's actions once it is mounted. A handle rather than a
+   * nonce prop like `resetNonce`: gathering is a one-off command, and running it
+   * from an effect would re-render the board from inside that effect.
+   */
+  actionsRef?: Ref<BoardActions | null>;
 }
 
 export default function PuzzleBoard({
@@ -267,6 +288,7 @@ export default function PuzzleBoard({
   loadSolveState,
   saveSolveState,
   resetNonce,
+  actionsRef,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -360,6 +382,40 @@ export default function PuzzleBoard({
     // component would do it too, but that remounts and re-rasterises every piece.
   }, [layout, cols, rows, total, onProgress, bump, loadSolveState, resetNonce]);
 
+  /** Write the current group model to the solver's storage. */
+  const persist = useCallback(
+    (current: Layout) => {
+      saveSolveState(
+        serialiseSolveState({
+          groups: groupsRef.current.values(),
+          cols,
+          rows,
+          stageW: current.stageW,
+          stageH: current.stageH,
+          updatedAt: Date.now(),
+        }),
+      );
+    },
+    [saveSolveState, cols, rows],
+  );
+
+  const gather = useCallback(() => {
+    if (!layout) return;
+    const groups = groupsRef.current;
+    const moved = gatherLoose({
+      groups: groups.values(),
+      stageW: layout.stageW,
+      stageH: layout.stageH,
+      rectOf: (pid) => layout.pieces.get(pid)?.rect,
+    });
+    if (moved.length === 0) return;
+    for (const g of moved) groups.set(g.id, g);
+    bump();
+    persist(layout);
+  }, [layout, bump, persist]);
+
+  useImperativeHandle(actionsRef, () => ({ gatherLoose: gather }), [gather]);
+
   function handleGroupDragEnd(groupId: number, node: Konva.Node) {
     setDraggingId(null);
 
@@ -410,16 +466,7 @@ export default function PuzzleBoard({
 
     // Drops are far too rare for debouncing to buy anything. (The seeding effect
     // also replaces the model, and deliberately does not save — see there.)
-    saveSolveState(
-      serialiseSolveState({
-        groups: groups.values(),
-        cols,
-        rows,
-        stageW: current.stageW,
-        stageH: current.stageH,
-        updatedAt: Date.now(),
-      }),
-    );
+    persist(current);
   }
 
   // --- Zoom & pan -----------------------------------------------------------

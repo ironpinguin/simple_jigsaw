@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **🧲 Gather loose pieces** in the puzzle toolbar collects every piece that is
+  not yet part of an assembly into the free space of the board, in neat rows
+  from the top-left and clear of what has already been put together. Once most
+  of the picture is assembled, the leftovers are no longer strewn between the
+  finished parts. Assemblies stay where they are, and pressing it again changes
+  nothing. (#4)
+
 ### Fixed
 - The *Last updated* date on the Terms and Privacy pages now shows the date the
   document actually carries. An installation running west of UTC showed the day

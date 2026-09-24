@@ -223,6 +223,117 @@ export function scatterGroups({
   return groups;
 }
 
+export interface GatherInput {
+  groups: Iterable<PieceGroup>;
+  stageW: number;
+  stageH: number;
+  rectOf: (id: string) => Rect | undefined;
+}
+
+/** Scales tried, largest first, when slots of bitmap size do not all fit. */
+const GATHER_SCALES = [1, 0.9, 0.8, 0.7, 0.6, 0.5];
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+/**
+ * New positions for every loose (single-piece) group, collected into the area
+ * no assembly covers so the leftovers are in one predictable place instead of
+ * strewn among the assemblies (issue #4). Assemblies stay where they are.
+ *
+ * Loose bitmaps are centred on a grid of slots whose pitch is the largest loose
+ * bitmap; a slot is taken when a bitmap of that size centred on it would touch
+ * an assembly's extent. The grid is inset by half a bitmap, so a centred bitmap
+ * never overhangs the stage and the drop clamp never has to move it. Loose
+ * pieces fill the free slots in reading order from the top-left, each keeping
+ * the rank of the slot nearest its current centre — so gathering again changes
+ * nothing, and nothing is hinted about where a piece belongs. If the free slots
+ * are too few the pitch shrinks, down to half a bitmap, letting neighbours
+ * overlap a little but never an assembly; if even that is not enough the rest
+ * spill onto slots over assemblies, where `renderOrder` still draws them on
+ * top. Every position is clamped like a drop.
+ *
+ * Returns the moved groups only, as copies; an empty array when there is
+ * nothing loose to gather.
+ */
+export function gatherLoose({ groups, stageW, stageH, rectOf }: GatherInput): PieceGroup[] {
+  const loose: { g: PieceGroup; rect: Rect }[] = [];
+  const taken: Rect[] = [];
+  for (const g of groups) {
+    const extent = groupExtent(g.members, rectOf);
+    if (!extent) continue;
+    if (g.members.length === 1) loose.push({ g, rect: extent });
+    else taken.push({ ...extent, x: g.x + extent.x, y: g.y + extent.y });
+  }
+  if (loose.length === 0) return [];
+
+  const cellW = Math.max(...loose.map((l) => l.rect.width));
+  const cellH = Math.max(...loose.map((l) => l.rect.height));
+  // Half a bitmap in from each edge; on a stage under two bitmaps wide, a
+  // quarter of the stage instead, so shrinking the pitch still adds slots.
+  const insetX = Math.min(cellW, stageW / 2) / 2;
+  const insetY = Math.min(cellH, stageH / 2) / 2;
+
+  /** Slot centres at `scale`, free ones first (each part in reading order). */
+  function slotsAt(scale: number) {
+    const w = cellW * scale;
+    const h = cellH * scale;
+    const cols = Math.max(1, Math.floor((stageW - 2 * insetX) / w) + 1);
+    const rows = Math.max(1, Math.floor((stageH - 2 * insetY) / h) + 1);
+    const free: number[] = [];
+    const over: number[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cx = insetX + c * w;
+        const cy = insetY + r * h;
+        const footprint = { x: cx - cellW / 2, y: cy - cellH / 2, width: cellW, height: cellH };
+        (taken.some((t) => overlaps(footprint, t)) ? over : free).push(r * cols + c);
+      }
+    }
+    return { w, h, cols, rows, free, all: [...free, ...over] };
+  }
+
+  function pickLayout() {
+    for (const scale of GATHER_SCALES) {
+      const layout = slotsAt(scale);
+      if (layout.free.length >= loose.length) return { ...layout, order: layout.free };
+    }
+    // Keep shrinking past the floor only as far as the stage itself demands.
+    let scale = GATHER_SCALES[GATHER_SCALES.length - 1];
+    let layout = slotsAt(scale);
+    while (layout.all.length < loose.length) {
+      scale *= 0.9;
+      layout = slotsAt(scale);
+    }
+    return { ...layout, order: layout.all };
+  }
+  const { w, h, cols, rows, all, order } = pickLayout();
+
+  // Rank each piece by the slot nearest its centre, in the order slots are
+  // dealt. A gathered piece sits exactly on its slot, so it gets that slot's
+  // rank back whatever its tabs add; ties fall back to position, then id.
+  const rank = new Map(all.map((cell, i) => [cell, i]));
+  const clampIndex = (v: number, n: number) => Math.min(n - 1, Math.max(0, Math.round(v)));
+  const keyed = loose.map((l) => {
+    const cx = l.g.x + l.rect.x + l.rect.width / 2;
+    const cy = l.g.y + l.rect.y + l.rect.height / 2;
+    const cell = clampIndex((cy - insetY) / h, rows) * cols + clampIndex((cx - insetX) / w, cols);
+    return { ...l, cx, cy, rank: rank.get(cell)! };
+  });
+  keyed.sort((a, b) => a.rank - b.rank || a.cy - b.cy || a.cx - b.cx || a.g.id - b.g.id);
+
+  return keyed.map(({ g, rect }, i) => {
+    const cell = order[i];
+    const cx = insetX + (cell % cols) * w;
+    const cy = insetY + Math.floor(cell / cols) * h;
+    const x = cx - rect.width / 2 - rect.x;
+    const y = cy - rect.height / 2 - rect.y;
+    const pos = clampGroupPosition({ x, y }, rect, stageW, stageH);
+    return { ...g, members: [...g.members], x: pos.x, y: pos.y };
+  });
+}
+
 /**
  * Smallest rect covering all of `rects`, or `null` for no input.
  *
