@@ -473,13 +473,15 @@ export default function PuzzleBoard({
 
     bump();
     onProgress(groups.size, total);
-    // Only the drop that joins the last two groups: moving the finished picture
-    // around afterwards also leaves one group, and must not celebrate again.
-    if (changed && groups.size === 1) onSolved();
 
     // Drops are far too rare for debouncing to buy anything. (The seeding effect
     // also replaces the model, and deliberately does not save — see there.)
     persist(current);
+
+    // Only the drop that joins the last two groups: moving the finished picture
+    // around afterwards also leaves one group, and must not celebrate again.
+    // After the save, so nothing the celebration does can cost the solve.
+    if (changed && groups.size === 1) onSolved();
   }
 
   // --- Zoom & pan -----------------------------------------------------------

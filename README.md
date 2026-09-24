@@ -67,8 +67,10 @@ Für echten Betrieb außerdem die RustFS-Zugangsdaten (`S3_ACCESS_KEY_ID`,
 
 Beim Lösen eines Puzzles spielt `public/sounds/applause.mp3` (CC0, Quelle in
 [NOTICE](NOTICE)). Die Datei wird zur Laufzeit ausgeliefert, lässt sich also
-ohne neuen Build ersetzen: im Repo die Datei überschreiben, oder im laufenden
-Container per Volume darüberlegen, z. B. in einer `docker-compose.override.yml`:
+ohne neuen Build ersetzen, indem man per Volume eine eigene darüberlegt. Der
+Produktionsstart oben (`-f docker-compose.yml`) mischt die
+`docker-compose.override.yml` bewusst *nicht* dazu — die gehört dem Dev-Modus.
+Das Volume kommt deshalb in eine eigene Datei, z. B. `docker-compose.applause.yml`:
 
 ```yaml
 services:
@@ -76,6 +78,15 @@ services:
     volumes:
       - ./mein-applaus.mp3:/app/public/sounds/applause.mp3:ro
 ```
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.applause.yml up -d
+```
+
+Mit `docker-compose.sqlite.yml` geht es genauso. Wer stattdessen die Datei im
+Repo überschreibt, braucht für das Produktions-Image einen neuen Build
+(`--build`), weil `public/` beim Bauen hineinkopiert wird; nur im Dev-Modus ist
+der Quellcode gemountet und die neue Datei sofort da.
 
 MP3 spielt in allen Browsern; ein paar Sekunden mit Ausblenden am Ende passen
 am besten. Fehlt die Datei oder ist sie unlesbar, bleibt es still — das Banner

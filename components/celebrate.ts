@@ -6,6 +6,36 @@ const FIREWORKS_MS = 3500;
 /** Clears whatever the current celebration still has running. */
 let stopCurrent: (() => void) | null = null;
 
+/**
+ * Keys that are held rather than pressed — the modifier keys of the UI Events
+ * key list. A bare one does not end the celebration.
+ */
+const MODIFIER_KEYS = new Set([
+  "Alt",
+  "AltGraph",
+  "CapsLock",
+  "Control",
+  "Fn",
+  "FnLock",
+  "Hyper",
+  "Meta",
+  "NumLock",
+  "ScrollLock",
+  "Shift",
+  "Super",
+  "Symbol",
+  "SymbolLock",
+]);
+
+/** Run a cleanup; this is decoration, so a failing one must not stop the rest. */
+function runQuietly(stop: () => void): void {
+  try {
+    stop();
+  } catch {
+    // Nothing to recover: whatever it was clearing is not the solve.
+  }
+}
+
 function prefersReducedMotion(): boolean {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
@@ -24,7 +54,6 @@ async function fireworks(): Promise<() => void> {
       // board stays usable while it plays.
       zIndex: 1000,
       origin: { x: xMin + Math.random() * (xMax - xMin), y: Math.random() * 0.4 },
-      disableForReducedMotion: true,
     });
   const timer = setInterval(() => {
     const left = end - Date.now();
@@ -48,13 +77,25 @@ async function fireworks(): Promise<() => void> {
  */
 export const APPLAUSE_URL = "/sounds/applause.mp3";
 
-async function applause(): Promise<() => void> {
-  const audio = new Audio(APPLAUSE_URL);
-  audio.volume = 0.8;
-  // Autoplay rules allow sound only after a user gesture. Releasing the last
-  // piece is one, but a browser may still refuse, and a missing or unreadable
-  // file fails the same way; either rejects here.
-  await audio.play();
+/**
+ * Start the applause and return its stop. Not async on purpose: `play()` only
+ * settles once the file has loaded, and a stop that had to wait for that could
+ * not cancel a pending play — the recording would still start, however briefly,
+ * after the solver had already moved on.
+ */
+function applause(): () => void {
+  let audio: HTMLAudioElement;
+  try {
+    audio = new Audio(APPLAUSE_URL);
+    audio.volume = 0.8;
+    // Autoplay rules allow sound only after a user gesture. Releasing the last
+    // piece is one, but a browser may still refuse, and a missing or unreadable
+    // file fails the same way; either rejects here. So does a `pause()` before
+    // playback started (AbortError).
+    audio.play().catch(() => {});
+  } catch {
+    return () => {};
+  }
   return () => {
     audio.pause();
     // Dropping the source (rather than setting "") ends the download too.
@@ -71,22 +112,27 @@ async function applause(): Promise<() => void> {
  */
 export function celebrate({ sound }: { sound: boolean }): void {
   stopCelebration();
+  const motion = !prefersReducedMotion();
+  // Nothing to show or play: no listeners to leave behind either.
+  if (!motion && !sound) return;
+
   const stops: Array<() => void> = [];
   let stopped = false;
-  const keep = (p: Promise<() => void>) =>
-    p.then(
-      (stop) => (stopped ? stop() : stops.push(stop)),
+  if (motion) {
+    fireworks().then(
+      (stop) => (stopped ? runQuietly(stop) : stops.push(stop)),
       () => {},
     );
-  if (!prefersReducedMotion()) keep(fireworks());
-  if (sound) keep(applause());
+  }
+  if (sound) stops.push(applause());
 
   // Any click, tap or key ends it early. Listened for rather than caught: the
   // confetti canvas lets pointer events through, and the press should still do
   // what it does — pick up a piece, press a button — besides ending the show.
-  // Capture phase, so a handler that stops propagation cannot swallow it.
+  // Capture phase, so a handler that stops propagation cannot swallow it. A key
+  // repeat is not a new press: it belongs to a key held since before the solve.
   const onPress = (e: Event) => {
-    if (e instanceof KeyboardEvent && ["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+    if (e instanceof KeyboardEvent && (e.repeat || MODIFIER_KEYS.has(e.key))) return;
     stopCelebration();
   };
   document.addEventListener("pointerdown", onPress, true);
@@ -96,7 +142,7 @@ export function celebrate({ sound }: { sound: boolean }): void {
     stopped = true;
     document.removeEventListener("pointerdown", onPress, true);
     document.removeEventListener("keydown", onPress, true);
-    for (const stop of stops) stop();
+    for (const stop of stops) runQuietly(stop);
   };
 }
 
@@ -105,6 +151,8 @@ export function celebrate({ sound }: { sound: boolean }): void {
  * solver starts over.
  */
 export function stopCelebration(): void {
-  stopCurrent?.();
+  // Cleared before running, so a stop can never run twice.
+  const stop = stopCurrent;
   stopCurrent = null;
+  stop?.();
 }

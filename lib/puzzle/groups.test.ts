@@ -126,6 +126,18 @@ describe("resolveConnections", () => {
     expect(groups.get(res.survivorId)!.members).toContain("1-0");
   });
 
+  it("reports no change when the finished picture is moved", () => {
+    // PuzzleBoard celebrates only a drop that changed something *and* left one
+    // group, so moving the solved picture around must not read as a merge.
+    const { groups, p2g } = setup([
+      { id: 1, x: 40, y: 40, members: ["0-0", "0-1", "1-0", "1-1"] },
+    ]);
+    const res = resolveConnections(groups, p2g, 1, 2, 2, 20);
+    expect(res.changed).toBe(false);
+    expect(res.survivorId).toBe(1);
+    expect(groups.size).toBe(1);
+  });
+
   it("returns the dragged group itself when nothing merges", () => {
     const { groups, p2g } = setup([
       { id: 7, x: 500, y: 500, members: ["0-0"] },
