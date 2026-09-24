@@ -7,10 +7,10 @@ const seed = [
 ];
 
 describe("createGroupStore", () => {
-  it("indexes every member of a replaced model", () => {
+  it("hands a change an index of every member", () => {
     const store = createGroupStore();
     store.replace(seed);
-    expect([...store.get().pieceToGroup]).toEqual([
+    expect(store.update((_groups, pieceToGroup) => [...pieceToGroup])).toEqual([
       ["0-0", 1],
       ["0-1", 2],
       ["0-2", 2],
@@ -42,7 +42,7 @@ describe("createGroupStore", () => {
     expect(before.groups.get(1)).toEqual(beforeGroup);
   });
 
-  it("rebuilds the member index from the groups a change leaves behind", () => {
+  it("indexes the groups the previous change left behind", () => {
     const store = createGroupStore();
     store.replace(seed);
     // Membership edited through `groups` alone, index left untouched.
@@ -50,11 +50,20 @@ describe("createGroupStore", () => {
       groups.get(2)!.members.push(...groups.get(1)!.members);
       groups.delete(1);
     });
-    expect([...store.get().pieceToGroup]).toEqual([
+    expect(store.update((_groups, pieceToGroup) => [...pieceToGroup])).toEqual([
       ["0-1", 2],
       ["0-2", 2],
       ["0-0", 2],
     ]);
+  });
+
+  it("builds each change's index afresh, whatever the last one wrote into it", () => {
+    const store = createGroupStore();
+    store.replace(seed);
+    store.update((_groups, pieceToGroup) => {
+      pieceToGroup.set("0-0", 99);
+    });
+    expect(store.update((_groups, pieceToGroup) => pieceToGroup.get("0-0"))).toBe(1);
   });
 
   it("returns what the change returns", () => {

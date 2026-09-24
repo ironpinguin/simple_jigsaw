@@ -148,9 +148,9 @@ function renderPieceCanvas(
 }
 
 /**
- * Fallback when there is nothing to measure: server rendering, or a test that
- * mounts the board outside the site layout. Equivalent to the old fixed budget on
- * an 800px window, and the stage floor takes over below it anyway.
+ * Fallback when there is nothing to measure: the board is not inside a `<main>`,
+ * as when a test mounts it outside the site layout. Equivalent to the old fixed
+ * budget on an 800px window, and the stage floor takes over below it anyway.
  */
 const FALLBACK_AVAILABLE_H = 590;
 
@@ -169,7 +169,6 @@ const FALLBACK_AVAILABLE_H = 590;
  * board is the last thing inside it.
  */
 function availableBoardHeight(wrap: HTMLElement): number {
-  if (typeof window === "undefined") return FALLBACK_AVAILABLE_H;
   const main = wrap.closest("main");
   if (!main) return FALLBACK_AVAILABLE_H;
 
@@ -304,19 +303,34 @@ export default function PuzzleBoard({
   const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
+  // Attaching the wrapper also reads its width, synchronously: waiting for a
+  // ResizeObserver instead would leave a board opened in a background tab unbuilt
+  // until the tab is shown, because a hidden page gets no resize notifications.
+  // Only the first width counts, like the observer's below.
+  //
+  // A detach is ignored. This div is the board's own root, so `null` only ever
+  // means unmounting or being hidden (an <Activity>, a Suspense fallback), and
+  // dropping the layout for that would tear the Konva stage down: it would come
+  // back unzoomed while the zoom readout and the overview kept the old view.
+  const attachWrap = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    setWrap(el);
+    const w = el.clientWidth;
+    if (w > 0) setContainerW((prev) => (prev > 0 ? prev : w));
+  }, []);
+
   // The group model — see `groupStore` for why it is a store rather than state
-  // or refs. Written on drop, gather and seeding, never per drag frame.
-  // State rather than useMemo: React may drop a memo (it does on every Fast
-  // Refresh), which would swap in an empty store.
+  // or refs. Written on drop, gather and seeding, never per drag frame. Both
+  // stores are held in state rather than useMemo: React may drop a memo (it does
+  // on every Fast Refresh), which would swap in an empty store.
   const [groupStore] = useState(createGroupStore);
+  const [viewStore] = useState(createViewStore);
   const model = useSyncExternalStore(groupStore.subscribe, groupStore.get, groupStore.get);
 
   // The group being dragged, so it can be drawn on top declaratively (see
   // renderOrder). Konva's own moveToTop() would outlive the drag, because
   // react-konva reorders nodes only when the React child order changes.
   const [draggingId, setDraggingId] = useState<number | null>(null);
-
-  const [viewStore] = useState(() => createViewStore());
 
   /** Call after every write to the stage transform — see `viewStore`. */
   const publishView = useCallback(() => {
@@ -327,9 +341,9 @@ export default function PuzzleBoard({
 
   const total = cols * rows;
 
-  // The width, once the wrapper has one. A ResizeObserver reports the current
-  // size as soon as it starts observing, so this needs no synchronous read in the
-  // effect — and it keeps waiting when the wrapper starts out at zero width.
+  // The width, when the wrapper had none yet as it attached: wait for one. A
+  // ResizeObserver reports at the next rendering update rather than inside
+  // observe(), and not at all while the page is hidden — hence the read above.
   useEffect(() => {
     if (!wrap || containerW > 0) return;
     const ro = new ResizeObserver((entries) => {
@@ -428,7 +442,7 @@ export default function PuzzleBoard({
 
     if (!groupStore.get().groups.has(groupId)) return;
 
-    const { changed, size, syncTo } = groupStore.update((groups, p2g) => {
+    const { changed, size } = groupStore.update((groups, p2g) => {
       const start = groups.get(groupId)!;
       start.x = node.x();
       start.y = node.y();
@@ -460,17 +474,18 @@ export default function PuzzleBoard({
         survivor.x = settled.x;
         survivor.y = settled.y;
       }
-      const syncTo = settled && survivor.id === groupId ? { x: survivor.x, y: survivor.y } : null;
-      return { changed, size: groups.size, syncTo };
+      return { changed, size: groups.size };
     });
 
     // react-konva writes the x/y props only when they differ from the previous
     // render, and the node was moved by Konva behind React's back during the
-    // drag. Settling onto the value last rendered would therefore be skipped and
-    // leave the node where it was dropped — off the board, which is the whole
-    // thing being fixed. Sync the dragged node explicitly. (Outside the store
-    // update, which only works on its private copies.)
-    if (syncTo) node.position(syncTo);
+    // drag. A settle or a snap onto the value last rendered would therefore be
+    // skipped and leave the node where it was dropped — possibly off the board,
+    // which is the whole thing being fixed. So the dropped node is put wherever
+    // the model now has its group; a group absorbed into a stationary neighbour
+    // is gone from the model, and its node unmounts.
+    const dropped = groupStore.get().groups.get(groupId);
+    if (dropped) node.position({ x: dropped.x, y: dropped.y });
 
     onProgress(size, total);
 
@@ -574,9 +589,14 @@ export default function PuzzleBoard({
     };
     container.addEventListener("touchmove", onMove, { passive: false });
     container.addEventListener("touchend", onEnd);
+    // A pinch the system takes over — a notification swipe, the back gesture —
+    // ends in touchcancel instead. Without this the stage would stay unpannable
+    // and the next pinch would zoom from the old distance on its first move.
+    container.addEventListener("touchcancel", onEnd);
     return () => {
       container.removeEventListener("touchmove", onMove);
       container.removeEventListener("touchend", onEnd);
+      container.removeEventListener("touchcancel", onEnd);
     };
   }, [zoomAround, layout]);
 
@@ -590,7 +610,7 @@ export default function PuzzleBoard({
   );
 
   return (
-    <div ref={setWrap} className="board-wrap" style={{ width: "100%", position: "relative" }}>
+    <div ref={attachWrap} className="board-wrap" style={{ width: "100%", position: "relative" }}>
       {layout && (
         <>
           <ZoomControls

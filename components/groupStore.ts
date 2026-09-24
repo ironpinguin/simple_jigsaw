@@ -12,7 +12,6 @@ import type { PieceGroup } from "@/lib/puzzle/groups";
  */
 export interface GroupModel {
   groups: ReadonlyMap<number, Readonly<PieceGroup>>;
-  pieceToGroup: ReadonlyMap<string, number>;
 }
 
 export interface GroupStore {
@@ -22,11 +21,14 @@ export interface GroupStore {
   replace(groups: Iterable<PieceGroup>): void;
   /**
    * Apply one change. `change` gets private copies it may mutate freely — the
-   * `lib/puzzle` helpers work in place — and the groups are published afterwards
-   * as the next snapshot. The member index handed in is scratch space for those
-   * helpers: the published one is rebuilt from the groups, so a change that only
-   * edits `groups` cannot leave the two disagreeing. Returns whatever `change`
-   * returns.
+   * `lib/puzzle` helpers work in place — and those copies are then published as
+   * the next snapshot. So `change` must be synchronous and must not write to the
+   * store itself, and nothing may write through a reference to the copies, or to
+   * groups it put in, once it has returned: from then on they are the published
+   * snapshot. Return plain values. The member index handed in is scratch space
+   * for those helpers, built from the copies and never published, so a change
+   * that only edits `groups` cannot leave a stale one behind. Returns whatever
+   * `change` returns.
    */
   update<T>(change: (groups: Map<number, PieceGroup>, pieceToGroup: Map<string, number>) => T): T;
 }
@@ -44,21 +46,27 @@ function indexMembers(groups: ReadonlyMap<number, PieceGroup>): Map<string, numb
 }
 
 /**
- * The group model as an external store, the way `viewStore` holds the stage
- * transform. It used to live in refs that the drag handlers mutated, with a
- * version counter bumped to make React read them back (#87). That hid the model
- * from React: a render read the refs whenever it happened to run, and a drop
- * only showed up because an unrelated state update landed in the same handler.
+ * The group model as an external store, read through `useSyncExternalStore`.
  *
- * Nothing here changes per drag frame — Konva moves the node itself and the
- * model is written once, on drop — so subscribing costs no more renders than
- * the old bump did.
+ * Every write happens outside a render — in the drop and gather handlers and in
+ * the seeding effect — and the writer reads the result straight back: the group
+ * count to report, the model to save. A store hands it the latest model
+ * synchronously, whichever render its closure came from. As React state,
+ * seeding would set state from an effect, which `react-hooks/set-state-in-effect`
+ * rejects; as refs (what this replaced, #87), React would not see a change at
+ * all — every write had to force a re-render by hand, and rendering read mutable
+ * refs, which `react-hooks/refs` rejects.
+ *
+ * Unlike `viewStore`, this is not about render cost: the board itself
+ * subscribes. Nothing here changes per drag frame — Konva moves the node itself
+ * and the model is written once, on drop — so a drop, a gather or a reseed costs
+ * one render, as it would with state.
  */
 export function createGroupStore(): GroupStore {
-  let model: GroupModel = { groups: new Map(), pieceToGroup: new Map() };
+  let model: GroupModel = { groups: new Map() };
   const listeners = new Set<() => void>();
   const publish = (groups: Map<number, PieceGroup>) => {
-    model = { groups, pieceToGroup: indexMembers(groups) };
+    model = { groups };
     for (const listener of listeners) listener();
   };
   return {
@@ -74,7 +82,7 @@ export function createGroupStore(): GroupStore {
     },
     update(change) {
       const groups = copyGroups(model.groups.values());
-      const result = change(groups, new Map(model.pieceToGroup));
+      const result = change(groups, indexMembers(groups));
       publish(groups);
       return result;
     },
