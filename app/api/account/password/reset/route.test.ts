@@ -1,15 +1,65 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { consumeTokenMock, revokeTokensMock, userFindUnique, userUpdate, hashMock } = vi.hoisted(() => ({
-  consumeTokenMock: vi.fn(),
-  revokeTokensMock: vi.fn(),
-  userFindUnique: vi.fn(),
-  userUpdate: vi.fn(),
-  hashMock: vi.fn(),
-}));
+const {
+  consumeTokenMock,
+  revokeTokensMock,
+  recordClaimFailureMock,
+  tokenFindFirst,
+  userFindUnique,
+  userUpdate,
+  prismaUserUpdate,
+  hashMock,
+  transaction,
+  tx,
+  txState,
+} = vi.hoisted(() => {
+  // The account reads and the write go through the transaction's client.
+  const userFindUnique = vi.fn();
+  const userUpdate = vi.fn();
+  const tx = { user: { findUnique: userFindUnique, update: userUpdate } };
+  // A separate double for the module-level client, so a route that wrote the
+  // password on a second connection — outside the rollback's reach — fails.
+  const prismaUserUpdate = vi.fn();
+  // Prisma's rollback cannot be exercised against a mock; a callback that threw
+  // is what makes the real client undo the claim, so that is what is counted.
+  const txState = { committed: 0, rolledBack: 0 };
+  const transaction = vi.fn(async (fn: (client: typeof tx) => Promise<unknown>) => {
+    try {
+      const result = await fn(tx);
+      txState.committed += 1;
+      return result;
+    } catch (error) {
+      txState.rolledBack += 1;
+      throw error;
+    }
+  });
+  return {
+    consumeTokenMock: vi.fn(),
+    revokeTokensMock: vi.fn(),
+    recordClaimFailureMock: vi.fn(),
+    tokenFindFirst: vi.fn(),
+    userFindUnique,
+    userUpdate,
+    prismaUserUpdate,
+    hashMock: vi.fn(),
+    transaction,
+    tx,
+    txState,
+  };
+});
 
-vi.mock("@/lib/tokens", () => ({ consumeToken: consumeTokenMock, revokeTokens: revokeTokensMock }));
-vi.mock("@/lib/db", () => ({ prisma: { user: { findUnique: userFindUnique, update: userUpdate } } }));
+vi.mock("@/lib/tokens", () => ({
+  consumeToken: consumeTokenMock,
+  revokeTokens: revokeTokensMock,
+  recordClaimFailure: recordClaimFailureMock,
+}));
+vi.mock("@/lib/db", () => ({
+  prisma: {
+    verificationToken: { findFirst: tokenFindFirst },
+    user: { update: prismaUserUpdate },
+    $transaction: transaction,
+  },
+}));
 vi.mock("bcryptjs", () => ({ default: { hash: hashMock } }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
 
@@ -31,6 +81,9 @@ const VALID = { token: "tok-123", password: "brandnewpass" };
 describe("POST /api/account/password/reset", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    txState.committed = 0;
+    txState.rolledBack = 0;
+    tokenFindFirst.mockResolvedValue({ id: "t1" });
     consumeTokenMock.mockResolvedValue({ ok: true, userId: "u1" });
     hashMock.mockResolvedValue("$2b$new");
     // The account this link belongs to, never confirmed unless a test says so.
@@ -42,7 +95,9 @@ describe("POST /api/account/password/reset", () => {
   it("sets the new password when the link is good", async () => {
     const res = await call(VALID);
     expect(res.status).toBe(200);
-    expect(consumeTokenMock).toHaveBeenCalledWith("tok-123", "PASSWORD_RESET");
+    expect(consumeTokenMock).toHaveBeenCalledWith("tok-123", "PASSWORD_RESET", tx);
+    expect(txState.committed).toBe(1);
+    expect(prismaUserUpdate).not.toHaveBeenCalled();
   });
 
   it("writes the hash, the stamp and the verification in one update", async () => {
@@ -184,18 +239,49 @@ describe("POST /api/account/password/reset", () => {
     expect(logged).toHaveBeenCalled();
   });
 
-  it("says the link is spent rather than expired when the password write fails", async () => {
-    // consumeToken has already deleted the row by then. An uncaught throw here
-    // would be a 500, which the page renders as "the link may have expired" —
-    // the one explanation that is certainly wrong, since a valid link was just
-    // spent. Nothing must be revoked either: the password did not change.
+  it("hands the link back when the password write fails", async () => {
+    // The claim and the write share a transaction (#91), so a write that throws
+    // rolls the claim back and the link still works. An uncaught throw would be
+    // a 500, which the page renders as "the link may have expired" — certainly
+    // wrong. Nothing must be revoked either: the password did not change.
     userUpdate.mockRejectedValue(new Error("db down"));
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await call(VALID);
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "resetNotApplied" });
+    expect(txState.rolledBack).toBe(1);
     expect(revokeTokensMock).not.toHaveBeenCalled();
     expect(logged).toHaveBeenCalled();
+  });
+
+  it("rolls the claim back when refusing it", async () => {
+    // consumeToken deletes an expired row before it reads the expiry; the
+    // rollback leaves it for the retention sweep, as on the other redeem routes.
+    consumeTokenMock.mockResolvedValue({ ok: false, reason: "invalid" });
+    await call(VALID);
+    expect(txState.rolledBack).toBe(1);
+    expect(txState.committed).toBe(0);
+  });
+
+  it("answers a transaction that could not run as a retryable 503 and books it", async () => {
+    // P2028: never started, or ran out its deadline. Nothing was spent.
+    const error = Object.assign(new Error("timed out"), { code: "P2028" });
+    transaction.mockRejectedValueOnce(error);
+    const res = await call(VALID);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "linkUnavailable" });
+    expect(recordClaimFailureMock).toHaveBeenCalledWith("PASSWORD_RESET", error);
+  });
+
+  it("does not hash a password for a link that does not exist", async () => {
+    // The hash runs before the transaction, so an unknown token must be turned
+    // away first — otherwise every garbage request buys ~100ms of bcrypt.
+    tokenFindFirst.mockResolvedValue(null);
+    const res = await call(VALID);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "resetInvalid" });
+    expect(hashMock).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it("writes a passwordChangedAt that makes a session issued before the reset stale, and one issued after fresh", async () => {

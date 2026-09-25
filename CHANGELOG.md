@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. (#4)
 
 ### Fixed
+- A password-reset link is no longer used up when setting the new password
+  fails. Clicking it again works, and the error message now says so instead of
+  asking for a new link. (#91)
 - The rate limit on password-reset requests keeps its memory bounded: it
   holds at most 10,000 callers at once and does a small, bounded amount of
   work per request, so a client sending from many addresses can no longer make

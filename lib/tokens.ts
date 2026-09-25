@@ -1,4 +1,5 @@
-// Server-side token creation/consumption for email verification and invites.
+// Server-side token creation/consumption for email verification, invites and
+// password resets.
 
 import { randomBytes } from "crypto";
 import { prisma } from "./db";
@@ -193,8 +194,11 @@ export async function revokeTokens(userId: string, type: TokenKind): Promise<num
  *
  * Given a transaction's client in `db`, "spent" means spent once that
  * transaction commits: a caller that rolls back hands the link back intact.
- * That is how the activation routes keep a failure after the claim from leaving
- * an account nobody but an admin can rescue (#50).
+ * `db` is required rather than defaulting to the module client, so a new redeem
+ * path has to choose where its claim runs instead of inheriting the one choice
+ * that leaves a gap. Every redeem route claims this way — invite and verify since #50, password
+ * reset since #91 — so that a failure after the claim never spends a link
+ * without delivering what it authorised.
  *
  * One consequence worth naming, because it reverses what this function does on
  * its own: an expired row is deleted here *before* the expiry is read, so that
@@ -207,7 +211,7 @@ export async function revokeTokens(userId: string, type: TokenKind): Promise<num
 export async function consumeToken(
   token: string,
   type: TokenKind,
-  db: TokenDb = prisma,
+  db: TokenDb,
 ): Promise<TokenClaim> {
   const row = await db.verificationToken.findUnique({ where: { token } });
   if (!row || row.type !== type) return { ok: false, reason: "invalid" };

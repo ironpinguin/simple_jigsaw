@@ -2,11 +2,22 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { consumeToken, revokeTokens } from "@/lib/tokens";
+import { consumeToken, recordClaimFailure, revokeTokens, type ClaimRefusal } from "@/lib/tokens";
+import { isTransientTransactionError } from "@/lib/prisma-errors";
 import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
 
 const Schema = z.object({ token: z.string().min(1), password: passwordField });
+
+/**
+ * A refusal decided inside the transaction. Thrown rather than returned so the
+ * claim rolls back with it — the route's answer is chosen from it afterwards.
+ */
+class Refused extends Error {
+  constructor(readonly reason: ClaimRefusal) {
+    super(reason);
+  }
+}
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -27,74 +38,95 @@ export async function POST(request: Request) {
     );
   }
 
-  const claim = await consumeToken(parsed.data.token, "PASSWORD_RESET");
-  if (!claim.ok) {
-    // "unavailable" means the store could not be read, not that the link is
-    // bad — telling the user their valid link is invalid would send them round
-    // the request loop for nothing. Mirrors app/api/invite/route.ts.
-    return claim.reason === "unavailable"
-      ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
-      : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
+  // A cheap indexed read before the expensive part, the way app/api/invite
+  // orders the same steps. The hash has to happen before the transaction (see
+  // below), so without this filter every garbage token on this unauthenticated
+  // endpoint would buy ~100ms of bcrypt. Not the decision: the single-use claim
+  // inside the transaction is, so nothing here can be raced into a reset.
+  const known = await prisma.verificationToken.findFirst({
+    where: { token: parsed.data.token, type: "PASSWORD_RESET" },
+    select: { id: true },
+  });
+  if (!known) {
+    return NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
   }
 
-  try {
-    // Read for emailVerified alone, and only to leave an existing one alone.
-    // Setting it matters for the account that never confirmed — lib/auth.ts
-    // refuses a falsy emailVerified at sign-in, so without this a reset would
-    // hand that user a working password and no way to use it — but it is a
-    // record of when the address was confirmed, not a last-seen stamp:
-    // lib/account-export.ts publishes it as a date, and the privacy copy
-    // promises it says when you confirmed your address. Writing it
-    // unconditionally would restate a 2024 confirmation as today for everybody
-    // who ever resets, in their own Art. 15 export. A row that vanished between
-    // the claim and here reads as null and the update below throws P2025, which
-    // the catch already answers.
-    const account = await prisma.user.findUnique({
-      where: { id: claim.userId },
-      select: { emailVerified: true },
-    });
+  // Before the transaction, and deliberately so: bcrypt at cost 10 is ~100ms of
+  // CPU that needs no database, and inside it would hold a write lock that
+  // long — on SQLite, against every other writer.
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-    // Hash first, stamp second. Read before the bcrypt round instead, the way
-    // an inline `await bcrypt.hash(...)` next to a hoisted `now` reads it, and
-    // passwordChangedAt would be dated a whole hash — 60-150 ms — before the
-    // write is even issued. lib/session-freshness.ts gives
-    // SESSION_CUTOFF_MARGIN_MS 1000 ms to cover the stamp plus a healthy write
-    // and re-issue together, so that is a tenth of the budget spent before the
-    // window it exists for has even started. Same shape as the deliberate
-    // hash-then-stamp order in app/api/account/password/route.ts.
-    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-    const now = new Date();
-    await prisma.user.update({
-      where: { id: claim.userId },
-      data: {
-        passwordHash,
-        // Ends every other session: the jwt callback refuses any token issued
-        // at or before this second (lib/auth.ts).
-        passwordChangedAt: now,
-        // Clicking a link sent to the address proves what the confirmation
-        // mail asks, so a reset doubles as verification — for an address that
-        // has not been confirmed yet. An earlier confirmation stands.
-        emailVerified: account?.emailVerified ?? now,
-      },
+  // Claim and write in one transaction (#91), as the invite and verify routes
+  // have since #50. The claim is irreversible on its own and lands before the
+  // work it authorises, so a write that threw here used to leave the password
+  // unchanged and the link spent. Rolling back hands the link back instead.
+  let userId: string;
+  try {
+    userId = await prisma.$transaction(async (tx) => {
+      const claim = await consumeToken(parsed.data.token, "PASSWORD_RESET", tx);
+      if (!claim.ok) throw new Refused(claim.reason);
+
+      // Read for emailVerified alone, and only to leave an existing one alone.
+      // Setting it matters for the account that never confirmed — lib/auth.ts
+      // refuses a falsy emailVerified at sign-in, so without this a reset would
+      // hand that user a working password and no way to use it — but it is a
+      // record of when the address was confirmed, not a last-seen stamp:
+      // lib/account-export.ts publishes it as a date, and the privacy copy
+      // promises it says when you confirmed your address. Writing it
+      // unconditionally would restate a 2024 confirmation as today for
+      // everybody who ever resets, in their own Art. 15 export. A row that
+      // vanished between the claim and here reads as null and the update below
+      // throws P2025, which rolls the claim back like any other failed write.
+      const account = await tx.user.findUnique({
+        where: { id: claim.userId },
+        select: { emailVerified: true },
+      });
+
+      // Stamped after the hash, never before it: read ahead of the bcrypt
+      // round, passwordChangedAt would be dated a whole hash — 60-150 ms —
+      // before the write is even issued. lib/session-freshness.ts gives
+      // SESSION_CUTOFF_MARGIN_MS 1000 ms to cover the stamp plus a healthy
+      // write and re-issue together. Same order as the deliberate
+      // hash-then-stamp in app/api/account/password/route.ts.
+      const now = new Date();
+      await tx.user.update({
+        where: { id: claim.userId },
+        data: {
+          passwordHash,
+          // Ends every other session: the jwt callback refuses any token
+          // issued at or before this second (lib/auth.ts).
+          passwordChangedAt: now,
+          // Clicking a link sent to the address proves what the confirmation
+          // mail asks, so a reset doubles as verification — for an address
+          // that has not been confirmed yet. An earlier confirmation stands.
+          emailVerified: account?.emailVerified ?? now,
+        },
+      });
+      return claim.userId;
     });
   } catch (error) {
-    // consumeToken has already deleted the row, so the link is spent whether or
-    // not this write lands — a store that went away between the two statements,
-    // or P2025 for an account deleted in the gap. app/api/invite/route.ts no
-    // longer has this shape at all: since #50 it claims inside a transaction,
-    // so a write that throws rolls the claim back and the link survives. This
-    // route still burns it, which is defensible only because a reset is
-    // self-service — the user can ask for another link, where an invitee
-    // cannot. Letting it throw
-    // answers with the generic 500 the page renders as auth.resetFailed, "the
-    // link may have expired": the one explanation that is certainly wrong, and
-    // it sends the user back to a link that no longer exists. Say what actually
-    // happened instead — and log it, because nothing else records why the write
-    // failed. The hash sits inside the try for the same reason: bcrypt throwing
-    // spends the link just as thoroughly as the update throwing does.
+    // A transaction that never started, or that ran out its deadline, throws
+    // here rather than inside the claim, and means what a failed claim means:
+    // nothing was spent and a retry may work.
+    if (isTransientTransactionError(error)) {
+      recordClaimFailure("PASSWORD_RESET", error);
+      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
+    }
+    if (error instanceof Refused) {
+      // "unavailable" means the store could not be read, not that the link is
+      // bad — telling the user their valid link is invalid would send them
+      // round the request loop for nothing. See lib/tokens.ts.
+      return error.reason === "unavailable"
+        ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
+        : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
+    }
+    // The write failed and the claim rolled back with it, so the link still
+    // works. Letting this throw would answer with the generic 500 the page
+    // renders as auth.resetFailed, "the link may have expired" — the one
+    // explanation that is certainly wrong. Say what happened instead, and log
+    // it, because nothing else records why the write failed.
     console.error(
-      `[account-password-reset] setting the new password for user ${claim.userId} failed after ` +
-        `the link was already spent; the user has to request a new one:`,
+      "[account-password-reset] setting a new password failed; the link was not spent:",
       error,
     );
     return NextResponse.json({ error: t("resetNotApplied") }, { status: 503 });
@@ -117,10 +149,10 @@ export async function POST(request: Request) {
   // reaching this point already required clicking a mailed link, which
   // implies the mailbox access the limiter exists to approximate.
   try {
-    await revokeTokens(claim.userId, "PASSWORD_RESET");
+    await revokeTokens(userId, "PASSWORD_RESET");
   } catch (error) {
     console.error(
-      `[account-password-reset] revoking other PASSWORD_RESET links for user ${claim.userId} failed ` +
+      `[account-password-reset] revoking other PASSWORD_RESET links for user ${userId} failed ` +
         `after the password was already reset; another link may still work for up to its TTL:`,
       error,
     );
