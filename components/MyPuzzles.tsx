@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
+import CompetitionSettings, { type OwnerCompetition } from "./CompetitionSettings";
 
 interface PuzzleSummary {
   id: string;
@@ -11,6 +12,7 @@ interface PuzzleSummary {
   imageKey: string;
   pieceCount: number;
   isPublic: boolean;
+  competition: OwnerCompetition | null;
 }
 
 export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
@@ -129,6 +131,12 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
               {t("delete")}
             </button>
           </div>
+          <CompetitionSettings
+            puzzleId={p.id}
+            isPublic={p.isPublic}
+            defaultPieceCount={p.pieceCount}
+            initial={p.competition}
+          />
         </div>
       ))}
     </div>

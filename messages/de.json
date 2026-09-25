@@ -410,5 +410,33 @@
     "categoryCOPYRIGHT": "Urheberrechtsverletzung",
     "categoryOTHER": "Sonstiges",
     "categoryAUTO_NSFW": "Expliziter Inhalt"
+  },
+  "competition": {
+    "entries": "{count, plural, one {# Eintrag} other {# Einträge}}",
+    "running": "Wettbewerb läuft",
+    "runsUntil": "Wettbewerb bis {date}",
+    "startsOn": "Wettbewerb ab {date}",
+    "endedOn": "Wettbewerb beendet am {date}",
+    "start": "Wettbewerb starten",
+    "edit": "Wettbewerb bearbeiten",
+    "save": "Speichern",
+    "end": "Wettbewerb beenden",
+    "cancel": "Abbrechen",
+    "confirmEnd": "Wettbewerb beenden? Die Rangliste wird dabei gelöscht.",
+    "saveFailed": "Der Wettbewerb konnte nicht gespeichert werden.",
+    "endFailed": "Der Wettbewerb konnte nicht beendet werden.",
+    "needsPublic": "Nur öffentliche Puzzles können ein Wettbewerb sein.",
+    "pieceCount": "Teile (für alle gleich)",
+    "countLocked": "Es gibt schon Einträge – die Teilezahl bleibt fest.",
+    "startsAt": "Beginn (optional)",
+    "endsAt": "Ende (optional)",
+    "windowHint": "Ohne Beginn startet der Wettbewerb sofort, ohne Ende läuft er, bis du ihn beendest. Mitmachen kann, wer ein Konto hat; Anzeigename und Zeit sind für alle sichtbar.",
+    "displayNameTitle": "Anzeigename",
+    "displayName": "Anzeigename in Ranglisten",
+    "displayNameIntro": "So erscheinst du in den Ranglisten von Wettbewerben. Deine E-Mail-Adresse wird nie gezeigt.",
+    "displayNameUnset": "Noch nicht festgelegt. Du wählst ihn spätestens bei deinem ersten Eintrag in eine Rangliste; er ist dort für alle sichtbar.",
+    "saveDisplayName": "Anzeigename speichern",
+    "displayNameSaved": "Gespeichert.",
+    "displayNameFailed": "Der Anzeigename konnte nicht gespeichert werden."
   }
 }

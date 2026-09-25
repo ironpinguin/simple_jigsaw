@@ -410,5 +410,33 @@
     "categoryCOPYRIGHT": "Violazione del diritto d’autore",
     "categoryOTHER": "Altro",
     "categoryAUTO_NSFW": "Contenuto esplicito"
+  },
+  "competition": {
+    "entries": "{count, plural, one {# voce} other {# voci}}",
+    "running": "Gara in corso",
+    "runsUntil": "Gara fino al {date}",
+    "startsOn": "Gara dal {date}",
+    "endedOn": "Gara terminata il {date}",
+    "start": "Avvia gara",
+    "edit": "Modifica gara",
+    "save": "Salva",
+    "end": "Termina gara",
+    "cancel": "Annulla",
+    "confirmEnd": "Terminare la gara? La classifica verrà eliminata.",
+    "saveFailed": "Non è stato possibile salvare la gara.",
+    "endFailed": "Non è stato possibile terminare la gara.",
+    "needsPublic": "Solo i puzzle pubblici possono diventare una gara.",
+    "pieceCount": "Pezzi (uguali per tutti)",
+    "countLocked": "Ci sono già delle voci – il numero di pezzi resta fisso.",
+    "startsAt": "Inizio (facoltativo)",
+    "endsAt": "Fine (facoltativa)",
+    "windowHint": "Senza inizio la gara parte subito; senza fine dura finché non la termini. Può partecipare chiunque abbia un account; nomi visibili e tempi sono pubblici.",
+    "displayNameTitle": "Nome visibile",
+    "displayName": "Nome visibile nelle classifiche",
+    "displayNameIntro": "È il nome con cui compari nelle classifiche delle gare. Il tuo indirizzo e-mail non viene mai mostrato.",
+    "displayNameUnset": "Non ancora impostato. Lo scegli al più tardi con la tua prima voce in classifica; lì è visibile a tutti.",
+    "saveDisplayName": "Salva nome visibile",
+    "displayNameSaved": "Salvato.",
+    "displayNameFailed": "Non è stato possibile salvare il nome visibile."
   }
 }
