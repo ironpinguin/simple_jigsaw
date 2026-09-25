@@ -15,10 +15,13 @@ import {
   RotateCcw,
   Volume2,
   VolumeX,
+  X,
 } from "lucide-react";
 import type { BoardActions, PuzzleData } from "./PuzzleBoard";
 import ReportDialog from "@/components/ReportDialog";
 import ToolbarPopover from "./ToolbarPopover";
+import SolveTimerDisplay from "./SolveTimerDisplay";
+import { createSolveTimer } from "./solveTimer";
 import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import {
@@ -26,7 +29,15 @@ import {
   SOLVE_KEY_PREFIX,
   solveKeysToPrune,
   solveStateKey,
+  type SolveTiming,
 } from "@/lib/puzzle/solveState";
+import {
+  bestTimesKey,
+  formatDuration,
+  parseBestTimes,
+  recordBestTime,
+  type SolveResult,
+} from "@/lib/puzzle/timer";
 
 function BoardLoading() {
   const t = useTranslations("solve");
@@ -183,17 +194,87 @@ export default function PuzzleSolver({
     withStorage((s) => s.setItem(SOUND_KEY, next ? "on" : "off"), undefined);
   }
 
+  // --- The solve timer (#118) ------------------------------------------------
+
+  const [timer] = useState(createSolveTimer);
+  /** What the board last reported, for `onSeeded` — which it calls right after. */
+  const solvedRef = useRef(false);
+  const bestKey = bestTimesKey(puzzle.id);
+
+  /** The best result for the current piece count; read after mount, like `pc:`. */
+  const [best, setBest] = useState<SolveResult | null>(null);
+  useEffect(() => {
+    const stored = parseBestTimes(withStorage((s) => s.getItem(bestKey), null));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
+    setBest(stored[pieceCount] ?? null);
+  }, [bestKey, pieceCount]);
+
+  /** The card shown after the drop that finishes the puzzle. */
+  const [result, setResult] = useState<{
+    outcome: SolveResult;
+    /** The best this one beat, or `null` for a first solve or no new best. */
+    beaten: SolveResult | null;
+    best: SolveResult;
+    isNew: boolean;
+  } | null>(null);
+
   const onProgress = useCallback((groups: number, boardTotal: number) => {
     setProgress({ groups, total: boardTotal });
     setSolved(groups === 1);
+    solvedRef.current = groups === 1;
   }, []);
+
+  // All four are stable, which the board needs of `onSeeded` (a dependency of its
+  // seeding effect) and `readTiming` (of its save).
+  const onSeeded = useCallback(
+    (timing: SolveTiming | null) => timer.reset(timing, solvedRef.current),
+    [timer],
+  );
+  const readTiming = useCallback(() => timer.timing(Date.now()), [timer]);
+  const onPieceGrab = useCallback(
+    () => timer.grab(Date.now(), document.visibilityState !== "hidden"),
+    [timer],
+  );
+  const onPieceDrop = useCallback(() => timer.drop(), [timer]);
+
+  // Hiding the tab pauses the clock — and saves, since the time since the last
+  // drop exists nowhere else. Browsers also hide the page on a reload or when it
+  // is closed, which is what makes the time survive those.
+  useEffect(() => {
+    function onVisibility() {
+      if (document.visibilityState === "hidden") {
+        if (timer.hide(Date.now())) boardActions.current?.save();
+      } else {
+        timer.show(Date.now());
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [timer]);
 
   // The celebration hangs off this, not off `solved`: `onProgress` also marks a
   // puzzle solved when a finished one is restored, and a reload must not replay it.
   const onSolved = useCallback(() => {
     setSolved(true);
+    const outcome = timer.finish(Date.now());
+    // The board saved just before calling this, with the clock still running;
+    // saving again stores the time the solve is shown with.
+    boardActions.current?.save();
+    const recorded = recordBestTime(
+      withStorage((s) => s.getItem(bestKey), null),
+      pieceCount,
+      outcome,
+    );
+    withStorage((s) => s.setItem(bestKey, recorded.raw), undefined);
+    setBest(recorded.best);
+    setResult({
+      outcome,
+      beaten: recorded.isNew ? recorded.previous : null,
+      best: recorded.best,
+      isNew: recorded.isNew,
+    });
     celebrate({ sound });
-  }, [sound]);
+  }, [sound, timer, bestKey, pieceCount]);
 
   useEffect(() => stopCelebration, []);
 
@@ -270,6 +351,7 @@ export default function PuzzleSolver({
     // connected instead of leaving the old count — and the solved banner up.
     setProgress(null);
     setSolved(false);
+    setResult(null);
     stopCelebration();
   }
 
@@ -288,6 +370,7 @@ export default function PuzzleSolver({
       return;
     }
     setPieceCount(n);
+    setResult(null);
     withStorage((s) => s.setItem(storageKey, String(n)), undefined);
     // The new grid could not restore it anyway — `deserialiseSolveState` rejects a
     // cols/rows mismatch — but deleting it here is what the warning promises.
@@ -349,6 +432,7 @@ export default function PuzzleSolver({
         <span className="progress">
           {t("progress", { connected, total: total - 1 })}
         </span>
+        <SolveTimerDisplay timer={timer} best={best} />
         {solved && (
           <span className="solved-banner">
             <PartyPopper size={16} aria-hidden="true" /> {t("solved")}
@@ -437,6 +521,40 @@ export default function PuzzleSolver({
       )}
 
       <div className="solve-fullbleed" style={{ position: "relative" }}>
+        {/* Always rendered: a status region announces what appears in it, and one
+            that arrives together with its content is often not announced. */}
+        <div role="status" className="solve-result-region">
+          {result && (
+            <div className="solve-result">
+              <PartyPopper size={20} aria-hidden="true" />
+              <div>
+                <strong>
+                  {t("solvedIn", {
+                    time: formatDuration(result.outcome.ms),
+                    moves: result.outcome.moves,
+                  })}
+                </strong>
+                {result.beaten && (
+                  <div>{t("newBest", { time: formatDuration(result.beaten.ms) })}</div>
+                )}
+                {!result.isNew && (
+                  <div className="muted">
+                    {t("bestTime", { time: formatDuration(result.best.ms) })}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={t("closeResult")}
+                title={t("closeResult")}
+                onClick={() => setResult(null)}
+              >
+                <X size={ICON_SIZE} aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </div>
         {showRef && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -455,6 +573,10 @@ export default function PuzzleSolver({
           loadSolveState={loadSolveState}
           saveSolveState={saveSolveState}
           resetNonce={resetNonce}
+          readTiming={readTiming}
+          onSeeded={onSeeded}
+          onPieceGrab={onPieceGrab}
+          onPieceDrop={onPieceDrop}
           actionsRef={boardActions}
         />
       </div>

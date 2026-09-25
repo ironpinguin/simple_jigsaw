@@ -6,6 +6,7 @@ import {
   MAX_STORED_SOLVES,
   SOLVE_STATE_VERSION,
   deserialiseSolveState,
+  readSolveTiming,
   restoreSolveState,
   serialiseSolveState,
   solveKeysToPrune,
@@ -379,6 +380,42 @@ describe("restoreSolveState", () => {
     const b = board(1400, 790);
     expect(restoreSolveState(null, b, b.rectOf)).toBeNull();
     expect(restoreSolveState("{not json", b, b.rectOf)).toBeNull();
+  });
+});
+
+describe("the solve timing", () => {
+  it("round-trips with the state", () => {
+    const raw = serialiseSolveState({
+      groups: GROUPS,
+      ...BOARD,
+      updatedAt: 1000,
+      timing: { elapsedMs: 83_500, moves: 17 },
+    });
+    expect(readSolveTiming(raw)).toEqual({ elapsedMs: 83_500, moves: 17 });
+    // …without getting in the way of the pieces.
+    expect(deserialiseSolveState(raw, BOARD)).toHaveLength(2);
+  });
+
+  it("reads an entry from before the timer as zero", () => {
+    const older = JSON.parse(stored());
+    delete older.elapsedMs;
+    delete older.moves;
+    const raw = JSON.stringify(older);
+    expect(readSolveTiming(raw)).toEqual({ elapsedMs: 0, moves: 0 });
+    // Still restorable: the fields were added without a version bump.
+    expect(deserialiseSolveState(raw, BOARD)).toHaveLength(2);
+  });
+
+  it.each([
+    ["a negative time", { elapsedMs: -5, moves: 3 }, { elapsedMs: 0, moves: 3 }],
+    ["a fractional move count", { elapsedMs: 10, moves: 1.5 }, { elapsedMs: 10, moves: 0 }],
+    ["strings", { elapsedMs: "10", moves: "3" }, { elapsedMs: 0, moves: 0 }],
+  ])("zeroes %s field by field", (_, patch, expected) => {
+    expect(readSolveTiming(tampered(patch))).toEqual(expected);
+  });
+
+  it.each([null, "", "{nope", "null"])("reads %j as zero", (raw) => {
+    expect(readSolveTiming(raw)).toEqual({ elapsedMs: 0, moves: 0 });
   });
 });
 

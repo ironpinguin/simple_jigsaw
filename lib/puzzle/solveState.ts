@@ -9,7 +9,9 @@
 // a joined block stays joined and aligned at any window width. Around that sits
 // an envelope — `version`, `cols`, `rows`, `updatedAt` — every field of which is
 // load-bearing: the first three decide whether an entry may be restored at all,
-// the last orders the pruning.
+// the last orders the pruning. `elapsedMs` and `moves` ride along for the solve
+// timer (#118); an entry written before they existed reads as zero for both,
+// which is why adding them needed no version bump.
 
 import { settleGroup, type Rect } from "./board";
 import { pieceId, type PieceGroup } from "./groups";
@@ -62,10 +64,19 @@ export interface SolveBoard {
   stageH: number;
 }
 
+/** How far a solve has got on the clock: time spent and pieces dropped. */
+export interface SolveTiming {
+  elapsedMs: number;
+  moves: number;
+}
+
+export const NO_TIMING: SolveTiming = { elapsedMs: 0, moves: 0 };
+
 export interface SerialiseInput extends SolveBoard {
   groups: Iterable<PieceGroup>;
   /** `Date.now()` from the caller — this module stays free of the clock. */
   updatedAt: number;
+  timing?: SolveTiming;
 }
 
 /**
@@ -83,12 +94,15 @@ export function serialiseSolveState({
   stageW,
   stageH,
   updatedAt,
+  timing = NO_TIMING,
 }: SerialiseInput): string {
   return JSON.stringify({
     version: SOLVE_STATE_VERSION,
     cols,
     rows,
     updatedAt,
+    elapsedMs: timing.elapsedMs,
+    moves: timing.moves,
     groups: [...groups].map((g) => ({
       x: g.x / stageW,
       y: g.y / stageH,
@@ -194,6 +208,27 @@ export function restoreSolveState(
     }
   }
   return groups;
+}
+
+/**
+ * The timing stored with a solve state. Only meaningful for an entry the board
+ * has just restored — this does not check the envelope, `restoreSolveState` does.
+ * A missing or implausible field reads as zero rather than rejecting: the pieces
+ * are the valuable part, and a lost time only restarts the clock.
+ */
+export function readSolveTiming(raw: string | null): SolveTiming {
+  if (!raw) return NO_TIMING;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return NO_TIMING;
+    const { elapsedMs, moves } = parsed as Record<string, unknown>;
+    return {
+      elapsedMs: isFiniteNumber(elapsedMs) && elapsedMs >= 0 ? elapsedMs : 0,
+      moves: Number.isInteger(moves) && (moves as number) >= 0 ? (moves as number) : 0,
+    };
+  } catch {
+    return NO_TIMING;
+  }
 }
 
 /**

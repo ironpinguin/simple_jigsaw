@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- A solve timer in the puzzle toolbar. It starts with the first piece you
+  pick up, pauses while the tab is in the background, and carries on after a
+  reload where it left off, together with the number of moves. When the puzzle
+  is finished, a card over the board shows the time and moves, and whether
+  they beat your best time. The best time is kept per puzzle and piece count
+  in this browser, and the timer shows it as a tooltip. *Start over* and a new
+  piece count start the clock from zero. (#118)
 - Solving a puzzle is now celebrated: fireworks over the page and a short round
   of recorded applause when the last piece snaps in. The *Solved!* banner stays as
   before. It plays once, for the drop that completes the picture — not when a
