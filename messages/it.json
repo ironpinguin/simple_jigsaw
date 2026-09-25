@@ -437,6 +437,27 @@
     "displayNameUnset": "Non ancora impostato. Lo scegli al più tardi con la tua prima voce in classifica; lì è visibile a tutti.",
     "saveDisplayName": "Salva nome visibile",
     "displayNameSaved": "Salvato.",
-    "displayNameFailed": "Non è stato possibile salvare il nome visibile."
+    "displayNameFailed": "Non è stato possibile salvare il nome visibile.",
+    "leaderboard": "Classifica",
+    "fixedPieces": "{count} pezzi (gara)",
+    "submitting": "Registrazione in classifica…",
+    "enteredRank": "{rank}° posto in classifica!",
+    "standingRank": "Il tuo record resta al {rank}° posto ({time}).",
+    "showLeaderboard": "Mostra classifica",
+    "chooseDisplayName": "Con quale nome vuoi comparire in classifica? È visibile a tutti.",
+    "enter": "Registra",
+    "signInNextTime": "Con un account entri in classifica – <login>accedi</login> e ricomincia il puzzle.",
+    "notCounted": "Questo tentativo non conta per la classifica. Ricomincia il puzzle per partecipare.",
+    "entryFailed": "La registrazione in classifica non è riuscita.",
+    "leaderboardLoading": "Caricamento classifica…",
+    "leaderboardFailed": "Non è stato possibile caricare la classifica.",
+    "noEntries": "Ancora nessuna voce – inizia tu!",
+    "you": "tu",
+    "moves": "{count, plural, one {# mossa} other {# mosse}}",
+    "removeEntry": "Rimuovi la voce di {name}",
+    "confirmRemoveEntry": "Rimuovere «{name}» dalla classifica?",
+    "removeEntryFailed": "Non è stato possibile rimuovere la voce.",
+    "yourRank": "La tua posizione: {rank} ({time})",
+    "signInToTakePart": "<login>Accedi</login> per partecipare."
   }
 }

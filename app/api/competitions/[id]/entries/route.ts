@@ -78,11 +78,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (!displayName) {
     // A public name is never made up: the solver chooses it, once.
     if (parsed.data.displayName === undefined) {
-      return NextResponse.json({ error: t("displayNameRequired") }, { status: 409 });
+      // `code` beside the translated message: the solver answers this one with a
+      // name prompt rather than showing it, so it has to tell it apart.
+      return NextResponse.json(
+        { error: t("displayNameRequired"), code: "displayNameRequired" },
+        { status: 409 },
+      );
     }
     const name = DisplayNameSchema.safeParse(parsed.data.displayName);
     if (!name.success) {
-      return NextResponse.json({ error: t("displayNameInvalid") }, { status: 400 });
+      return NextResponse.json(
+        { error: t("displayNameInvalid"), code: "displayNameInvalid" },
+        { status: 400 },
+      );
     }
     displayName = name.data;
     await prisma.user.update({ where: { id: user.id }, data: { displayName } });

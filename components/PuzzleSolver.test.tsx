@@ -56,6 +56,16 @@ const board = vi.hoisted<{
 const celebration = vi.hoisted(() => ({ celebrate: vi.fn(), stopCelebration: vi.fn() }));
 vi.mock("./celebrate", () => celebration);
 
+// next-intl's navigation pulls in next/navigation, which vitest cannot resolve
+// from this package's ESM build; the solver only renders links from it.
+vi.mock("@/i18n/navigation", () => ({
+  Link: ({ href, children, ...rest }: React.ComponentProps<"a">) => (
+    <a href={String(href)} {...rest}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock("./PuzzleBoard", () => {
   function BoardStub({
     cols,
@@ -145,10 +155,13 @@ function solveJson(updatedAt: number) {
 const CONNECTIONS_108 = 107;
 const CONNECTIONS_12 = 11;
 
+/** Extra props for every render of a test — the competition ones, mostly. */
+let extraProps: Partial<React.ComponentProps<typeof PuzzleSolver>> = {};
+
 function tree(isPublic = true) {
   return (
-    <NextIntlClientProvider locale="en" messages={messages}>
-      <PuzzleSolver puzzle={puzzle} title="Test" isPublic={isPublic} />
+    <NextIntlClientProvider locale="en" messages={messages} timeZone="UTC">
+      <PuzzleSolver puzzle={puzzle} title="Test" isPublic={isPublic} {...extraProps} />
     </NextIntlClientProvider>
   );
 }
@@ -1007,6 +1020,161 @@ describe("PuzzleSolver", () => {
       await act(async () => board.onSolved!());
       await act(async () => button(messages.solve.closeResult)!.click());
       expect(card()).toBeNull();
+    });
+  });
+
+  describe("a competition", () => {
+    const COMPETITION = { pieceCount: 12, startsAt: null, endsAt: null };
+    let fetchMock: ReturnType<typeof vi.fn>;
+    /** What each endpoint answers, by the last path segment. */
+    let answers: Record<string, { status: number; body: unknown }>;
+
+    beforeEach(() => {
+      extraProps = {
+        competition: COMPETITION,
+        viewer: { signedIn: true, isAdmin: false },
+      };
+      answers = {
+        start: { status: 200, body: { token: "tok-1" } },
+        entries: {
+          status: 200,
+          body: { improved: true, best: { ms: 60_000, moves: 2 }, rank: 3, displayName: "Fan" },
+        },
+      };
+      fetchMock = vi.fn(async (url: string) => {
+        const answer = answers[url.split("/").pop()!] ?? { status: 404, body: {} };
+        return { ok: answer.status < 300, status: answer.status, json: async () => answer.body };
+      });
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    afterEach(() => {
+      extraProps = {};
+      vi.unstubAllGlobals();
+    });
+
+    function calls(segment: string) {
+      return fetchMock.mock.calls.filter(([url]) => String(url).endsWith(`/${segment}`));
+    }
+
+    function card() {
+      return container.querySelector(".solve-result")?.textContent ?? null;
+    }
+
+    async function seed() {
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await act(async () => board.onSeeded!({ elapsedMs: 0, moves: 0 }, false));
+    }
+
+    /** Solve by hand: one move, `ms` long, that finishes the puzzle. */
+    async function solveIn(ms: number) {
+      await act(async () => board.onPieceGrab!());
+      await act(async () => {
+        vi.advanceTimersByTime(ms);
+      });
+      await act(async () => board.onPieceDrop!());
+      await act(async () => board.onSolved!());
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      vi.setSystemTime(1_000_000);
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("fixes the piece count, ignoring the solver's remembered one", async () => {
+      window.localStorage.setItem(storageKey, "108");
+      await seed();
+      expect(progress().total).toBe(CONNECTIONS_12);
+      expect(select()).toBeNull();
+    });
+
+    it("starts an attempt on the first piece and enters the finished time", async () => {
+      await seed();
+      await solveIn(60_000);
+
+      expect(calls("start")).toHaveLength(1);
+      const [, init] = calls("entries")[0];
+      expect(JSON.parse(String(init.body))).toEqual({ token: "tok-1", ms: 60_000, moves: 1 });
+      expect(card()).toContain("Rank 3 on the leaderboard!");
+      // Used up with the entry.
+      expect(localStorage.getItem("comp:p1")).toBeNull();
+    });
+
+    it("asks for a display name once and enters the result with it", async () => {
+      answers.entries = {
+        status: 409,
+        body: { error: "Choose a display name.", code: "displayNameRequired" },
+      };
+      await seed();
+      await solveIn(60_000);
+      expect(card()).toContain(messages.competition.chooseDisplayName);
+
+      answers.entries = {
+        status: 200,
+        body: { improved: true, best: { ms: 60_000, moves: 1 }, rank: 1, displayName: "Fan" },
+      };
+      const input = container.querySelector<HTMLInputElement>("#result-display-name")!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Fan");
+      await act(async () => input.dispatchEvent(new Event("input", { bubbles: true })));
+      await act(async () => input.form!.requestSubmit());
+
+      const [, init] = calls("entries")[1];
+      expect(JSON.parse(String(init.body))).toMatchObject({ token: "tok-1", displayName: "Fan" });
+      expect(card()).toContain("Rank 1 on the leaderboard!");
+    });
+
+    it("does not send an attempt the server never started", async () => {
+      answers.start = { status: 409, body: { error: "not open" } };
+      await seed();
+      await solveIn(60_000);
+      expect(calls("entries")).toHaveLength(0);
+      expect(card()).toContain(messages.competition.notCounted);
+    });
+
+    it("invites a signed-out solver to sign in instead of submitting", async () => {
+      extraProps = { competition: COMPETITION, viewer: { signedIn: false, isAdmin: false } };
+      await seed();
+      await solveIn(60_000);
+      expect(calls("start")).toHaveLength(0);
+      expect(calls("entries")).toHaveLength(0);
+      expect(container.querySelector(".solve-result a")?.getAttribute("href")).toBe(
+        "/login?callbackUrl=/puzzle/p1",
+      );
+    });
+
+    it("keeps the attempt across a reload in the middle of the solve", async () => {
+      await seed();
+      await act(async () => board.onPieceGrab!());
+      expect(localStorage.getItem("comp:p1")).toBe("tok-1");
+
+      await act(async () => root!.unmount());
+      root = undefined;
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await act(async () => board.onSeeded!({ elapsedMs: 5_000, moves: 3 }, false));
+      expect(localStorage.getItem("comp:p1")).toBe("tok-1");
+    });
+
+    it("drops the attempt on start over", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      await seed();
+      await act(async () => board.onPieceGrab!());
+      await reset();
+      expect(localStorage.getItem("comp:p1")).toBeNull();
+    });
+
+    it("shows the leaderboard button only when there is a competition", async () => {
+      await seed();
+      expect(button(messages.competition.leaderboard)).toBeDefined();
+
+      await act(async () => root!.unmount());
+      root = undefined;
+      extraProps = {};
+      container.innerHTML = serverHtml();
+      await hydrate();
+      expect(button(messages.competition.leaderboard)).toBeUndefined();
     });
   });
 });

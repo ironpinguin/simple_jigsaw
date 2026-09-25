@@ -437,6 +437,27 @@
     "displayNameUnset": "Noch nicht festgelegt. Du wählst ihn spätestens bei deinem ersten Eintrag in eine Rangliste; er ist dort für alle sichtbar.",
     "saveDisplayName": "Anzeigename speichern",
     "displayNameSaved": "Gespeichert.",
-    "displayNameFailed": "Der Anzeigename konnte nicht gespeichert werden."
+    "displayNameFailed": "Der Anzeigename konnte nicht gespeichert werden.",
+    "leaderboard": "Rangliste",
+    "fixedPieces": "{count} Teile (Wettbewerb)",
+    "submitting": "Wird in die Rangliste eingetragen…",
+    "enteredRank": "Platz {rank} in der Rangliste!",
+    "standingRank": "Deine Bestleistung bleibt Platz {rank} ({time}).",
+    "showLeaderboard": "Rangliste zeigen",
+    "chooseDisplayName": "Unter welchem Namen möchtest du in der Rangliste stehen? Er ist für alle sichtbar.",
+    "enter": "Eintragen",
+    "signInNextTime": "Mit einem Konto kommst du in die Rangliste – <login>melde dich an</login> und starte das Puzzle neu.",
+    "notCounted": "Dieser Durchgang zählt nicht für die Rangliste. Starte das Puzzle neu, um teilzunehmen.",
+    "entryFailed": "Der Eintrag in die Rangliste ist fehlgeschlagen.",
+    "leaderboardLoading": "Rangliste wird geladen…",
+    "leaderboardFailed": "Die Rangliste konnte nicht geladen werden.",
+    "noEntries": "Noch keine Einträge – sei die erste Person!",
+    "you": "du",
+    "moves": "{count, plural, one {# Zug} other {# Züge}}",
+    "removeEntry": "Eintrag von {name} entfernen",
+    "confirmRemoveEntry": "Den Eintrag von „{name}“ aus der Rangliste entfernen?",
+    "removeEntryFailed": "Der Eintrag konnte nicht entfernt werden.",
+    "yourRank": "Dein Platz: {rank} ({time})",
+    "signInToTakePart": "<login>Melde dich an</login>, um teilzunehmen."
   }
 }

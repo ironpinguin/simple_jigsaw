@@ -179,7 +179,10 @@ describe("POST /api/competitions/[id]/entries", () => {
     it("asks for one before the first entry", async () => {
       const res = await submit({ token: token(70_000), ms: 60_000, moves: 20 });
       expect(res.status).toBe(409);
-      expect(await errorOf(res)).toBe("displayNameRequired");
+      expect(await res.json()).toEqual({
+        error: "displayNameRequired",
+        code: "displayNameRequired",
+      });
       expect(m.entryCreate).not.toHaveBeenCalled();
     });
 

@@ -437,6 +437,27 @@
     "displayNameUnset": "Not set yet. You choose it with your first leaderboard entry at the latest; it is visible to everyone there.",
     "saveDisplayName": "Save display name",
     "displayNameSaved": "Saved.",
-    "displayNameFailed": "The display name could not be saved."
+    "displayNameFailed": "The display name could not be saved.",
+    "leaderboard": "Leaderboard",
+    "fixedPieces": "{count} pieces (competition)",
+    "submitting": "Entering you on the leaderboard…",
+    "enteredRank": "Rank {rank} on the leaderboard!",
+    "standingRank": "Your best stays at rank {rank} ({time}).",
+    "showLeaderboard": "Show leaderboard",
+    "chooseDisplayName": "Which name should appear for you on the leaderboard? Everyone can see it.",
+    "enter": "Enter",
+    "signInNextTime": "With an account you get onto the leaderboard – <login>sign in</login> and start the puzzle over.",
+    "notCounted": "This attempt does not count for the leaderboard. Start the puzzle over to take part.",
+    "entryFailed": "Entering the leaderboard failed.",
+    "leaderboardLoading": "Loading leaderboard…",
+    "leaderboardFailed": "The leaderboard could not be loaded.",
+    "noEntries": "No entries yet – be the first!",
+    "you": "you",
+    "moves": "{count, plural, one {# move} other {# moves}}",
+    "removeEntry": "Remove {name}'s entry",
+    "confirmRemoveEntry": "Remove “{name}” from the leaderboard?",
+    "removeEntryFailed": "The entry could not be removed.",
+    "yourRank": "Your rank: {rank} ({time})",
+    "signInToTakePart": "<login>Sign in</login> to take part."
   }
 }
