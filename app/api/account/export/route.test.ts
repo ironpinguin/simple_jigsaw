@@ -1,14 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSessionUserMock, userFindUnique, puzzleFindMany } = vi.hoisted(() => ({
+const { getSessionUserMock, userFindUnique, puzzleFindMany, entryFindMany } = vi.hoisted(() => ({
   getSessionUserMock: vi.fn(),
   userFindUnique: vi.fn(),
   puzzleFindMany: vi.fn(),
+  entryFindMany: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getSessionUser: getSessionUserMock }));
 vi.mock("@/lib/db", () => ({
-  prisma: { user: { findUnique: userFindUnique }, puzzle: { findMany: puzzleFindMany } },
+  prisma: {
+    user: { findUnique: userFindUnique },
+    puzzle: { findMany: puzzleFindMany },
+    leaderboardEntry: { findMany: entryFindMany },
+  },
 }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
 
@@ -50,6 +55,7 @@ beforeEach(() => {
   getSessionUserMock.mockResolvedValue({ id: "user-1", email: "someone@example.org" });
   userFindUnique.mockResolvedValue(row);
   puzzleFindMany.mockResolvedValue([puzzleRow]);
+  entryFindMany.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -58,6 +64,31 @@ afterEach(() => {
 });
 
 describe("GET /api/account/export", () => {
+  it("includes the user's own leaderboard results, and only those", async () => {
+    entryFindMany.mockResolvedValue([
+      {
+        ms: 61_000,
+        moves: 40,
+        achievedAt: new Date(Date.UTC(2026, 9, 1)),
+        competition: { puzzleId: "p9", puzzle: { title: "Contest" } },
+      },
+    ]);
+    const body = await (await GET()).json();
+
+    expect(entryFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1" } }),
+    );
+    expect(body.leaderboardEntries).toEqual([
+      {
+        puzzleId: "p9",
+        puzzleTitle: "Contest",
+        ms: 61_000,
+        moves: 40,
+        achievedAt: "2026-10-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
   it("hands the logged-in user their own data", async () => {
     const res = await GET();
     const body = await res.json();

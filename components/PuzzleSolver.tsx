@@ -22,6 +22,7 @@ import {
   PartyPopper,
   RotateCcw,
   Volume2,
+  Trophy,
   VolumeX,
   X,
 } from "lucide-react";
@@ -30,6 +31,10 @@ import ReportDialog from "@/components/ReportDialog";
 import ToolbarPopover from "./ToolbarPopover";
 import SolveTimerDisplay from "./SolveTimerDisplay";
 import { createSolveTimer } from "./solveTimer";
+import Leaderboard from "./Leaderboard";
+import { useCompetitionEntry, type EntryState, type TokenStore } from "./useCompetitionEntry";
+import { DISPLAY_NAME_MAX, competitionPhase } from "@/lib/competition";
+import { Link as IntlLink } from "@/i18n/navigation";
 import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import {
@@ -135,18 +140,114 @@ function ToggleButtons({ items, inMenu = false }: { items: ToggleItem[]; inMenu?
   ));
 }
 
+/** The competition part of the result card: where the finished attempt stands. */
+function CompetitionOutcome({
+  state,
+  puzzleId,
+  name,
+  onName,
+  onSubmitName,
+  onShowLeaderboard,
+  onRetry,
+}: {
+  state: EntryState;
+  puzzleId: string;
+  name: string;
+  onName: (value: string) => void;
+  onSubmitName: () => void;
+  onShowLeaderboard: () => void;
+  onRetry: () => void;
+}) {
+  const t = useTranslations("competition");
+  switch (state.kind) {
+    case "idle":
+      return null;
+    case "submitting":
+      return <div className="muted">{t("submitting")}</div>;
+    case "entered":
+      return (
+        <div>
+          {state.improved
+            ? t("enteredRank", { rank: state.rank })
+            : t("standingRank", { rank: state.rank, time: formatDuration(state.best.ms) })}{" "}
+          <button type="button" className="link-button" onClick={onShowLeaderboard}>
+            {t("showLeaderboard")}
+          </button>
+        </div>
+      );
+    case "needsName":
+      return (
+        <form
+          className="solve-result-name"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmitName();
+          }}
+        >
+          <label htmlFor="result-display-name">{t("chooseDisplayName")}</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              id="result-display-name"
+              type="text"
+              value={name}
+              maxLength={DISPLAY_NAME_MAX}
+              autoComplete="nickname"
+              onChange={(e) => onName(e.target.value)}
+            />
+            <button className="button" type="submit">
+              {t("enter")}
+            </button>
+          </div>
+          {state.error && <p className="error">{state.error}</p>}
+        </form>
+      );
+    case "signIn":
+      return (
+        <div className="muted">
+          {t.rich("signInNextTime", {
+            login: (chunks) => (
+              <IntlLink href={`/login?callbackUrl=/puzzle/${puzzleId}`}>{chunks}</IntlLink>
+            ),
+          })}
+        </div>
+      );
+    case "noAttempt":
+      return <div className="muted">{t("notCounted")}</div>;
+    case "failed":
+      return (
+        <div>
+          <span className="error">{state.message || t("entryFailed")}</span>
+          {state.retryable && (
+            <>
+              {" "}
+              <button type="button" className="link-button" onClick={onRetry}>
+                {t("retry")}
+              </button>
+            </>
+          )}
+        </div>
+      );
+  }
+}
+
 export default function PuzzleSolver({
   puzzle,
   title,
   isPublic,
+  competition = null,
+  viewer = { signedIn: false, isAdmin: false },
 }: {
   puzzle: PuzzleData;
   title: string;
   /** Only public puzzles can be reported — /api/report answers 404 otherwise. */
   isPublic: boolean;
+  /** A running, upcoming or ended competition on this puzzle (#119). */
+  competition?: { pieceCount: number; startsAt: string | null; endsAt: string | null } | null;
+  viewer?: { signedIn: boolean; isAdmin: boolean };
 }) {
   const t = useTranslations("solve");
   const tReport = useTranslations("report");
+  const tComp = useTranslations("competition");
   const storageKey = `pc:${puzzle.id}`;
   const solveKey = solveStateKey(puzzle.id);
 
@@ -155,9 +256,14 @@ export default function PuzzleSolver({
   // mount — reading it during render would make the first client render differ
   // from the server's and break hydration. The cost is that a remembered count
   // builds the board twice, so keep the read in the effect below.
-  const [pieceCount, setPieceCount] = useState(puzzle.pieceCount);
+  //
+  // A competition fixes the count for everyone, so the solver's own choice is
+  // neither applied nor offered while there is one.
+  const [pieceCount, setPieceCount] = useState(competition?.pieceCount ?? puzzle.pieceCount);
+  const fixedCount = competition !== null;
 
   useEffect(() => {
+    if (fixedCount) return;
     const saved = Number(withStorage((s) => s.getItem(storageKey), null));
     // react-hooks/set-state-in-effect wants this read during render instead
     // (#84) — which is exactly what the comment above says must not happen, and
@@ -166,7 +272,7 @@ export default function PuzzleSolver({
     // makes the first client render disagree with the server's.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see above
     if ((PIECE_PRESETS as readonly number[]).includes(saved)) setPieceCount(saved);
-  }, [storageKey]);
+  }, [storageKey, fixedCount]);
 
   const { cols, rows } = useMemo(
     () => computeGrid(pieceCount, puzzle.imageWidth / puzzle.imageHeight),
@@ -224,6 +330,45 @@ export default function PuzzleSolver({
     isNew: boolean;
   } | null>(null);
 
+  // --- The competition (#119) -------------------------------------------------
+
+  const competitionKey = `comp:${puzzle.id}`;
+  const tokens = useMemo<TokenStore>(
+    () => ({
+      get: () => withStorage((s) => s.getItem(competitionKey), null),
+      set: (token) => withStorage((s) => s.setItem(competitionKey, token), undefined),
+      clear: () => withStorage((s) => s.removeItem(competitionKey), undefined),
+    }),
+    [competitionKey],
+  );
+  /** Bumped after an entry lands, so an open leaderboard shows it. */
+  const [boardVersion, setBoardVersion] = useState(0);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const onEntered = useCallback(() => setBoardVersion((n) => n + 1), []);
+  const isCompetitionOpen = useCallback(
+    () =>
+      competition !== null &&
+      competitionPhase(
+        {
+          startsAt: competition.startsAt ? new Date(competition.startsAt) : null,
+          endsAt: competition.endsAt ? new Date(competition.endsAt) : null,
+        },
+        new Date(),
+      ) === "OPEN",
+    [competition],
+  );
+  const entry = useCompetitionEntry({
+    puzzleId: puzzle.id,
+    enabled: competition !== null,
+    signedIn: viewer.signedIn,
+    pieceCount,
+    isOpen: isCompetitionOpen,
+    tokens,
+    onEntered,
+  });
+  const { beginAttempt, discardAttempt, finish: finishAttempt } = entry;
+  const [nameInput, setNameInput] = useState("");
+
   const onProgress = useCallback((groups: number, boardTotal: number) => {
     setProgress({ groups, total: boardTotal });
     setSolved(groups === 1);
@@ -232,14 +377,23 @@ export default function PuzzleSolver({
   // All four are stable, which the board needs of `onSeeded` (a dependency of its
   // seeding effect) and `readTiming` (of its save).
   const onSeeded = useCallback(
-    (timing: SolveTiming | null, alreadySolved: boolean) => timer.reset(timing, alreadySolved),
-    [timer],
+    (timing: SolveTiming | null, alreadySolved: boolean) => {
+      timer.reset(timing, alreadySolved);
+      // A start belongs to the solve it was issued for. A fresh board — or an
+      // untimed one, which could never be submitted — has none.
+      if (!alreadySolved && (!timing || (timing.elapsedMs === 0 && timing.moves === 0))) {
+        discardAttempt();
+      }
+    },
+    [timer, discardAttempt],
   );
   const readTiming = useCallback(() => timer.timing(Date.now()), [timer]);
-  const onPieceGrab = useCallback(
-    () => timer.grab(Date.now(), document.visibilityState !== "hidden"),
-    [timer],
-  );
+  const onPieceGrab = useCallback(() => {
+    const now = Date.now();
+    // Before the first move of a timed solve: the attempt starts with it.
+    if (timer.timing(now)?.moves === 0) void beginAttempt();
+    timer.grab(now, document.visibilityState !== "hidden");
+  }, [timer, beginAttempt]);
   const onPieceDrop = useCallback(() => timer.drop(), [timer]);
 
   // Hiding the tab pauses the clock — and saves, since the time since the last
@@ -293,8 +447,9 @@ export default function PuzzleSolver({
         isNew: recorded.isNew,
       });
     }
+    finishAttempt(outcome);
     celebrate({ sound });
-  }, [sound, timer, bestKey, pieceCount]);
+  }, [sound, timer, bestKey, pieceCount, finishAttempt]);
 
   useEffect(() => stopCelebration, []);
 
@@ -372,6 +527,7 @@ export default function PuzzleSolver({
     setProgress(null);
     setSolved(false);
     setResult(null);
+    discardAttempt();
     stopCelebration();
   }
 
@@ -464,6 +620,24 @@ export default function PuzzleSolver({
             <ToggleButtons items={toggles} />
           </div>
 
+          {competition && (
+            <ToolbarPopover
+              icon={<Trophy size={ICON_SIZE} />}
+              label={tComp("leaderboard")}
+              className="solve-leaderboard"
+              open={leaderboardOpen}
+              onOpenChange={setLeaderboardOpen}
+            >
+              <Leaderboard
+                puzzleId={puzzle.id}
+                active={leaderboardOpen}
+                version={boardVersion}
+                signedIn={viewer.signedIn}
+                isAdmin={viewer.isAdmin}
+              />
+            </ToolbarPopover>
+          )}
+
           <ToolbarPopover icon={<CircleHelp size={ICON_SIZE} />} label={t("help")} className="solve-help">
             <p style={{ margin: 0 }}>{t("instructions")}</p>
           </ToolbarPopover>
@@ -478,22 +652,31 @@ export default function PuzzleSolver({
             <div className="solve-menu-toggles">
               <ToggleButtons items={toggles} inMenu />
             </div>
-            <label className="menu-item">
-              {t("pieces")}
-              <select
-                id="piece-count"
-                name="pieceCount"
-                value={pieceCount}
-                onChange={(e) => changeCount(Number(e.target.value))}
-                style={{ width: "auto", marginLeft: "auto" }}
-              >
-                {PIECE_PRESETS.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {fixedCount ? (
+              <div className="menu-item">
+                {t("pieces")}
+                <span className="muted" style={{ marginLeft: "auto" }}>
+                  {tComp("fixedPieces", { count: pieceCount })}
+                </span>
+              </div>
+            ) : (
+              <label className="menu-item">
+                {t("pieces")}
+                <select
+                  id="piece-count"
+                  name="pieceCount"
+                  value={pieceCount}
+                  onChange={(e) => changeCount(Number(e.target.value))}
+                  style={{ width: "auto", marginLeft: "auto" }}
+                >
+                  {PIECE_PRESETS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {/* Stays open so the "copied" confirmation can be seen. */}
             <button className="menu-item" type="button" onClick={share}>
               <LinkIcon size={ICON_SIZE} aria-hidden="true" /> {copied ? t("copied") : t("share")}
@@ -532,6 +715,7 @@ export default function PuzzleSolver({
       {isPublic && (
         <ReportDialog
           puzzleId={puzzle.id}
+          hasLeaderboard={competition !== null}
           open={reporting}
           onClose={() => {
             setReporting(false);
@@ -544,31 +728,48 @@ export default function PuzzleSolver({
         {/* Always rendered: a status region announces what appears in it, and one
             that arrives together with its content is often not announced. */}
         <div role="status" className="solve-result-region">
-          {result && (
+          {(result || entry.state.kind !== "idle") && (
             <div className="solve-result">
               <PartyPopper size={20} aria-hidden="true" />
               <div>
-                <strong>
-                  {t("solvedIn", {
-                    time: formatDuration(result.outcome.ms),
-                    moves: result.outcome.moves,
-                  })}
-                </strong>
-                {result.beaten && (
-                  <div>{t("newBest", { time: formatDuration(result.beaten.ms) })}</div>
+                {result && (
+                  <>
+                    <strong>
+                      {t("solvedIn", {
+                        time: formatDuration(result.outcome.ms),
+                        moves: result.outcome.moves,
+                      })}
+                    </strong>
+                    {result.beaten && (
+                      <div>{t("newBest", { time: formatDuration(result.beaten.ms) })}</div>
+                    )}
+                    {!result.isNew && (
+                      <div className="muted">
+                        {t("bestTime", { time: formatDuration(result.best.ms) })}
+                      </div>
+                    )}
+                  </>
                 )}
-                {!result.isNew && (
-                  <div className="muted">
-                    {t("bestTime", { time: formatDuration(result.best.ms) })}
-                  </div>
-                )}
+                {!result && <strong>{t("solved")}</strong>}
+                <CompetitionOutcome
+                  state={entry.state}
+                  puzzleId={puzzle.id}
+                  name={nameInput}
+                  onName={setNameInput}
+                  onSubmitName={() => entry.submitName(nameInput)}
+                  onShowLeaderboard={() => setLeaderboardOpen(true)}
+                  onRetry={entry.retry}
+                />
               </div>
               <button
                 type="button"
                 className="icon-button"
                 aria-label={t("closeResult")}
                 title={t("closeResult")}
-                onClick={() => setResult(null)}
+                onClick={() => {
+                  setResult(null);
+                  entry.dismiss();
+                }}
               >
                 <X size={ICON_SIZE} aria-hidden="true" />
               </button>

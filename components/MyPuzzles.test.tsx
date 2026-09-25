@@ -42,6 +42,7 @@ const PUZZLE = {
   imageKey: "puzzles/abc.webp",
   pieceCount: 48,
   isPublic: false,
+  competition: null,
 };
 
 function mount(initial = [PUZZLE]) {

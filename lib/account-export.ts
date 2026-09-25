@@ -20,6 +20,7 @@ type ExportableUser = {
   id: string;
   email: string;
   name: string | null;
+  displayName?: string | null;
   role: string;
   locale: string | null;
   emailVerified: Date | null;
@@ -40,6 +41,15 @@ type ExportablePuzzle = {
   seed: number;
   isPublic: boolean;
   createdAt: Date;
+  competition?: { pieceCount: number; startsAt: Date | null; endsAt: Date | null } | null;
+};
+
+/** One of the user's own results on a competition leaderboard (#119). */
+type ExportableEntry = {
+  ms: number;
+  moves: number;
+  achievedAt: Date;
+  competition: { puzzleId: string; puzzle: { title: string } };
 };
 
 export type AccountExport = {
@@ -48,6 +58,7 @@ export type AccountExport = {
     id: string;
     email: string;
     name: string | null;
+    displayName: string | null;
     role: string;
     locale: string | null;
     emailVerified: string | null;
@@ -67,6 +78,15 @@ export type AccountExport = {
     seed: number;
     isPublic: boolean;
     createdAt: string;
+    competition: { pieceCount: number; startsAt: string | null; endsAt: string | null } | null;
+  }>;
+  /** Only the user's own results — never anyone else's on the same board. */
+  leaderboardEntries: Array<{
+    puzzleId: string;
+    puzzleTitle: string;
+    ms: number;
+    moves: number;
+    achievedAt: string;
   }>;
 };
 
@@ -83,11 +103,13 @@ const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
 export function buildAccountExport({
   user,
   puzzles,
+  leaderboardEntries = [],
   baseUrl,
   exportedAt = new Date(),
 }: {
   user: ExportableUser;
   puzzles: ExportablePuzzle[];
+  leaderboardEntries?: ExportableEntry[];
   baseUrl: string;
   exportedAt?: Date;
 }): AccountExport {
@@ -97,6 +119,7 @@ export function buildAccountExport({
       id: user.id,
       email: user.email,
       name: user.name,
+      displayName: user.displayName ?? null,
       role: user.role,
       locale: user.locale,
       emailVerified: iso(user.emailVerified),
@@ -118,6 +141,20 @@ export function buildAccountExport({
       seed: puzzle.seed,
       isPublic: puzzle.isPublic,
       createdAt: puzzle.createdAt.toISOString(),
+      competition: puzzle.competition
+        ? {
+            pieceCount: puzzle.competition.pieceCount,
+            startsAt: iso(puzzle.competition.startsAt),
+            endsAt: iso(puzzle.competition.endsAt),
+          }
+        : null,
+    })),
+    leaderboardEntries: leaderboardEntries.map((entry) => ({
+      puzzleId: entry.competition.puzzleId,
+      puzzleTitle: entry.competition.puzzle.title,
+      ms: entry.ms,
+      moves: entry.moves,
+      achievedAt: entry.achievedAt.toISOString(),
     })),
   };
 }

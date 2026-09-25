@@ -17,7 +17,7 @@ export async function GET() {
     return NextResponse.json({ error: t("notLoggedIn") }, { status: 401 });
   }
 
-  // Before the queries, not after: the point of the limit is the two reads it
+  // Before the queries, not after: the point of the limit is the reads it
   // prevents.
   if (!takeExportSlot(session.id)) {
     return NextResponse.json({ error: t("tooManyRequests") }, { status: 429 });
@@ -35,6 +35,7 @@ export async function GET() {
         id: true,
         email: true,
         name: true,
+        displayName: true,
         role: true,
         locale: true,
         emailVerified: true,
@@ -49,26 +50,40 @@ export async function GET() {
       return NextResponse.json({ error: t("accountNotFound") }, { status: 404 });
     }
 
-    const puzzles = await prisma.puzzle.findMany({
-      where: { ownerId: session.id },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        title: true,
-        imageKey: true,
-        imageWidth: true,
-        imageHeight: true,
-        pieceCount: true,
-        cols: true,
-        rows: true,
-        seed: true,
-        isPublic: true,
-        createdAt: true,
-      },
-    });
+    // Independent of each other, so read together.
+    const [puzzles, leaderboardEntries] = await Promise.all([
+      prisma.puzzle.findMany({
+        where: { ownerId: session.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          title: true,
+          imageKey: true,
+          imageWidth: true,
+          imageHeight: true,
+          pieceCount: true,
+          cols: true,
+          rows: true,
+          seed: true,
+          isPublic: true,
+          createdAt: true,
+          competition: { select: { pieceCount: true, startsAt: true, endsAt: true } },
+        },
+      }),
+      prisma.leaderboardEntry.findMany({
+        where: { userId: session.id },
+        orderBy: { achievedAt: "desc" },
+        select: {
+          ms: true,
+          moves: true,
+          achievedAt: true,
+          competition: { select: { puzzleId: true, puzzle: { select: { title: true } } } },
+        },
+      }),
+    ]);
 
     const baseUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
-    const payload = buildAccountExport({ user, puzzles, baseUrl });
+    const payload = buildAccountExport({ user, puzzles, leaderboardEntries, baseUrl });
 
     // Dated filename so repeated downloads do not overwrite each other, and
     // no-store because this is the whole account in one response.

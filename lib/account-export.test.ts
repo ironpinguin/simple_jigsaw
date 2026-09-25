@@ -125,6 +125,31 @@ describe("buildAccountExport", () => {
     );
   });
 
+  it("carries the public display name and the owner's competition settings", () => {
+    const out = buildAccountExport({
+      user: { ...user, displayName: "Puzzle Fan" },
+      puzzles: [
+        {
+          ...puzzle,
+          competition: {
+            pieceCount: 48,
+            startsAt: new Date(Date.UTC(2026, 9, 1)),
+            endsAt: null,
+          },
+        },
+      ],
+      baseUrl: "https://jigsaw.example.org",
+    });
+
+    expect(out.account.displayName).toBe("Puzzle Fan");
+    expect(out.puzzles[0].competition).toEqual({
+      pieceCount: 48,
+      startsAt: "2026-10-01T00:00:00.000Z",
+      endsAt: null,
+    });
+    expect(out.leaderboardEntries).toEqual([]);
+  });
+
   it("survives an account with nothing in it", () => {
     const out = buildAccountExport({
       user: { ...user, name: null, emailVerified: null, termsAcceptedAt: null, termsVersion: null },

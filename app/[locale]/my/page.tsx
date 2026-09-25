@@ -7,6 +7,7 @@ import MyPuzzles from "@/components/MyPuzzles";
 import ExportAccount from "@/components/ExportAccount";
 import ChangePassword from "@/components/ChangePassword";
 import DeleteAccount from "@/components/DeleteAccount";
+import DisplayNameForm from "@/components/DisplayNameForm";
 
 // Per-request page (auth + DB); never prerender/query the DB at build time.
 export const dynamic = "force-dynamic";
@@ -24,11 +25,38 @@ export default async function MyPage({
   }
 
   const t = await getTranslations("my");
-  const puzzles = await prisma.puzzle.findMany({
-    where: { ownerId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, imageKey: true, pieceCount: true, isPublic: true },
-  });
+  const [rows, account] = await Promise.all([
+    prisma.puzzle.findMany({
+      where: { ownerId: session.user.id },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        title: true,
+        imageKey: true,
+        pieceCount: true,
+        isPublic: true,
+        competition: {
+          select: {
+            pieceCount: true,
+            startsAt: true,
+            endsAt: true,
+            _count: { select: { entries: true } },
+          },
+        },
+      },
+    }),
+    prisma.user.findUnique({ where: { id: session.user.id }, select: { displayName: true } }),
+  ]);
+  // Dates as ISO strings: the client component receives plain JSON.
+  const puzzles = rows.map(({ competition, ...p }) => ({
+    ...p,
+    competition: competition && {
+      pieceCount: competition.pieceCount,
+      startsAt: competition.startsAt?.toISOString() ?? null,
+      endsAt: competition.endsAt?.toISOString() ?? null,
+      entries: competition._count.entries,
+    },
+  }));
 
   return (
     <div>
@@ -47,6 +75,7 @@ export default async function MyPage({
         <MyPuzzles initial={puzzles} />
       )}
 
+      <DisplayNameForm initial={account?.displayName ?? null} />
       <ExportAccount />
       <ChangePassword />
       <DeleteAccount />

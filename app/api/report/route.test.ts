@@ -131,6 +131,20 @@ describe("POST /api/report", () => {
     expect(reportCreate).not.toHaveBeenCalled();
   });
 
+  it("takes a leaderboard-name report only where there is a leaderboard", async () => {
+    const res = await callPost({ ...VALID, category: "NAME" });
+    expect(res.status).toBe(400);
+    expect(reportCreate).not.toHaveBeenCalled();
+
+    puzzleFindUnique.mockResolvedValue({
+      title: "Beach",
+      isPublic: true,
+      competition: { puzzleId: "p1" },
+    });
+    expect((await callPost({ ...VALID, category: "NAME" })).status).toBe(200);
+    expect(reportCreate).toHaveBeenCalled();
+  });
+
   it("stores the reporter email when given and rejects an invalid one", async () => {
     await callPost({ ...VALID, email: "me@example.com" });
     expect(reportCreate.mock.calls[0][0].data.reporterEmail).toBe("me@example.com");

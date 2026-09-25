@@ -247,6 +247,7 @@ input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="file"],
+input[type="datetime-local"],
 select {
   width: 100%;
   padding: 10px 12px;
@@ -255,6 +256,10 @@ select {
   border-radius: 8px;
   color: var(--text);
   font: inherit;
+}
+/* The picker's own icon and popup follow the page's dark theme. */
+input[type="datetime-local"] {
+  color-scheme: dark;
 }
 input:focus,
 select:focus {
@@ -299,6 +304,25 @@ select:focus {
 .puzzle-card h3 {
   margin: 10px 0 4px;
   font-size: 16px;
+}
+.competition-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.competition-settings svg {
+  vertical-align: -2px;
+}
+.competition-form {
+  width: 100%;
+}
+.competition-form input,
+.competition-form select {
+  width: 100%;
 }
 .card-actions {
   display: flex;
@@ -412,6 +436,64 @@ select:focus {
 }
 .solve-result .icon-button {
   flex: none;
+}
+.solve-leaderboard .toolbar-popover-panel {
+  width: min(380px, calc(100vw - 48px));
+  padding: 12px;
+}
+.leaderboard-title {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+.leaderboard p {
+  margin: 4px 0;
+}
+.leaderboard-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.leaderboard-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.leaderboard-list li.is-you {
+  background: var(--surface-2);
+}
+.leaderboard-rank {
+  min-width: 2.2em;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.leaderboard-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.leaderboard-time {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.leaderboard-moves {
+  font-size: 13px;
+  white-space: nowrap;
+}
+.leaderboard-list .icon-button {
+  width: 28px;
+  height: 28px;
+}
+.solve-result-name {
+  margin-top: 6px;
+}
+.solve-result-name input {
+  min-width: 0;
 }
 .sr-only {
   position: absolute;

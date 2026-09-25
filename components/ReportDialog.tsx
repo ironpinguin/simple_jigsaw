@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
-  REPORT_CATEGORIES,
+  categoriesFor,
   REPORT_MESSAGE_MAX,
   REPORT_MESSAGE_MIN,
   type ReportCategory,
@@ -21,9 +21,14 @@ import {
  */
 export default function ReportDialog({
   puzzleId,
+  hasLeaderboard = false,
   open: controlledOpen,
   onClose,
-}: { puzzleId: string } & (
+}: {
+  puzzleId: string;
+  /** Offer the leaderboard-name category — only where there is a leaderboard. */
+  hasLeaderboard?: boolean;
+} & (
   | { open?: undefined; onClose?: undefined }
   | { open: boolean; onClose: () => void }
 )) {
@@ -150,7 +155,7 @@ export default function ReportDialog({
             ) : (
               <form onSubmit={submit}>
                 <p>{t("intro")}</p>
-                {REPORT_CATEGORIES.map((c) => (
+                {categoriesFor(hasLeaderboard).map((c) => (
                   <label key={c} style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input
                       type="radio"

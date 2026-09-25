@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AUTO_REPORT_CATEGORIES,
+  categoriesFor,
   isReportCategory,
   isReportStatus,
   REPORT_CATEGORIES,
@@ -8,11 +9,16 @@ import {
 } from "./reports";
 
 describe("report enums", () => {
-  it("defines the four categories and four statuses", () => {
-    expect(REPORT_CATEGORIES).toEqual(["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"]);
+  it("defines the five categories and four statuses", () => {
+    expect(REPORT_CATEGORIES).toEqual(["NSFW", "ILLEGAL", "COPYRIGHT", "NAME", "OTHER"]);
     // ACCOUNT_DELETED is not an admin decision: it records that the reported
     // puzzle left with its owner's account, unreviewed.
     expect(REPORT_STATUSES).toEqual(["OPEN", "TAKEDOWN", "DISMISSED", "ACCOUNT_DELETED"]);
+  });
+
+  it("offers the leaderboard-name category only with a leaderboard", () => {
+    expect(categoriesFor(false)).not.toContain("NAME");
+    expect(categoriesFor(true)).toEqual(REPORT_CATEGORIES);
   });
 });
 
