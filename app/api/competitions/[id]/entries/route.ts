@@ -15,7 +15,12 @@ import { rankOf } from "@/lib/competition-server";
 const EntrySchema = z.object({
   token: z.string().max(200),
   ms: z.number().int().nonnegative(),
-  moves: z.number().int().positive(),
+  // Bounded: the column is a 32-bit Int, and a value past it would be a 500
+  // from the write rather than a 400 here. No honest solve comes near either.
+  moves: z.number().int().positive().max(1_000_000),
+  // The count the board was cut into. A competition's count can still change
+  // while it has no entries, and a page opened before that keeps the old one.
+  pieceCount: z.number().int(),
   // Only needed, and only honoured, while the account has no display name yet.
   displayName: z.string().max(200).optional(),
 });
@@ -51,6 +56,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // date, including for attempts that were still running then.
   if (competitionPhase(competition, now) !== "OPEN") {
     return NextResponse.json({ error: t("competitionNotOpen") }, { status: 409 });
+  }
+  // Times at another piece count are not comparable with the ones on the board.
+  if (parsed.data.pieceCount !== competition.pieceCount) {
+    return NextResponse.json({ error: t("competitionCountChanged") }, { status: 409 });
   }
 
   const startedAt = verifyCompetitionStart(token, id, user.id);
@@ -101,34 +110,49 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     where: key,
     select: { ms: true, moves: true },
   });
-  const improved = isBetterResult({ ms, moves }, standing);
+  let improved = isBetterResult({ ms, moves }, standing);
+  let best = improved ? { ms, moves } : standing!;
   if (improved) {
     // Conditional, so two tabs finishing at once cannot overwrite a better
     // time with a worse one: the write only lands where it still improves.
     const better = { OR: [{ ms: { gt: ms } }, { ms, moves: { gt: moves } }] };
     const data = { ms, moves, achievedAt: now };
+    const improve = async () =>
+      (
+        await prisma.leaderboardEntry.updateMany({
+          where: { competitionId: id, userId: user.id, ...better },
+          data,
+        })
+      ).count > 0;
+    let landed: boolean;
     if (standing) {
-      await prisma.leaderboardEntry.updateMany({
-        where: { competitionId: id, userId: user.id, ...better },
-        data,
-      });
+      landed = await improve();
     } else {
       try {
         await prisma.leaderboardEntry.create({
           data: { competitionId: id, userId: user.id, ...data },
         });
+        landed = true;
       } catch (err) {
         // Another tab created the entry in between; fall back to improving it.
         if ((err as { code?: string }).code !== "P2002") throw err;
-        await prisma.leaderboardEntry.updateMany({
-          where: { competitionId: id, userId: user.id, ...better },
-          data,
-        });
+        landed = await improve();
+      }
+    }
+    if (!landed) {
+      // The other tab's time was the better one: answer with what is on the
+      // board, not with a result that never made it there.
+      const current = await prisma.leaderboardEntry.findUnique({
+        where: key,
+        select: { ms: true, moves: true },
+      });
+      if (current) {
+        improved = false;
+        best = current;
       }
     }
   }
 
-  const best = improved ? { ms, moves } : standing!;
   return NextResponse.json({
     improved,
     best,

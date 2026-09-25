@@ -383,6 +383,7 @@
     "competitionNotFound": "Per questo puzzle non c'è nessuna gara.",
     "competitionNotOpen": "La gara al momento non è aperta.",
     "attemptInvalid": "Questo tentativo non può essere inviato. Ricomincia il puzzle per partecipare.",
+    "competitionCountChanged": "Il numero di pezzi di questa gara è cambiato. Ricarica la pagina per partecipare.",
     "resultImplausible": "Questo tempo non è plausibile e non è stato registrato.",
     "displayNameRequired": "Scegli un nome visibile per la classifica.",
     "displayNameInvalid": "Il nome visibile deve avere da 2 a 30 caratteri.",

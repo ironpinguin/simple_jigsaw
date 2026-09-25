@@ -88,6 +88,9 @@ describe("DisplayNameSchema", () => {
     ["a control character", "ab\u0007cd"],
     ["an invisible formatting character", "ab​cd"],
     ["a bidi override", "ab‮cd"],
+    ["only Hangul fillers", "\u3164\u3164\u3164"],
+    ["only blank Braille patterns", "\u2800\u2800"],
+    ["a private-use character", "ab\ue000cd"],
   ])("refuses a name that is %s", (_, name) => {
     expect(DisplayNameSchema.safeParse(name).success).toBe(false);
   });

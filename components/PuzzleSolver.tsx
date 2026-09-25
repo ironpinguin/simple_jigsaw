@@ -33,7 +33,7 @@ import SolveTimerDisplay from "./SolveTimerDisplay";
 import { createSolveTimer } from "./solveTimer";
 import Leaderboard from "./Leaderboard";
 import { useCompetitionEntry, type EntryState, type TokenStore } from "./useCompetitionEntry";
-import { DISPLAY_NAME_MAX } from "@/lib/competition";
+import { DISPLAY_NAME_MAX, competitionPhase } from "@/lib/competition";
 import { Link as IntlLink } from "@/i18n/navigation";
 import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
@@ -331,10 +331,24 @@ export default function PuzzleSolver({
   const [boardVersion, setBoardVersion] = useState(0);
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const onEntered = useCallback(() => setBoardVersion((n) => n + 1), []);
+  const isCompetitionOpen = useCallback(
+    () =>
+      competition !== null &&
+      competitionPhase(
+        {
+          startsAt: competition.startsAt ? new Date(competition.startsAt) : null,
+          endsAt: competition.endsAt ? new Date(competition.endsAt) : null,
+        },
+        new Date(),
+      ) === "OPEN",
+    [competition],
+  );
   const entry = useCompetitionEntry({
     puzzleId: puzzle.id,
     enabled: competition !== null,
     signedIn: viewer.signedIn,
+    pieceCount,
+    isOpen: isCompetitionOpen,
     tokens,
     onEntered,
   });

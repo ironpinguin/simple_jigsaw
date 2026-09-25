@@ -6,7 +6,7 @@ import { Trophy } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import { PIECE_PRESETS } from "@/lib/puzzle/grid";
-import { competitionPhase } from "@/lib/competition";
+import { COMPETITION_DATE_FORMAT, competitionPhase } from "@/lib/competition";
 import { fromLocalInput, toLocalInput } from "@/lib/local-datetime";
 
 export interface OwnerCompetition {
@@ -44,8 +44,7 @@ export default function CompetitionSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const when = (iso: string) =>
-    format.dateTime(new Date(iso), { dateStyle: "medium", timeStyle: "short" });
+  const when = (iso: string) => format.dateTime(new Date(iso), COMPETITION_DATE_FORMAT);
 
   function summary(c: OwnerCompetition): string {
     // The phase is read from the clock at render; a card left open across the
@@ -130,11 +129,13 @@ export default function CompetitionSettings({
         </p>
       )}
       {!open ? (
+        // A competition that exists stays reachable after the puzzle went
+        // private — ending it is the one thing its owner may still want.
         <button
           className="button secondary"
           type="button"
-          disabled={!isPublic}
-          title={isPublic ? undefined : t("needsPublic")}
+          disabled={!isPublic && !competition}
+          title={isPublic || competition ? undefined : t("needsPublic")}
           onClick={() => setOpen(true)}
         >
           {competition ? t("edit") : t("start")}

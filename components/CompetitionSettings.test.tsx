@@ -84,6 +84,13 @@ describe("CompetitionSettings", () => {
     expect(container.textContent).toContain(t.needsPublic);
   });
 
+  it("can still be ended after the puzzle went private", () => {
+    mount({ pieceCount: 12, startsAt: null, endsAt: null, entries: 0 }, false);
+    expect(button(t.edit)!.disabled).toBe(false);
+    act(() => button(t.edit)!.click());
+    expect(button(t.end)).toBeTruthy();
+  });
+
   it("locks the piece count once there are entries", () => {
     mount({ pieceCount: 12, startsAt: null, endsAt: null, entries: 3 });
     expect(container.textContent).toContain("3 entries");

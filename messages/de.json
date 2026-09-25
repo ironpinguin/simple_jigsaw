@@ -383,6 +383,7 @@
     "competitionNotFound": "Für dieses Puzzle läuft kein Wettbewerb.",
     "competitionNotOpen": "Der Wettbewerb ist gerade nicht geöffnet.",
     "attemptInvalid": "Dieser Durchgang lässt sich nicht einreichen. Starte das Puzzle neu, um teilzunehmen.",
+    "competitionCountChanged": "Die Teilezahl dieses Wettbewerbs hat sich geändert. Lade die Seite neu, um teilzunehmen.",
     "resultImplausible": "Diese Zeit ist nicht plausibel und wurde nicht eingetragen.",
     "displayNameRequired": "Wähle einen Anzeigenamen für die Rangliste.",
     "displayNameInvalid": "Der Anzeigename muss 2 bis 30 Zeichen lang sein.",

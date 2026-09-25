@@ -49,7 +49,8 @@ function submit(body: Record<string, unknown>) {
     new Request("http://test/api/competitions/p1/entries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      // The count the competition() fixture runs at, unless a test says otherwise.
+      body: JSON.stringify({ pieceCount: 12, ...body }),
     }),
     { params: Promise.resolve({ id: "p1" }) },
   );
@@ -125,6 +126,30 @@ describe("POST /api/competitions/[id]/entries", () => {
 
     expect(res.status).toBe(200);
     expect(m.entryUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers with the standing entry when another tab's better time landed first", async () => {
+    m.entryFindUnique
+      .mockResolvedValueOnce({ ms: 90_000, moves: 30 })
+      .mockResolvedValueOnce({ ms: 55_000, moves: 18 });
+    m.entryUpdateMany.mockResolvedValue({ count: 0 });
+    const res = await submit({ token: token(70_000), ms: 60_000, moves: 20 });
+
+    expect(await res.json()).toMatchObject({ improved: false, best: { ms: 55_000, moves: 18 } });
+  });
+
+  it("refuses a result solved at another piece count than the competition's", async () => {
+    const res = await submit({ token: token(70_000), ms: 60_000, moves: 20, pieceCount: 48 });
+    expect(res.status).toBe(409);
+    expect(await errorOf(res)).toBe("competitionCountChanged");
+    expect(m.entryCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses a move count the column cannot hold", async () => {
+    const res = await submit({ token: token(70_000), ms: 60_000, moves: 3_000_000_000 });
+    expect(res.status).toBe(400);
+    expect(await errorOf(res)).toBe("invalidInput");
+    expect(m.entryCreate).not.toHaveBeenCalled();
   });
 
   it("refuses without a session", async () => {

@@ -31,10 +31,15 @@ export async function POST(request: Request) {
   // a puzzle id exists (same no-oracle policy as the puzzle routes).
   const puzzle = await prisma.puzzle.findUnique({
     where: { id: parsed.data.puzzleId },
-    select: { title: true, isPublic: true },
+    select: { title: true, isPublic: true, competition: { select: { puzzleId: true } } },
   });
   if (!puzzle || !puzzle.isPublic) {
     return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+  }
+  // A leaderboard name can only be reported where there is a leaderboard — the
+  // dialog offers it nowhere else (`categoriesFor`), and neither does this.
+  if (parsed.data.category === "NAME" && !puzzle.competition) {
+    return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
   }
 
   const ipHash = hashReporterIp(request.headers.get("x-forwarded-for"));

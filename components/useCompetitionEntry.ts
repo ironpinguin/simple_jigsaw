@@ -15,6 +15,9 @@ export type EntryState =
   | { kind: "noAttempt" }
   | { kind: "failed"; message: string };
 
+const IDLE: EntryState = { kind: "idle" };
+const ALWAYS_OPEN = () => true;
+
 /** The start token's place in storage; the solver owns every storage call. */
 export interface TokenStore {
   get(): string | null;
@@ -32,6 +35,8 @@ export function useCompetitionEntry({
   puzzleId,
   enabled,
   signedIn,
+  pieceCount,
+  isOpen = ALWAYS_OPEN,
   tokens,
   onEntered,
 }: {
@@ -39,14 +44,27 @@ export function useCompetitionEntry({
   /** Whether the puzzle has a competition at all. */
   enabled: boolean;
   signedIn: boolean;
+  /** The count the board is cut into, sent with the result for the server to match. */
+  pieceCount: number;
+  /**
+   * Whether the competition is open now, as far as the browser can tell. Only
+   * decides what a result that is not sent says — the server still judges
+   * everything that is.
+   */
+  isOpen?: () => boolean;
   tokens: TokenStore;
   /** After an entry landed, e.g. to refresh an open leaderboard. */
   onEntered?: () => void;
 }) {
-  const [state, setState] = useState<EntryState>({ kind: "idle" });
+  const [state, setState] = useState<EntryState>(IDLE);
   const starting = useRef(false);
   /** The finished result waiting for a display name. */
   const pending = useRef<{ outcome: SolveResult; token: string } | null>(null);
+  /**
+   * Bumped whenever the card is closed or the solve started over, so an answer
+   * still in flight then does not bring the card back.
+   */
+  const shown = useRef(0);
 
   /** Call when a piece of a fresh solve is picked up. Does nothing if there is a start already. */
   const beginAttempt = useCallback(async () => {
@@ -68,26 +86,39 @@ export function useCompetitionEntry({
   const discardAttempt = useCallback(() => {
     tokens.clear();
     pending.current = null;
-    setState({ kind: "idle" });
+    shown.current += 1;
+    // Every board seed calls this; keeping the idle state as it is spares the
+    // solver a re-render for each of them.
+    setState((s) => (s.kind === "idle" ? s : IDLE));
   }, [tokens]);
 
   const submit = useCallback(
     async (outcome: SolveResult, token: string, displayName?: string) => {
+      const view = shown.current;
       setState({ kind: "submitting" });
       const res = await tryFetch("competition", `/api/competitions/${puzzleId}/entries`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, ms: outcome.ms, moves: outcome.moves, displayName }),
+        body: JSON.stringify({
+          token,
+          ms: outcome.ms,
+          moves: outcome.moves,
+          pieceCount,
+          displayName,
+        }),
       });
       const data = res ? await res.json().catch(() => null) : null;
       if (res?.ok && typeof data?.rank === "number") {
         // Used up: a second submission of the same attempt would only repeat it.
-        tokens.clear();
-        pending.current = null;
-        setState({ kind: "entered", rank: data.rank, improved: !!data.improved, best: data.best });
+        // Only this one, though — a solve started over meanwhile has its own.
+        if (tokens.get() === token) tokens.clear();
+        if (pending.current?.token === token) pending.current = null;
         onEntered?.();
+        if (view !== shown.current) return;
+        setState({ kind: "entered", rank: data.rank, improved: !!data.improved, best: data.best });
         return;
       }
+      if (view !== shown.current) return;
       if (res?.status === 409 && data?.code === "displayNameRequired") {
         pending.current = { outcome, token };
         setState({ kind: "needsName", error: null });
@@ -103,7 +134,7 @@ export function useCompetitionEntry({
       }
       setState({ kind: "failed", message: data?.error ?? "" });
     },
-    [puzzleId, tokens, onEntered],
+    [puzzleId, pieceCount, tokens, onEntered],
   );
 
   /**
@@ -115,15 +146,18 @@ export function useCompetitionEntry({
   const finish = useCallback(
     (outcome: SolveResult | null) => {
       if (!enabled) return;
-      if (!signedIn) return setState({ kind: "signIn" });
+      // Inviting the solver to sign in or start over only helps while it is
+      // open; before the start or after the end there is nothing to say.
+      const open = isOpen();
+      if (!signedIn) return setState(open ? { kind: "signIn" } : IDLE);
       const token = tokens.get();
       if (!outcome || !token) {
         tokens.clear();
-        return setState({ kind: "noAttempt" });
+        return setState(open ? { kind: "noAttempt" } : IDLE);
       }
       void submit(outcome, token);
     },
-    [enabled, signedIn, tokens, submit],
+    [enabled, signedIn, isOpen, tokens, submit],
   );
 
   /** Answer the display-name question and submit the waiting result with it. */
@@ -135,7 +169,10 @@ export function useCompetitionEntry({
     [submit],
   );
 
-  const dismiss = useCallback(() => setState({ kind: "idle" }), []);
+  const dismiss = useCallback(() => {
+    shown.current += 1;
+    setState((s) => (s.kind === "idle" ? s : IDLE));
+  }, []);
 
   return { state, beginAttempt, discardAttempt, finish, submitName, dismiss };
 }

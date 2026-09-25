@@ -6,7 +6,7 @@ import { X } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import { formatDuration } from "@/lib/puzzle/timer";
-import type { CompetitionPhase } from "@/lib/competition";
+import { COMPETITION_DATE_FORMAT, type CompetitionPhase } from "@/lib/competition";
 import type { Leaderboard as LeaderboardData } from "@/lib/competition-server";
 
 interface Loaded extends LeaderboardData {
@@ -59,10 +59,11 @@ export default function Leaderboard({
       if (body && Array.isArray(body.entries)) {
         setData(body);
         setFailed(false);
+        setLoadedFor(key);
       } else {
+        // Not marked as loaded, so opening the popover again tries once more.
         setFailed(true);
       }
-      setLoadedFor(key);
     })();
     return () => {
       cancelled = true;
@@ -86,8 +87,7 @@ export default function Leaderboard({
     }
   }
 
-  const when = (iso: string) =>
-    format.dateTime(new Date(iso), { dateStyle: "medium", timeStyle: "short" });
+  const when = (iso: string) => format.dateTime(new Date(iso), COMPETITION_DATE_FORMAT);
 
   if (failed) return <p className="muted">{t("leaderboardFailed")}</p>;
   if (!data) return <p className="muted">{t("leaderboardLoading")}</p>;

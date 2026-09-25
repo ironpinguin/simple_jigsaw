@@ -94,7 +94,10 @@ export const DisplayNameSchema = z
       .string()
       .min(DISPLAY_NAME_MIN)
       .max(DISPLAY_NAME_MAX)
-      .refine((s) => !/[\p{Cc}\p{Cf}]/u.test(s)),
+      // \p{C} covers control, formatting, private-use and unassigned code
+      // points; the others are letters and symbols that render as a blank
+      // (Hangul fillers, the blank Braille pattern).
+      .refine((s) => !/[\p{C}\u115F\u1160\u3164\uFFA0\u2800]/u.test(s)),
   );
 
 /** What the owner sends to turn a puzzle into a competition or change it. */
@@ -115,3 +118,18 @@ export type CompetitionSettings = z.infer<typeof CompetitionSettingsSchema>;
 
 /** How many entries the leaderboard shows. */
 export const LEADERBOARD_SIZE = 20;
+
+/**
+ * How a competition's start and end are shown. next-intl renders every date in
+ * the display zone (UTC, lib/dates.ts) so the server render and the hydrated one
+ * agree — not the reader's own zone, in which the owner typed them. So the zone
+ * is named: an unlabelled "16:00" for a start entered as 18:00 reads as wrong.
+ */
+export const COMPETITION_DATE_FORMAT = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZoneName: "short",
+} as const satisfies Intl.DateTimeFormatOptions;

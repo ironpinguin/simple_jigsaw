@@ -1096,7 +1096,12 @@ describe("PuzzleSolver", () => {
 
       expect(calls("start")).toHaveLength(1);
       const [, init] = calls("entries")[0];
-      expect(JSON.parse(String(init.body))).toEqual({ token: "tok-1", ms: 60_000, moves: 1 });
+      expect(JSON.parse(String(init.body))).toEqual({
+        token: "tok-1",
+        ms: 60_000,
+        moves: 1,
+        pieceCount: 12,
+      });
       expect(card()).toContain("Rank 3 on the leaderboard!");
       // Used up with the entry.
       expect(localStorage.getItem("comp:p1")).toBeNull();
@@ -1142,6 +1147,35 @@ describe("PuzzleSolver", () => {
       expect(container.querySelector(".solve-result a")?.getAttribute("href")).toBe(
         "/login?callbackUrl=/puzzle/p1",
       );
+    });
+
+    it("says nothing about taking part once the competition has ended", async () => {
+      extraProps = {
+        competition: { ...COMPETITION, endsAt: new Date(0).toISOString() },
+        viewer: { signedIn: false, isAdmin: false },
+      };
+      await seed();
+      await solveIn(60_000);
+      expect(container.querySelector(".solve-result a")).toBeNull();
+      expect(card()).not.toContain(messages.competition.notCounted);
+    });
+
+    it("does not bring back a closed card when the entry lands afterwards", async () => {
+      let land!: () => void;
+      const landed = new Promise<void>((resolve) => (land = resolve));
+      const answer = fetchMock.getMockImplementation() as (url: string) => Promise<unknown>;
+      fetchMock.mockImplementation(async (url: string) => {
+        if (String(url).endsWith("/entries")) await landed;
+        return answer(url);
+      });
+      await seed();
+      await solveIn(60_000);
+      const close = container.querySelector<HTMLButtonElement>(
+        `.solve-result button[aria-label="${messages.solve.closeResult}"]`,
+      )!;
+      await act(async () => close.click());
+      await act(async () => land());
+      expect(card()).toBeNull();
     });
 
     it("keeps the attempt across a reload in the middle of the solve", async () => {

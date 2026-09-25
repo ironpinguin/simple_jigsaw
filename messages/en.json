@@ -383,6 +383,7 @@
     "competitionNotFound": "There is no competition for this puzzle.",
     "competitionNotOpen": "The competition is not open right now.",
     "attemptInvalid": "This attempt cannot be submitted. Start the puzzle over to take part.",
+    "competitionCountChanged": "The number of pieces in this competition has changed. Reload the page to take part.",
     "resultImplausible": "This time is not plausible and was not entered.",
     "displayNameRequired": "Choose a display name for the leaderboard.",
     "displayNameInvalid": "The display name must be 2 to 30 characters long.",
