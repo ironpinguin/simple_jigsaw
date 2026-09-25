@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
+import { Puzzle } from "lucide-react";
 import { getMessages, getTranslations, setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { routing } from "@/i18n/routing";
@@ -48,7 +49,7 @@ export default async function LocaleLayout({
         <NextIntlClientProvider messages={messages}>
         <header className="site-header">
           <Link href="/" className="brand">
-            🧩 Jigsaw
+            <Puzzle size={22} aria-hidden="true" /> Jigsaw
           </Link>
           <nav className="site-nav">
             {session?.user ? (

@@ -13,10 +13,24 @@ import {
  * "Report this puzzle" — trigger button plus modal form. Works without a
  * session: the endpoint is anonymous by design (the people who find bad
  * content are not necessarily registered).
+ *
+ * Passing `open` makes it controlled: no trigger of its own, for a caller that
+ * offers the action elsewhere (the solve page's overflow menu). That caller then
+ * owns where focus goes on close, in `onClose`.
  */
-export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
+export default function ReportDialog({
+  puzzleId,
+  open: controlledOpen,
+  onClose,
+}: {
+  puzzleId: string;
+  open?: boolean;
+  onClose?: () => void;
+}) {
   const t = useTranslations("report");
-  const [open, setOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = controlled ? controlledOpen : ownOpen;
   const [category, setCategory] = useState<ReportCategory>("NSFW");
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
@@ -34,13 +48,17 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
   }, [open]);
 
   function close() {
-    setOpen(false);
     setState("idle");
     setError(null);
     setMessage("");
     setEmail("");
     setCategory("NSFW");
-    triggerRef.current?.focus();
+    if (controlled) {
+      onClose?.();
+    } else {
+      setOwnOpen(false);
+      triggerRef.current?.focus();
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -77,14 +95,16 @@ export default function ReportDialog({ puzzleId }: { puzzleId: string }) {
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        className="button secondary"
-        type="button"
-        onClick={() => setOpen(true)}
-      >
-        {t("reportLink")}
-      </button>
+      {!controlled && (
+        <button
+          ref={triggerRef}
+          className="button secondary"
+          type="button"
+          onClick={() => setOwnOpen(true)}
+        >
+          {t("reportLink")}
+        </button>
+      )}
       {open && (
         <div
           role="dialog"

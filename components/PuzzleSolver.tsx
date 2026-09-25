@@ -1,10 +1,24 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import {
+  CircleHelp,
+  Ellipsis,
+  Flag,
+  ImageIcon,
+  LinkIcon,
+  Magnet,
+  MapIcon,
+  PartyPopper,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import type { BoardActions, PuzzleData } from "./PuzzleBoard";
 import ReportDialog from "@/components/ReportDialog";
+import ToolbarPopover from "./ToolbarPopover";
 import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import {
@@ -67,6 +81,41 @@ function storedSolves(store: Storage): Array<{ key: string; raw: string | null }
   return entries;
 }
 
+/**
+ * The toolbar draws SVG icons rather than emoji: an emoji is only as good as the
+ * system's font, and one without 🧲 or 🔗 (Unicode 11 and older fonts) shows an
+ * empty box in its place.
+ */
+const ICON_SIZE = 18;
+
+interface ToggleItem {
+  icon: ReactNode;
+  label: string;
+  title: string;
+  pressed?: boolean;
+  onClick: () => void;
+}
+
+/** The toolbar's solving toggles: icons in the bar, labelled rows in the menu. */
+function ToggleButtons({ items, inMenu = false }: { items: ToggleItem[]; inMenu?: boolean }) {
+  return items.map(({ icon, label, title, pressed, onClick }) => (
+    <button
+      key={label}
+      type="button"
+      className={`${inMenu ? "menu-item" : "icon-button"} ${pressed ? "active" : ""}`}
+      // A stable name with the state in aria-pressed: a toggle whose name flips
+      // with its state is announced as the opposite of what it does.
+      aria-label={inMenu ? undefined : label}
+      title={title}
+      aria-pressed={pressed}
+      onClick={onClick}
+    >
+      <span aria-hidden="true">{icon}</span>
+      {inMenu && ` ${label}`}
+    </button>
+  ));
+}
+
 export default function PuzzleSolver({
   puzzle,
   title,
@@ -78,6 +127,7 @@ export default function PuzzleSolver({
   isPublic: boolean;
 }) {
   const t = useTranslations("solve");
+  const tReport = useTranslations("report");
   const storageKey = `pc:${puzzle.id}`;
   const solveKey = solveStateKey(puzzle.id);
 
@@ -115,6 +165,9 @@ export default function PuzzleSolver({
   const [showRef, setShowRef] = useState(true);
   const [showMap, setShowMap] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
   // On by default (issue #117); applied after mount like the piece count, for
   // the same hydration reason.
   const [sound, setSound] = useState(true);
@@ -251,85 +304,146 @@ export default function PuzzleSolver({
     }
   }
 
+  function gather() {
+    boardActions.current?.gatherLoose();
+  }
+
+  function closeMenu() {
+    setMenuOpen(false);
+    moreRef.current?.focus();
+  }
+
+  // Shown in the bar and — on a narrow screen, where the bar keeps only the
+  // title, progress and the two popovers — in the overflow menu as well.
+  const toggles: ToggleItem[] = [
+    {
+      icon: <ImageIcon size={ICON_SIZE} />,
+      label: t("preview"),
+      title: showRef ? t("hideRef") : t("showRef"),
+      pressed: showRef,
+      onClick: () => setShowRef((v) => !v),
+    },
+    {
+      icon: <MapIcon size={ICON_SIZE} />,
+      label: t("overview"),
+      title: showMap ? t("hideMap") : t("showMap"),
+      pressed: showMap,
+      onClick: () => setShowMap((v) => !v),
+    },
+    { icon: <Magnet size={ICON_SIZE} />, label: t("gather"), title: t("gather"), onClick: gather },
+    {
+      icon: sound ? <Volume2 size={ICON_SIZE} /> : <VolumeX size={ICON_SIZE} />,
+      label: t("sound"),
+      title: t("sound"),
+      pressed: sound,
+      onClick: toggleSound,
+    },
+  ];
+
   return (
     <div>
       <div className="solve-toolbar">
-        <h1 style={{ margin: 0, fontSize: 22 }}>{title}</h1>
+        <h1 className="solve-title" title={title}>
+          {title}
+        </h1>
         <span className="progress">
           {t("progress", { connected, total: total - 1 })}
         </span>
-        {solved && <span className="solved-banner">{t("solved")}</span>}
+        {solved && (
+          <span className="solved-banner">
+            <PartyPopper size={16} aria-hidden="true" /> {t("solved")}
+          </span>
+        )}
 
-        <label style={{ margin: 0, display: "flex", gap: 6, alignItems: "center" }}>
-          {t("pieces")}
-          <select
-            id="piece-count"
-            name="pieceCount"
-            value={pieceCount}
-            onChange={(e) => changeCount(Number(e.target.value))}
-            style={{ width: "auto" }}
+        <div className="solve-actions">
+          <div className="solve-toggles">
+            <ToggleButtons items={toggles} />
+          </div>
+
+          <ToolbarPopover icon={<CircleHelp size={ICON_SIZE} />} label={t("help")} className="solve-help">
+            <p style={{ margin: 0 }}>{t("instructions")}</p>
+          </ToolbarPopover>
+
+          <ToolbarPopover
+            icon={<Ellipsis size={ICON_SIZE} />}
+            label={t("more")}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            triggerRef={moreRef}
           >
-            {PIECE_PRESETS.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button
-          className={`button secondary ${showRef ? "active" : ""}`}
-          type="button"
-          aria-pressed={showRef}
-          onClick={() => setShowRef((v) => !v)}
-        >
-          {showRef ? t("hideRef") : t("showRef")}
-        </button>
-        <button
-          className={`button secondary ${showMap ? "active" : ""}`}
-          type="button"
-          aria-pressed={showMap}
-          onClick={() => setShowMap((v) => !v)}
-        >
-          {showMap ? t("hideMap") : t("showMap")}
-        </button>
-        <button
-          className="button secondary"
-          type="button"
-          onClick={() => boardActions.current?.gatherLoose()}
-        >
-          {t("gather")}
-        </button>
-        <button
-          className={`button secondary ${sound ? "active" : ""}`}
-          type="button"
-          aria-pressed={sound}
-          onClick={toggleSound}
-        >
-          {sound ? "🔊" : "🔇"} {t("sound")}
-        </button>
-        <button className="button secondary" type="button" onClick={share}>
-          {copied ? t("copied") : t("share")}
-        </button>
-        <button className="button secondary" type="button" onClick={startOver}>
-          {t("reset")}
-        </button>
-        {/* A private puzzle is only visible to its owner and admins, and the
-            report endpoint rejects it — offering the button would lead them to
-            "puzzle not found" for a puzzle they are looking at. */}
-        {isPublic && <ReportDialog puzzleId={puzzle.id} />}
+            <>
+                <div className="solve-menu-toggles">
+                  <ToggleButtons items={toggles} inMenu />
+                </div>
+                <label className="menu-item">
+                  {t("pieces")}
+                  <select
+                    id="piece-count"
+                    name="pieceCount"
+                    value={pieceCount}
+                    onChange={(e) => changeCount(Number(e.target.value))}
+                    style={{ width: "auto", marginLeft: "auto" }}
+                  >
+                    {PIECE_PRESETS.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {/* Stays open so the "copied" confirmation can be seen. */}
+                <button className="menu-item" type="button" onClick={share}>
+                  <LinkIcon size={ICON_SIZE} aria-hidden="true" /> {copied ? t("copied") : t("share")}
+                </button>
+                <button
+                  className="menu-item"
+                  type="button"
+                  onClick={() => {
+                    closeMenu();
+                    startOver();
+                  }}
+                >
+                  <RotateCcw size={ICON_SIZE} aria-hidden="true" /> {t("reset")}
+                </button>
+                {/* A private puzzle is only visible to its owner and admins, and
+                    the report endpoint rejects it — offering the entry would lead
+                    them to "puzzle not found" for a puzzle they are looking at. */}
+                {isPublic && (
+                  <button
+                    className="menu-item"
+                    type="button"
+                    onClick={() => {
+                      // The dialog takes focus; it hands it back to the menu
+                      // trigger when it closes.
+                      setMenuOpen(false);
+                      setReporting(true);
+                    }}
+                  >
+                    <Flag size={ICON_SIZE} aria-hidden="true" /> {tReport("reportLink")}
+                  </button>
+                )}
+            </>
+          </ToolbarPopover>
+        </div>
       </div>
 
-      <p className="muted" style={{ marginTop: -4 }}>
-        {t("instructions")}
-      </p>
+      {isPublic && (
+        <ReportDialog
+          puzzleId={puzzle.id}
+          open={reporting}
+          onClose={() => {
+            setReporting(false);
+            moreRef.current?.focus();
+          }}
+        />
+      )}
 
       <div className="solve-fullbleed" style={{ position: "relative" }}>
         {showRef && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`/api/image/${puzzle.imageKey}`}
-            alt={t("hideRef")}
+            alt={t("preview")}
             className="reference-thumb"
           />
         )}
