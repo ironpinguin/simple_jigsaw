@@ -72,10 +72,27 @@ describe("recordProbe", () => {
     expect(__resetProbeState.scanned()).toBeLessThanOrEqual(2 * (PROBE_MAX_KEYS + 500));
   });
 
-  it("still refuses a spent caller while others come and go", () => {
+  it("still refuses a spent caller while the map fills up to its cap", () => {
     for (let i = 0; i < PROBE_LIMIT; i++) recordProbe("ip-a", 1_000);
     for (let i = 0; i < PROBE_MAX_KEYS - 1; i++) recordProbe(`ip-${i}`, 2_000);
     expect(recordProbe("ip-a", 3_000)).toBe(false);
+  });
+
+  it("evicts the oldest caller first once the map is full", () => {
+    for (let i = 0; i < PROBE_MAX_KEYS - 1; i++) recordProbe(`ip-${i}`, 1_000);
+    for (let i = 0; i < PROBE_LIMIT; i++) recordProbe("ip-late", 2_000);
+    // Map is full; one more caller pushes out ip-0, not the newest bucket.
+    recordProbe("ip-new", 3_000);
+    expect(__resetProbeState.size()).toBe(PROBE_MAX_KEYS);
+    expect(recordProbe("ip-late", 4_000)).toBe(false);
+  });
+
+  it("does not read a spent window as live when time arrives out of order", () => {
+    // A bucket stamped ahead of the rest stops the pruning loop in front of it;
+    // the caller's own bucket must still be seen to have expired.
+    recordProbe("ip-ahead", 1_000 + 5 * PROBE_WINDOW_MS);
+    for (let i = 0; i < PROBE_LIMIT; i++) recordProbe("ip-a", 1_000);
+    expect(recordProbe("ip-a", 1_000 + PROBE_WINDOW_MS + 1)).toBe(true);
   });
 
   it("does not grow without bound as callers come and go", () => {

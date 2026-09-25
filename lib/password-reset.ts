@@ -95,9 +95,10 @@ export const PROBE_WINDOW_MS = 10 * 60 * 1000;
 /**
  * Most distinct callers held at once. Behind a trusted proxy a client with a
  * routed IPv6 /64 has 2^64 source addresses, so without a cap the key count is
- * whatever that client decides it is. At a few dozen bytes a bucket this is a
- * few hundred kilobytes, far above the distinct callers of one window that real
- * traffic to a password-reset form produces.
+ * whatever that client decides it is. At roughly two hundred bytes a bucket,
+ * its 64-character hash key included, this is about two megabytes, and far
+ * above the distinct callers of one window that real traffic to a
+ * password-reset form produces.
  */
 export const PROBE_MAX_KEYS = 10_000;
 
@@ -114,6 +115,14 @@ type Bucket = { count: number; windowStart: number };
  * ever inserted when its window starts, it is dropped rather than restarted
  * once that window is over, and a Map iterates in insertion order. So the front of the
  * map is always the oldest window, which is what both pruning and eviction want.
+ *
+ * That order only holds while `now` never goes backwards, which is why the
+ * default clock is the monotonic `performance.now()` rather than `Date.now()`:
+ * the wall clock can be stepped back by NTP or a resumed VM, and one bucket
+ * stamped ahead of the others would then stop the pruning loop in front of
+ * stale ones. Only differences are ever taken, so the clock's origin does not
+ * matter. `recordProbe` still checks the caller's own bucket, so an explicit
+ * `now` that is out of order cannot make it read a spent window as live.
  */
 const probes = new Map<string, Bucket>();
 
@@ -141,16 +150,22 @@ let scanned = 0;
  * What this bounds is the amplification — one caller cannot make everybody
  * else's request more expensive.
  */
-export function recordProbe(ipHash: string, now: number = Date.now()): boolean {
+export function recordProbe(ipHash: string, now: number = performance.now()): boolean {
   for (const [key, bucket] of probes) {
     scanned++;
-    if (now - bucket.windowStart < PROBE_WINDOW_MS) break;
+    if (isLive(bucket, now)) break;
     probes.delete(key);
   }
 
-  // Whatever survived the loop is live: a stale bucket anywhere in the map
-  // would have a stale bucket, or itself, at the front.
+  // With a monotonic `now`, whatever survived the loop is live: a stale bucket
+  // anywhere in the map would have a stale bucket, or itself, at the front. The
+  // check is O(1) and keeps a spent window from outliving its time if it ever
+  // does not hold; deleting before re-inserting keeps the order.
   let mine = probes.get(ipHash);
+  if (mine && !isLive(mine, now)) {
+    probes.delete(ipHash);
+    mine = undefined;
+  }
   if (!mine) {
     if (probes.size >= PROBE_MAX_KEYS) evictOldest();
     mine = { count: 0, windowStart: now };
@@ -160,6 +175,10 @@ export function recordProbe(ipHash: string, now: number = Date.now()): boolean {
   if (mine.count >= PROBE_LIMIT) return false;
   mine.count++;
   return true;
+}
+
+function isLive(bucket: Bucket, now: number): boolean {
+  return now - bucket.windowStart < PROBE_WINDOW_MS;
 }
 
 function evictOldest(): void {
