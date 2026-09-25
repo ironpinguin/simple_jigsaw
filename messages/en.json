@@ -373,7 +373,16 @@
     "tooManyRequests": "Too many requests in a short time. Please try again later.",
     "storageFailed": "The image storage is currently unavailable. Please try again.",
     "reportNotFound": "Report not found.",
-    "awaitingReview": "This puzzle is still being reviewed and cannot be made public yet."
+    "awaitingReview": "This puzzle is still being reviewed and cannot be made public yet.",
+    "competitionNeedsPublic": "Only a public puzzle can be a competition.",
+    "competitionHasEntries": "The competition already has entries. The number of pieces can no longer change – end it and start a new one.",
+    "competitionNotFound": "There is no competition for this puzzle.",
+    "competitionNotOpen": "The competition is not open right now.",
+    "attemptInvalid": "This attempt cannot be submitted. Start the puzzle over to take part.",
+    "resultImplausible": "This time is not plausible and was not entered.",
+    "displayNameRequired": "Choose a display name for the leaderboard.",
+    "displayNameInvalid": "The display name must be 2 to 30 characters long.",
+    "entryNotFound": "Entry not found."
   },
   "email": {
     "verifySubject": "Confirm your email — Jigsaw",

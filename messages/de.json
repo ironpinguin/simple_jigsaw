@@ -373,7 +373,16 @@
     "tooManyRequests": "Zu viele Anfragen in kurzer Zeit. Bitte versuche es später erneut.",
     "storageFailed": "Der Bildspeicher ist derzeit nicht erreichbar. Bitte versuche es erneut.",
     "reportNotFound": "Meldung nicht gefunden.",
-    "awaitingReview": "Dieses Puzzle wird noch geprüft und kann so lange nicht öffentlich geschaltet werden."
+    "awaitingReview": "Dieses Puzzle wird noch geprüft und kann so lange nicht öffentlich geschaltet werden.",
+    "competitionNeedsPublic": "Nur ein öffentliches Puzzle kann ein Wettbewerb sein.",
+    "competitionHasEntries": "Der Wettbewerb hat schon Einträge. Die Teilezahl lässt sich nicht mehr ändern – beende ihn und starte einen neuen.",
+    "competitionNotFound": "Für dieses Puzzle läuft kein Wettbewerb.",
+    "competitionNotOpen": "Der Wettbewerb ist gerade nicht geöffnet.",
+    "attemptInvalid": "Dieser Durchgang lässt sich nicht einreichen. Starte das Puzzle neu, um teilzunehmen.",
+    "resultImplausible": "Diese Zeit ist nicht plausibel und wurde nicht eingetragen.",
+    "displayNameRequired": "Wähle einen Anzeigenamen für die Rangliste.",
+    "displayNameInvalid": "Der Anzeigename muss 2 bis 30 Zeichen lang sein.",
+    "entryNotFound": "Eintrag nicht gefunden."
   },
   "email": {
     "verifySubject": "Bestätige deine E-Mail — Jigsaw",

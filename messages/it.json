@@ -373,7 +373,16 @@
     "tooManyRequests": "Troppe richieste in poco tempo. Riprova più tardi.",
     "storageFailed": "L’archivio immagini non è al momento raggiungibile. Riprova.",
     "reportNotFound": "Segnalazione non trovata.",
-    "awaitingReview": "Questo puzzle è ancora in verifica e non può essere reso pubblico per ora."
+    "awaitingReview": "Questo puzzle è ancora in verifica e non può essere reso pubblico per ora.",
+    "competitionNeedsPublic": "Solo un puzzle pubblico può diventare una gara.",
+    "competitionHasEntries": "La gara ha già delle voci. Il numero di pezzi non si può più cambiare – terminala e avviane una nuova.",
+    "competitionNotFound": "Per questo puzzle non c'è nessuna gara.",
+    "competitionNotOpen": "La gara al momento non è aperta.",
+    "attemptInvalid": "Questo tentativo non può essere inviato. Ricomincia il puzzle per partecipare.",
+    "resultImplausible": "Questo tempo non è plausibile e non è stato registrato.",
+    "displayNameRequired": "Scegli un nome visibile per la classifica.",
+    "displayNameInvalid": "Il nome visibile deve avere da 2 a 30 caratteri.",
+    "entryNotFound": "Voce non trovata."
   },
   "email": {
     "verifySubject": "Conferma la tua e-mail — Jigsaw",
