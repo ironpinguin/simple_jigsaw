@@ -75,11 +75,19 @@ interface Layout {
 
 function useHtmlImage(src: string): HTMLImageElement | null {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
+  // React re-runs this effect when a hidden board is shown again (an <Activity>,
+  // a Suspense fallback). Loading `src` afresh for that would hand back a new
+  // element, which rebuilds the layout and re-rasterises every piece.
+  const loadedSrc = useRef<string | null>(null);
   useEffect(() => {
+    if (loadedSrc.current === src) return;
     const image = new window.Image();
     image.crossOrigin = "anonymous";
     image.src = src;
-    image.onload = () => setImg(image);
+    image.onload = () => {
+      loadedSrc.current = src;
+      setImg(image);
+    };
     return () => {
       image.onload = null;
     };
@@ -375,8 +383,28 @@ export default function PuzzleBoard({
   // `resetNonce` changes. (Not for hydration's sake: this component is imported
   // with `ssr: false`, so it never renders on the server. Issue #7 was about
   // `PuzzleSolver`, which does.)
+  //
+  // Only then, though: React also re-runs effects when a hidden board is shown
+  // again (an <Activity>, a Suspense fallback) and twice on mount in Strict Mode.
+  // Reseeding for that would throw away every move since the last save — all of
+  // them where storage is unavailable — so a re-run with the same inputs keeps
+  // the model it has.
+  const seededFor = useRef<{
+    layout: Layout;
+    resetNonce: number;
+    loadSolveState: () => string | null;
+  } | null>(null);
   useEffect(() => {
     if (!layout) return;
+    const last = seededFor.current;
+    if (
+      last?.layout === layout &&
+      last.resetNonce === resetNonce &&
+      last.loadSolveState === loadSolveState
+    ) {
+      return;
+    }
+    seededFor.current = { layout, resetNonce, loadSolveState };
     const { stageW, stageH } = layout;
 
     const restored = restoreSolveState(
@@ -391,7 +419,7 @@ export default function PuzzleBoard({
     // inward step by step.
     groupStore.replace(restored ?? layout.initialGroups);
     onProgress(groupStore.get().groups.size, total);
-    // `resetNonce` is not read: it is a dependency so that starting over re-runs
+    // `resetNonce` carries no data: it is a dependency so that starting over re-runs
     // this, finds the entry the solver has just deleted gone, and falls through to
     // a fresh scatter — even though the layout itself is unchanged. A `key` on the
     // component would do it too, but that remounts and re-rasterises every piece.

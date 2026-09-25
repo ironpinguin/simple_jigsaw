@@ -281,10 +281,11 @@ describe("PuzzleBoard", () => {
    * the dropped node, whose position the board may have moved.
    */
   async function drop(el: Element, to: { x: number; y: number }) {
-    const props = groupProps.get(el)!;
     const node = fakeNode(to);
-    await act(async () => props.onDragStart());
-    await act(async () => props.onDragEnd({ currentTarget: node }));
+    await act(async () => groupProps.get(el)!.onDragStart());
+    // Re-read: starting the drag re-renders the board, and Konva calls the
+    // handler of the latest render, not the one the drag started with.
+    await act(async () => groupProps.get(el)!.onDragEnd({ currentTarget: node }));
     return node;
   }
 
@@ -456,13 +457,14 @@ describe("PuzzleBoard", () => {
   it("draws the group being dragged on top, and only until it is dropped", async () => {
     await mount();
     const first = groups()[0];
-    const props = groupProps.get(first.el)!;
 
-    await act(async () => props.onDragStart());
+    await act(async () => groupProps.get(first.el)!.onDragStart());
     expect(groups()[COLS * ROWS - 1].el).toBe(first.el);
 
     // Dropped where it joins nothing, it goes back to its place in the order.
-    await act(async () => props.onDragEnd({ currentTarget: fakeNode({ x: first.x, y: first.y }) }));
+    await act(async () =>
+      groupProps.get(first.el)!.onDragEnd({ currentTarget: fakeNode({ x: first.x, y: first.y }) }),
+    );
     expect(groups()).toHaveLength(COLS * ROWS);
     expect(groups()[0].el).toBe(first.el);
   });
@@ -532,20 +534,23 @@ describe("PuzzleBoard", () => {
     const main = document.createElement("main");
     document.body.appendChild(main);
     main.appendChild(container);
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(700);
-    await mount();
-    const first = stageSize().h;
+    try {
+      vi.spyOn(window, "innerHeight", "get").mockReturnValue(700);
+      await mount();
+      const first = stageSize().h;
 
-    vi.spyOn(window, "innerHeight", "get").mockReturnValue(1000);
-    await mount(0, { cols: 8, rows: 6 });
-    const second = stageSize().h;
+      vi.spyOn(window, "innerHeight", "get").mockReturnValue(1000);
+      await mount(0, { cols: 8, rows: 6 });
+      const second = stageSize().h;
 
-    expect(first).toBe(700);
-    expect(second).toBe(1000);
-    main.remove();
+      expect(first).toBe(700);
+      expect(second).toBe(1000);
+    } finally {
+      main.remove();
+    }
   });
 
-  it("keeps its stage while it is hidden and shown again", async () => {
+  it("keeps its stage and its pieces while it is hidden and shown again", async () => {
     // Hiding the board (an <Activity>, a Suspense fallback) detaches its
     // wrapper's ref. Tearing the stage down for that would bring it back
     // unzoomed, while the zoom readout and the overview kept the old view.
@@ -554,12 +559,19 @@ describe("PuzzleBoard", () => {
     await act(async () => {});
     const stage = container.querySelector("[data-stage]");
     expect(stage).not.toBeNull();
+    // Showing it again also re-runs its effects. Reseeding for that would go
+    // back to storage — which here, as where storage is blocked, has nothing —
+    // and lose the join; reloading the image would re-rasterise every piece.
+    await joinNext();
+    const rasterised = vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length;
 
     await act(async () => root.render(shown("hidden")));
     await act(async () => root.render(shown("visible")));
     await act(async () => {});
 
     expect(container.querySelector("[data-stage]")).toBe(stage);
+    expect(groups()).toHaveLength(COLS * ROWS - 1);
+    expect(vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls).toHaveLength(rasterised);
   });
 
   it("lets the board pan again after a pinch the system cancels", async () => {
