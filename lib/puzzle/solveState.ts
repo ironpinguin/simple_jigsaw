@@ -9,10 +9,14 @@
 // a joined block stays joined and aligned at any window width. Around that sits
 // an envelope — `version`, `cols`, `rows`, `updatedAt` — every field of which is
 // load-bearing: the first three decide whether an entry may be restored at all,
-// the last orders the pruning.
+// the last orders the pruning. `elapsedMs` and `moves` ride along for the solve
+// timer (#118); an entry without them — written before they existed — restores
+// as before and only leaves that solve untimed, which is why adding them needed
+// no version bump.
 
 import { settleGroup, type Rect } from "./board";
 import { pieceId, type PieceGroup } from "./groups";
+import { isDuration, isMoveCount } from "./timer";
 
 /**
  * `Number.isFinite` takes `unknown` and narrows nothing, so every value it has
@@ -62,10 +66,23 @@ export interface SolveBoard {
   stageH: number;
 }
 
+/** How far a solve has got on the clock: time spent and pieces dropped. */
+export interface SolveTiming {
+  elapsedMs: number;
+  moves: number;
+}
+
+export const NO_TIMING: SolveTiming = { elapsedMs: 0, moves: 0 };
+
 export interface SerialiseInput extends SolveBoard {
   groups: Iterable<PieceGroup>;
   /** `Date.now()` from the caller — this module stays free of the clock. */
   updatedAt: number;
+  /**
+   * `null` for an untimed solve (see `readSolveTiming`): the fields are left out,
+   * so the entry reads back untimed and a reload cannot turn it into a timed one.
+   */
+  timing?: SolveTiming | null;
 }
 
 /**
@@ -83,12 +100,16 @@ export function serialiseSolveState({
   stageW,
   stageH,
   updatedAt,
+  timing = NO_TIMING,
 }: SerialiseInput): string {
   return JSON.stringify({
     version: SOLVE_STATE_VERSION,
     cols,
     rows,
     updatedAt,
+    // `undefined` for an untimed solve, which JSON.stringify leaves out.
+    elapsedMs: timing?.elapsedMs,
+    moves: timing?.moves,
     groups: [...groups].map((g) => ({
       x: g.x / stageW,
       y: g.y / stageH,
@@ -194,6 +215,33 @@ export function restoreSolveState(
     }
   }
   return groups;
+}
+
+/**
+ * The timing stored with a solve state, or `null` if it carries none — an entry
+ * written before the timer, or one carried on from such an entry. That solve is
+ * untimed: its pieces were moved while no clock ran, so reading its time as zero
+ * would make finishing it look like a best time nobody could beat.
+ *
+ * Only meaningful for an entry the board has just restored — this does not check
+ * the envelope, `restoreSolveState` does. A field that is there but implausible
+ * reads as zero rather than rejecting: the pieces are the valuable part, and a
+ * lost time only restarts the clock.
+ */
+export function readSolveTiming(raw: string | null): SolveTiming | null {
+  if (!raw) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const { elapsedMs, moves } = parsed as Record<string, unknown>;
+    if (elapsedMs === undefined && moves === undefined) return null;
+    return {
+      elapsedMs: isDuration(elapsedMs) ? elapsedMs : 0,
+      moves: isMoveCount(moves) ? moves : 0,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

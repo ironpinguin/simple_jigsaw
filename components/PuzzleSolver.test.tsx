@@ -27,6 +27,15 @@ const board = vi.hoisted<{
   gathered: number;
   /** The completion callback, so a test can finish the puzzle like a drop. */
   onSolved: (() => void) | null;
+  /** The timer plumbing (#118), to drive it like the board does. */
+  readTiming: (() => { elapsedMs: number; moves: number } | null) | null;
+  onSeeded:
+    | ((timing: { elapsedMs: number; moves: number } | null, solved: boolean) => void)
+    | null;
+  onPieceGrab: (() => void) | null;
+  onPieceDrop: (() => void) | null;
+  /** How often the solver asked the board to save outside a drop. */
+  saves: number;
 }>(() => ({
   reportsFor: () => true,
   groupsFor: (total) => total,
@@ -36,6 +45,11 @@ const board = vi.hoisted<{
   resetNonce: null,
   gathered: 0,
   onSolved: null,
+  readTiming: null,
+  onSeeded: null,
+  onPieceGrab: null,
+  onPieceDrop: null,
+  saves: 0,
 }));
 
 // Canvas and Web Audio are beyond jsdom; what matters here is when it is asked.
@@ -52,6 +66,10 @@ vi.mock("./PuzzleBoard", () => {
     loadSolveState,
     saveSolveState,
     resetNonce,
+    readTiming,
+    onSeeded,
+    onPieceGrab,
+    onPieceDrop,
     actionsRef,
   }: {
     cols: number;
@@ -62,10 +80,24 @@ vi.mock("./PuzzleBoard", () => {
     loadSolveState: () => string | null;
     saveSolveState: (raw: string) => void;
     resetNonce: number;
-    actionsRef?: Ref<{ gatherLoose: () => void } | null>;
+    readTiming: () => { elapsedMs: number; moves: number } | null;
+    onSeeded: (timing: { elapsedMs: number; moves: number } | null, solved: boolean) => void;
+    onPieceGrab: () => void;
+    onPieceDrop: () => void;
+    actionsRef?: Ref<{ gatherLoose: () => void; save: () => void } | null>;
   }) {
     const total = cols * rows;
-    useImperativeHandle(actionsRef, () => ({ gatherLoose: () => board.gathered++ }), []);
+    useImperativeHandle(
+      actionsRef,
+      () => ({ gatherLoose: () => board.gathered++, save: () => board.saves++ }),
+      [],
+    );
+    useEffect(() => {
+      board.readTiming = readTiming;
+      board.onSeeded = onSeeded;
+      board.onPieceGrab = onPieceGrab;
+      board.onPieceDrop = onPieceDrop;
+    }, [readTiming, onSeeded, onPieceGrab, onPieceDrop]);
     // In an effect, not the render body: a render side effect would double-fire
     // the moment this suite ever runs under StrictMode.
     useEffect(() => {
@@ -215,6 +247,11 @@ describe("PuzzleSolver", () => {
     board.showMinimap = null;
     board.gathered = 0;
     board.onSolved = null;
+    board.readTiming = null;
+    board.onSeeded = null;
+    board.onPieceGrab = null;
+    board.onPieceDrop = null;
+    board.saves = 0;
     celebration.celebrate.mockClear();
     celebration.stopCelebration.mockClear();
     board.loadSolveState = null;
@@ -768,6 +805,208 @@ describe("PuzzleSolver", () => {
 
       expect(container.querySelector(".solved-banner")).toBeNull();
       expect(progress()).toEqual({ connected: 0, total: CONNECTIONS_108 });
+    });
+  });
+
+  describe("the solve timer", () => {
+    let visibility: DocumentVisibilityState = "visible";
+
+    beforeEach(() => {
+      visibility = "visible";
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => visibility,
+      });
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      vi.setSystemTime(1_000_000);
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      Reflect.deleteProperty(document, "visibilityState");
+    });
+
+    /** The time the toolbar shows, without the screen-reader label. */
+    function shown() {
+      return container.querySelector("[role='timer']")?.textContent?.match(/\d+:\d\d(:\d\d)?/)?.[0];
+    }
+
+    function card() {
+      return container.querySelector(".solve-result")?.textContent ?? null;
+    }
+
+    /** Let `ms` pass, ticks and all. */
+    function pass(ms: number) {
+      return act(async () => {
+        vi.advanceTimersByTime(ms);
+      });
+    }
+
+    async function setVisibility(next: DocumentVisibilityState) {
+      visibility = next;
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+    }
+
+    /** Pick a piece up and put it down, `ms` later — one move. */
+    async function move(ms = 0) {
+      await act(async () => board.onPieceGrab!());
+      await pass(ms);
+      await act(async () => board.onPieceDrop!());
+    }
+
+    /** Seed as the board does: zero for a fresh scatter, `null` for an untimed restore. */
+    async function seed(
+      timing: { elapsedMs: number; moves: number } | null = { elapsedMs: 0, moves: 0 },
+      solved = false,
+    ) {
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await act(async () => board.onSeeded!(timing, solved));
+    }
+
+    it("waits for the first piece, then counts up", async () => {
+      await seed();
+      expect(shown()).toBe("0:00");
+
+      await pass(10_000);
+      expect(shown()).toBe("0:00");
+
+      await move(7_000);
+      await pass(1_000);
+      expect(shown()).toBe("0:08");
+      expect(board.readTiming!()).toEqual({ elapsedMs: 8_000, moves: 1 });
+    });
+
+    it("pauses while the tab is hidden, and saves when it hides", async () => {
+      await seed();
+      await move(5_000);
+
+      await setVisibility("hidden");
+      expect(board.saves).toBe(1);
+      await pass(60_000);
+      expect(board.readTiming!()?.elapsedMs).toBe(5_000);
+
+      await setVisibility("visible");
+      await pass(2_000);
+      expect(board.readTiming!()?.elapsedMs).toBe(7_000);
+    });
+
+    it("does not save an untouched board when the tab hides", async () => {
+      // The saved state is what makes a piece-count change ask first; writing one
+      // for a board nobody touched would make it ask for nothing.
+      await seed();
+      await setVisibility("hidden");
+      expect(board.saves).toBe(0);
+    });
+
+    it("resumes from the timing stored with a restored solve", async () => {
+      await seed({ elapsedMs: 125_000, moves: 30 });
+      expect(shown()).toBe("2:05");
+
+      await move(3_000);
+      expect(board.readTiming!()).toEqual({ elapsedMs: 128_000, moves: 31 });
+    });
+
+    it("shows the time and moves on solve and records them as the best", async () => {
+      await seed();
+      await move(40_000);
+      await move(20_000);
+      await act(async () => board.onSolved!());
+
+      expect(card()).toContain("Solved in 1:00 with 2 moves");
+      expect(JSON.parse(localStorage.getItem("best:p1")!)).toEqual({
+        108: { ms: 60_000, moves: 2 },
+      });
+      // Saved again once stopped, so a reload shows the time the card did.
+      expect(board.saves).toBe(1);
+
+      // Stopped: time passing and the picture being moved change nothing.
+      await pass(30_000);
+      await move(1_000);
+      expect(board.readTiming!()).toEqual({ elapsedMs: 60_000, moves: 2 });
+      expect(shown()).toBe("1:00");
+    });
+
+    it("says when a solve beats the best time, and shows the best when it does not", async () => {
+      localStorage.setItem("best:p1", JSON.stringify({ 108: { ms: 90_000, moves: 50 } }));
+
+      await seed();
+      await move(120_000);
+      await act(async () => board.onSolved!());
+      expect(card()).toContain("Best time: 1:30");
+
+      await act(async () => root!.unmount());
+      root = undefined;
+      await seed();
+      await move(45_000);
+      await act(async () => board.onSolved!());
+      expect(card()).toContain("New best time! Previously: 1:30");
+      expect(JSON.parse(localStorage.getItem("best:p1")!)[108]).toEqual({ ms: 45_000, moves: 1 });
+    });
+
+    it("offers the best time for the current piece count in the toolbar", async () => {
+      localStorage.setItem("best:p1", JSON.stringify({ 108: { ms: 90_000, moves: 50 } }));
+      await seed();
+      expect(container.querySelector("[role='timer']")?.getAttribute("title")).toBe(
+        "Best time: 1:30",
+      );
+    });
+
+    it("keeps a restored finished puzzle stopped", async () => {
+      board.groupsFor = () => 1;
+      await seed({ elapsedMs: 60_000, moves: 9 }, true);
+      await move(5_000);
+      expect(board.readTiming!()).toEqual({ elapsedMs: 60_000, moves: 9 });
+      expect(card()).toBeNull();
+    });
+
+    it("neither shows nor records a result for an untimed solve", async () => {
+      // Restored from before the timer: no clock ran while its pieces were moved.
+      await seed(null);
+      await move(3_000);
+      await act(async () => board.onSolved!());
+
+      expect(card()).toBeNull();
+      expect(localStorage.getItem("best:p1")).toBeNull();
+      expect(board.readTiming!()).toBeNull();
+      expect(celebration.celebrate).toHaveBeenCalledTimes(1);
+    });
+
+    it("pauses and saves when the page is left while the clock runs", async () => {
+      // Leaving within the app — a link, the language switch — hides no tab.
+      await seed();
+      await move(5_000);
+      await act(async () => root!.unmount());
+      root = undefined;
+      expect(board.saves).toBe(1);
+    });
+
+    it("does not save an untouched board when the page is left", async () => {
+      await seed();
+      await act(async () => root!.unmount());
+      root = undefined;
+      expect(board.saves).toBe(0);
+    });
+
+    it("clears the result card on start over", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      await seed();
+      await move(1_000);
+      await act(async () => board.onSolved!());
+      expect(card()).not.toBeNull();
+
+      await reset();
+      expect(card()).toBeNull();
+    });
+
+    it("lets the result card be closed", async () => {
+      await seed();
+      await move(1_000);
+      await act(async () => board.onSolved!());
+      await act(async () => button(messages.solve.closeResult)!.click());
+      expect(card()).toBeNull();
     });
   });
 });

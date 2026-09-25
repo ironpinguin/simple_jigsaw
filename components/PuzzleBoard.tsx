@@ -30,7 +30,13 @@ import {
   type PieceBox,
   type Rect,
 } from "@/lib/puzzle/board";
-import { restoreSolveState, serialiseSolveState } from "@/lib/puzzle/solveState";
+import {
+  NO_TIMING,
+  readSolveTiming,
+  restoreSolveState,
+  serialiseSolveState,
+  type SolveTiming,
+} from "@/lib/puzzle/solveState";
 import { clampScale, wheelZoomFactor } from "@/lib/puzzle/zoom";
 import { stagePositionFor } from "@/lib/puzzle/minimap";
 import ZoomControls from "./ZoomControls";
@@ -250,6 +256,12 @@ function buildLayout(
 export interface BoardActions {
   /** Collect every loose piece into the area free of assemblies. */
   gatherLoose: () => void;
+  /**
+   * Write the current state now, for the solver to call when the clock stops
+   * outside a drop — the tab being hidden, the puzzle being finished. Does
+   * nothing until the board is built.
+   */
+  save: () => void;
 }
 
 interface Props {
@@ -284,6 +296,19 @@ interface Props {
   /** Changes when the solver asks to start over; re-seeds from the scatter. */
   resetNonce: number;
   /**
+   * The solve timer (#118) is the solver's; the board only carries it to and
+   * from storage and says when a piece is picked up and put down. `readTiming`
+   * is read at every save, so it has to be current by then — a drop calls
+   * `onPieceDrop` first; `null` saves the solve as untimed. `onSeeded` gets
+   * zero when the board scattered afresh, the timing stored with a state it
+   * restored — `null` if that state has none (see `readSolveTiming`) — and
+   * whether the seeded board is already solved.
+   */
+  readTiming?: () => SolveTiming | null;
+  onSeeded?: (timing: SolveTiming | null, solved: boolean) => void;
+  onPieceGrab?: () => void;
+  onPieceDrop?: () => void;
+  /**
    * Filled with the board's actions once it is mounted. A handle rather than a
    * nonce prop like `resetNonce`: gathering is a one-off command, and running it
    * from an effect would re-render the board from inside that effect.
@@ -301,6 +326,10 @@ export default function PuzzleBoard({
   loadSolveState,
   saveSolveState,
   resetNonce,
+  readTiming,
+  onSeeded,
+  onPieceGrab,
+  onPieceDrop,
   actionsRef,
 }: Props) {
   // The wrapper element as state (a callback ref), not a ref object: building
@@ -407,8 +436,9 @@ export default function PuzzleBoard({
     seededFor.current = { layout, resetNonce, loadSolveState };
     const { stageW, stageH } = layout;
 
+    const raw = loadSolveState();
     const restored = restoreSolveState(
-      loadSolveState(),
+      raw,
       { cols, rows, stageW, stageH },
       (pid) => layout.pieces.get(pid)?.rect,
     );
@@ -418,12 +448,14 @@ export default function PuzzleBoard({
     // rather than from the last clamp — otherwise a few resizes would walk a group
     // inward step by step.
     groupStore.replace(restored ?? layout.initialGroups);
-    onProgress(groupStore.get().groups.size, total);
+    const size = groupStore.get().groups.size;
+    onProgress(size, total);
+    onSeeded?.(restored ? readSolveTiming(raw) : NO_TIMING, size === 1);
     // `resetNonce` carries no data: it is a dependency so that starting over re-runs
     // this, finds the entry the solver has just deleted gone, and falls through to
     // a fresh scatter — even though the layout itself is unchanged. A `key` on the
     // component would do it too, but that remounts and re-rasterises every piece.
-  }, [layout, cols, rows, total, onProgress, groupStore, loadSolveState, resetNonce]);
+  }, [layout, cols, rows, total, onProgress, onSeeded, groupStore, loadSolveState, resetNonce]);
 
   /** Write the current group model to the solver's storage. */
   const persist = useCallback(
@@ -436,10 +468,11 @@ export default function PuzzleBoard({
           stageW: current.stageW,
           stageH: current.stageH,
           updatedAt: Date.now(),
+          timing: readTiming?.(),
         }),
       );
     },
-    [saveSolveState, cols, rows, groupStore],
+    [saveSolveState, cols, rows, groupStore, readTiming],
   );
 
   const gather = useCallback(() => {
@@ -457,7 +490,11 @@ export default function PuzzleBoard({
     persist(layout);
   }, [layout, groupStore, persist]);
 
-  useImperativeHandle(actionsRef, () => ({ gatherLoose: gather }), [gather]);
+  const save = useCallback(() => {
+    if (layout) persist(layout);
+  }, [layout, persist]);
+
+  useImperativeHandle(actionsRef, () => ({ gatherLoose: gather, save }), [gather, save]);
 
   function handleGroupDragEnd(groupId: number, node: Konva.Node) {
     setDraggingId(null);
@@ -516,6 +553,8 @@ export default function PuzzleBoard({
     if (dropped) node.position({ x: dropped.x, y: dropped.y });
 
     onProgress(size, total);
+    // Before the save, so the move it counts is in the state written.
+    onPieceDrop?.();
 
     // Drops are far too rare for debouncing to buy anything. (The seeding effect
     // also replaces the model, and deliberately does not save — see there.)
@@ -682,7 +721,10 @@ export default function PuzzleBoard({
                 x={g.x}
                 y={g.y}
                 draggable
-                onDragStart={() => setDraggingId(g.id)}
+                onDragStart={() => {
+                  setDraggingId(g.id);
+                  onPieceGrab?.();
+                }}
                 onDragEnd={(e) => handleGroupDragEnd(g.id, e.currentTarget)}
                 onMouseEnter={(e) => {
                   const stage = e.target.getStage();

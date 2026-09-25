@@ -12,7 +12,11 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
 import { pieceId } from "@/lib/puzzle/groups";
-import { deserialiseSolveState, serialiseSolveState } from "@/lib/puzzle/solveState";
+import {
+  deserialiseSolveState,
+  readSolveTiming,
+  serialiseSolveState,
+} from "@/lib/puzzle/solveState";
 import PuzzleBoard, { type BoardActions } from "./PuzzleBoard";
 
 // jsdom has no canvas, so Konva cannot run here. What these tests are about is
@@ -169,6 +173,12 @@ describe("PuzzleBoard", () => {
   let saved: string[];
   let onProgress: ReturnType<typeof vi.fn<(groups: number, total: number) => void>>;
   let onSolved: ReturnType<typeof vi.fn<() => void>>;
+  let timing: { elapsedMs: number; moves: number };
+  let onSeeded: ReturnType<
+    typeof vi.fn<(t: { elapsedMs: number; moves: number } | null, solved: boolean) => void>
+  >;
+  let onPieceGrab: ReturnType<typeof vi.fn<() => void>>;
+  let onPieceDrop: ReturnType<typeof vi.fn<() => void>>;
   const actions = createRef<BoardActions | null>();
 
   function board(resetNonce = 0, grid = { cols: COLS, rows: ROWS }) {
@@ -184,6 +194,10 @@ describe("PuzzleBoard", () => {
           loadSolveState={loadSolveState}
           saveSolveState={saveSolveState}
           resetNonce={resetNonce}
+          readTiming={readTiming}
+          onSeeded={onSeeded}
+          onPieceGrab={onPieceGrab}
+          onPieceDrop={onPieceDrop}
           actionsRef={actions}
         />
       </NextIntlClientProvider>
@@ -194,6 +208,7 @@ describe("PuzzleBoard", () => {
   const saveSolveState = (raw: string) => {
     saved.push(raw);
   };
+  const readTiming = () => timing;
 
   async function mount(resetNonce = 0, grid = { cols: COLS, rows: ROWS }) {
     await act(async () => {
@@ -332,6 +347,10 @@ describe("PuzzleBoard", () => {
     stageDraggable.length = 0;
     onProgress = vi.fn();
     onSolved = vi.fn();
+    timing = { elapsedMs: 0, moves: 0 };
+    onSeeded = vi.fn();
+    onPieceGrab = vi.fn();
+    onPieceDrop = vi.fn();
   });
 
   afterEach(async () => {
@@ -339,6 +358,73 @@ describe("PuzzleBoard", () => {
     container.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  describe("the solve timer's plumbing", () => {
+    it("says when a piece is picked up and put down, counting before the save", async () => {
+      await mount();
+      onPieceDrop.mockImplementation(() => {
+        // What the solver does: the move is on the clock by the time it is saved.
+        timing = { elapsedMs: 4_000, moves: timing.moves + 1 };
+        expect(saved).toHaveLength(0);
+      });
+
+      await joinNext();
+
+      expect(onPieceGrab).toHaveBeenCalledTimes(1);
+      expect(onPieceDrop).toHaveBeenCalledTimes(1);
+      expect(readSolveTiming(saved.at(-1)!)).toEqual({ elapsedMs: 4_000, moves: 1 });
+    });
+
+    /** Mount again, resuming from the last save — `edit` may change it first. */
+    async function remount(edit: (state: Record<string, unknown>) => void = () => {}) {
+      const state = JSON.parse(saved.at(-1)!);
+      edit(state);
+      stored = JSON.stringify(state);
+      await act(async () => root.unmount());
+      root = createRoot(container);
+      await mount();
+    }
+
+    it("hands the stored timing back when it restores, and zero when it scatters", async () => {
+      await mount();
+      expect(onSeeded).toHaveBeenLastCalledWith({ elapsedMs: 0, moves: 0 }, false);
+
+      timing = { elapsedMs: 83_000, moves: 12 };
+      await joinNext();
+      await remount();
+
+      expect(onSeeded).toHaveBeenLastCalledWith({ elapsedMs: 83_000, moves: 12 }, false);
+    });
+
+    it("hands back no timing for a state stored before the timer", async () => {
+      await mount();
+      await joinNext();
+      await remount((state) => {
+        delete state.elapsedMs;
+        delete state.moves;
+      });
+
+      expect(onSeeded).toHaveBeenLastCalledWith(null, false);
+    });
+
+    it("says when the state it restored is already solved", async () => {
+      await mount();
+      await solve();
+      await remount();
+
+      expect(onSeeded).toHaveBeenLastCalledWith(expect.anything(), true);
+    });
+
+    it("saves on request, with the current timing", async () => {
+      await mount();
+      timing = { elapsedMs: 9_000, moves: 3 };
+      await act(async () => actions.current!.save());
+      expect(saved).toHaveLength(1);
+      expect(readSolveTiming(saved[0])).toEqual({ elapsedMs: 9_000, moves: 3 });
+      expect(deserialiseSolveState(saved[0], { cols: COLS, rows: ROWS, stageW: 1, stageH: 1 }))
+        .not.toBeNull();
+    });
   });
 
   it("scatters one group per piece when nothing is stored", async () => {
