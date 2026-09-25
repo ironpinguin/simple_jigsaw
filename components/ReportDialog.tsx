@@ -16,17 +16,17 @@ import {
  *
  * Passing `open` makes it controlled: no trigger of its own, for a caller that
  * offers the action elsewhere (the solve page's overflow menu). That caller then
- * owns where focus goes on close, in `onClose`.
+ * owns where focus goes on close, in `onClose` — required with `open`, since
+ * without it nothing could ever close the dialog.
  */
 export default function ReportDialog({
   puzzleId,
   open: controlledOpen,
   onClose,
-}: {
-  puzzleId: string;
-  open?: boolean;
-  onClose?: () => void;
-}) {
+}: { puzzleId: string } & (
+  | { open?: undefined; onClose?: undefined }
+  | { open: boolean; onClose: () => void }
+)) {
   const t = useTranslations("report");
   const controlled = controlledOpen !== undefined;
   const [ownOpen, setOwnOpen] = useState(false);

@@ -334,7 +334,10 @@ select:focus {
 
 /* One row, never wrapping: the board is sized to whatever height is left below
    it (see availableBoardHeight in PuzzleBoard), so every extra row of controls
-   comes straight off the playing area. The title is what gives way. */
+   comes straight off the playing area. The title is what gives way — first, by
+   its far larger shrink factor; the progress line only shortens once the title
+   is gone, which on a phone with the solved banner up it has to, or the row
+   runs past the edge of the screen. */
 .solve-toolbar {
   display: flex;
   align-items: center;
@@ -346,7 +349,7 @@ select:focus {
 .solve-title {
   margin: 0;
   font-size: 20px;
-  flex: 1 1 auto;
+  flex: 1 1000 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -355,6 +358,9 @@ select:focus {
 .progress {
   font-weight: 600;
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .solved-banner {
   background: var(--success);
@@ -366,6 +372,7 @@ select:focus {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: none;
 }
 .solve-actions,
 .solve-toggles {
@@ -373,6 +380,12 @@ select:focus {
   align-items: center;
   gap: 6px;
   flex: none;
+}
+/* The popover panels are anchored to the right edge of the whole group, not to
+   their own button: the help panel is wider than the room left of its button on
+   a phone, and anchored there it would run off the left edge of the screen. */
+.solve-actions {
+  position: relative;
 }
 .icon-button {
   width: 36px;
@@ -402,9 +415,6 @@ select:focus {
 }
 /* The panels float over the board rather than pushing it down — opening one
    must not change the height the stage was sized for. */
-.toolbar-popover {
-  position: relative;
-}
 .toolbar-popover-panel {
   position: absolute;
   right: 0;
@@ -424,7 +434,8 @@ select:focus {
   display: none;
 }
 .solve-help .toolbar-popover-panel {
-  width: min(360px, calc(100vw - 32px));
+  /* Inside .site-main's 24px side padding on either side. */
+  width: min(360px, calc(100vw - 48px));
   padding: 12px;
   color: var(--muted);
 }

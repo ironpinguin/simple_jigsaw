@@ -259,7 +259,11 @@ describe("PuzzleSolver", () => {
       await hydrate();
 
       const bar = container.querySelector(".solve-toolbar")!;
-      for (const b of bar.querySelectorAll(".icon-button")) {
+      const icons = bar.querySelectorAll(".icon-button");
+      // Four toggles plus the help and menu triggers — and not zero, which would
+      // pass the loop below without checking anything.
+      expect(icons).toHaveLength(6);
+      for (const b of icons) {
         expect(b.getAttribute("aria-label")).toBeTruthy();
         expect(b.getAttribute("title")).toBeTruthy();
       }
@@ -306,6 +310,31 @@ describe("PuzzleSolver", () => {
 
       expect(menuTrigger().getAttribute("aria-expanded")).toBe("false");
       expect(document.activeElement).toBe(menuTrigger());
+    });
+
+    it("closes the help once focus moves on to the menu button", async () => {
+      // Tabbing from one trigger to the next and opening it would otherwise leave
+      // both panels open, one on top of the other.
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      const help = button(messages.solve.help)!;
+      help.focus();
+      await act(async () => help.click());
+      expect(help.getAttribute("aria-expanded")).toBe("true");
+
+      await act(async () => menuTrigger().focus());
+      expect(help.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("keeps the menu open while focus moves within it", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await openMenu();
+      menuTrigger().focus();
+      await act(async () => button(messages.solve.share)!.focus());
+      expect(menuTrigger().getAttribute("aria-expanded")).toBe("true");
     });
 
     it("closes the menu on a press outside it", async () => {

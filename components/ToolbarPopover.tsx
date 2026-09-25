@@ -21,9 +21,12 @@ import {
  * the tests; `hidden` still takes them out of the tab order and the a11y tree.
  *
  * Escape closes it and returns focus to the trigger; a pointer press outside
- * closes it without moving focus. Passing `open` makes it controlled, for a
- * caller whose panel entries have to close it (and then focus `triggerRef`
- * itself where that is wanted).
+ * closes it without moving focus, and so does focus moving on to something
+ * outside it — tabbing from the help to the menu button would otherwise leave
+ * both panels open on top of each other. Passing `open` makes it controlled, for
+ * a caller whose panel entries have to close it (and then focus `triggerRef`
+ * itself where that is wanted); `onOpenChange` is then required, or the trigger
+ * could never change it.
  */
 export default function ToolbarPopover({
   icon,
@@ -38,12 +41,13 @@ export default function ToolbarPopover({
   /** Accessible name and tooltip of the trigger. */
   label: string;
   className?: string;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
   /** For a caller that has to focus the trigger itself, e.g. after a dialog. */
   triggerRef?: RefObject<HTMLButtonElement | null>;
   children: ReactNode;
-}) {
+} & (
+  | { open?: undefined; onOpenChange?: (open: boolean) => void }
+  | { open: boolean; onOpenChange: (open: boolean) => void }
+)) {
   const [ownOpen, setOwnOpen] = useState(false);
   const open = controlledOpen ?? ownOpen;
   const ownRef = useRef<HTMLButtonElement>(null);
@@ -85,7 +89,16 @@ export default function ToolbarPopover({
   }, [open]);
 
   return (
-    <div ref={wrapRef} className={`toolbar-popover ${className}`}>
+    <div
+      ref={wrapRef}
+      className={`toolbar-popover ${className}`}
+      onBlur={(e) => {
+        // Only a move to another element: a press on the panel's padding blurs to
+        // <body> (no relatedTarget), and that must leave the panel open.
+        const next = e.relatedTarget;
+        if (open && next instanceof Node && !e.currentTarget.contains(next)) setOpen(false);
+      }}
+    >
       <button
         ref={trigger}
         type="button"

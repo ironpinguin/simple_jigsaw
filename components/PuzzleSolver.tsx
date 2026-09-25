@@ -371,58 +371,56 @@ export default function PuzzleSolver({
             onOpenChange={setMenuOpen}
             triggerRef={moreRef}
           >
-            <>
-                <div className="solve-menu-toggles">
-                  <ToggleButtons items={toggles} inMenu />
-                </div>
-                <label className="menu-item">
-                  {t("pieces")}
-                  <select
-                    id="piece-count"
-                    name="pieceCount"
-                    value={pieceCount}
-                    onChange={(e) => changeCount(Number(e.target.value))}
-                    style={{ width: "auto", marginLeft: "auto" }}
-                  >
-                    {PIECE_PRESETS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {/* Stays open so the "copied" confirmation can be seen. */}
-                <button className="menu-item" type="button" onClick={share}>
-                  <LinkIcon size={ICON_SIZE} aria-hidden="true" /> {copied ? t("copied") : t("share")}
-                </button>
-                <button
-                  className="menu-item"
-                  type="button"
-                  onClick={() => {
-                    closeMenu();
-                    startOver();
-                  }}
-                >
-                  <RotateCcw size={ICON_SIZE} aria-hidden="true" /> {t("reset")}
-                </button>
-                {/* A private puzzle is only visible to its owner and admins, and
-                    the report endpoint rejects it — offering the entry would lead
-                    them to "puzzle not found" for a puzzle they are looking at. */}
-                {isPublic && (
-                  <button
-                    className="menu-item"
-                    type="button"
-                    onClick={() => {
-                      // The dialog takes focus; it hands it back to the menu
-                      // trigger when it closes.
-                      setMenuOpen(false);
-                      setReporting(true);
-                    }}
-                  >
-                    <Flag size={ICON_SIZE} aria-hidden="true" /> {tReport("reportLink")}
-                  </button>
-                )}
-            </>
+            <div className="solve-menu-toggles">
+              <ToggleButtons items={toggles} inMenu />
+            </div>
+            <label className="menu-item">
+              {t("pieces")}
+              <select
+                id="piece-count"
+                name="pieceCount"
+                value={pieceCount}
+                onChange={(e) => changeCount(Number(e.target.value))}
+                style={{ width: "auto", marginLeft: "auto" }}
+              >
+                {PIECE_PRESETS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {/* Stays open so the "copied" confirmation can be seen. */}
+            <button className="menu-item" type="button" onClick={share}>
+              <LinkIcon size={ICON_SIZE} aria-hidden="true" /> {copied ? t("copied") : t("share")}
+            </button>
+            <button
+              className="menu-item"
+              type="button"
+              onClick={() => {
+                closeMenu();
+                startOver();
+              }}
+            >
+              <RotateCcw size={ICON_SIZE} aria-hidden="true" /> {t("reset")}
+            </button>
+            {/* A private puzzle is only visible to its owner and admins, and
+                the report endpoint rejects it — offering the entry would lead
+                them to "puzzle not found" for a puzzle they are looking at. */}
+            {isPublic && (
+              <button
+                className="menu-item"
+                type="button"
+                onClick={() => {
+                  // The dialog takes focus; it hands it back to the menu
+                  // trigger when it closes.
+                  setMenuOpen(false);
+                  setReporting(true);
+                }}
+              >
+                <Flag size={ICON_SIZE} aria-hidden="true" /> {tReport("reportLink")}
+              </button>
+            )}
           </ToolbarPopover>
         </div>
       </div>
