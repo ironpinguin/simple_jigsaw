@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. (#4)
 
 ### Fixed
+- The rate limit on password-reset requests keeps its memory bounded: it
+  holds at most 10,000 callers at once and does a small, bounded amount of
+  work per request, so a client sending from many addresses can no longer make
+  every other request to the form slower. (#92)
 - Interrupting a pinch on the board — pulling down a notification, opening
   Control Center, the back gesture — no longer throws the next gestures off.
   The browser cancels an interrupted gesture instead of ending it, and the board
