@@ -148,6 +148,7 @@ function CompetitionOutcome({
   onName,
   onSubmitName,
   onShowLeaderboard,
+  onRetry,
 }: {
   state: EntryState;
   puzzleId: string;
@@ -155,6 +156,7 @@ function CompetitionOutcome({
   onName: (value: string) => void;
   onSubmitName: () => void;
   onShowLeaderboard: () => void;
+  onRetry: () => void;
 }) {
   const t = useTranslations("competition");
   switch (state.kind) {
@@ -212,7 +214,19 @@ function CompetitionOutcome({
     case "noAttempt":
       return <div className="muted">{t("notCounted")}</div>;
     case "failed":
-      return <div className="error">{state.message || t("entryFailed")}</div>;
+      return (
+        <div>
+          <span className="error">{state.message || t("entryFailed")}</span>
+          {state.retryable && (
+            <>
+              {" "}
+              <button type="button" className="link-button" onClick={onRetry}>
+                {t("retry")}
+              </button>
+            </>
+          )}
+        </div>
+      );
   }
 }
 
@@ -744,6 +758,7 @@ export default function PuzzleSolver({
                   onName={setNameInput}
                   onSubmitName={() => entry.submitName(nameInput)}
                   onShowLeaderboard={() => setLeaderboardOpen(true)}
+                  onRetry={entry.retry}
                 />
               </div>
               <button

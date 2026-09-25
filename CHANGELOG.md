@@ -16,9 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which can be changed under *My puzzles* and is the only thing shown to
   others. Times are checked against a start signed by the server and against
   a minimum time for the piece count, so an implausible time is refused.
-  Administrators can remove single entries from the leaderboard, and a
+  Administrators can remove single entries from the leaderboard, optionally
+  resetting an offensive display name so a new one has to be chosen, and a
   display name can be reported with a new *Offensive name on the leaderboard*
-  category. The data export includes your leaderboard entries, and the
+  category. If entering the leaderboard fails because the connection dropped,
+  the result card offers to try again. The data export includes your leaderboard entries, and the
   privacy policy describes the new data. (#119)
 - A solve timer in the puzzle toolbar. It starts with the first piece you
   pick up, pauses while the tab is in the background, and carries on after a

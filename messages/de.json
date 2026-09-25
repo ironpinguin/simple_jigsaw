@@ -462,8 +462,11 @@
     "moves": "{count, plural, one {# Zug} other {# Züge}}",
     "removeEntry": "Eintrag von {name} entfernen",
     "confirmRemoveEntry": "Den Eintrag von „{name}“ aus der Rangliste entfernen?",
+    "removeEntryAndName": "Eintrag von {name} entfernen und Namen zurücksetzen",
+    "confirmRemoveEntryAndName": "Den Eintrag von „{name}“ entfernen und den Anzeigenamen zurücksetzen? Die Person muss beim nächsten Eintrag einen neuen Namen wählen; ihre anderen Einträge zeigen bis dahin keinen Namen.",
     "removeEntryFailed": "Der Eintrag konnte nicht entfernt werden.",
     "yourRank": "Dein Platz: {rank} ({time})",
-    "signInToTakePart": "<login>Melde dich an</login>, um teilzunehmen."
+    "signInToTakePart": "<login>Melde dich an</login>, um teilzunehmen.",
+    "retry": "Erneut versuchen"
   }
 }

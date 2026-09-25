@@ -13,7 +13,11 @@ export type EntryState =
   | { kind: "signIn" }
   /** Finished without a start the server issued — see `finish`. */
   | { kind: "noAttempt" }
-  | { kind: "failed"; message: string };
+  /**
+   * `retryable` when the request never got an answer, or the server could not
+   * give one — the attempt itself is fine and can be sent again.
+   */
+  | { kind: "failed"; message: string; retryable: boolean };
 
 const IDLE: EntryState = { kind: "idle" };
 const ALWAYS_OPEN = () => true;
@@ -61,6 +65,13 @@ export function useCompetitionEntry({
   /** The finished result waiting for a display name. */
   const pending = useRef<{ outcome: SolveResult; token: string } | null>(null);
   /**
+   * The submission that failed in transit, for `retry`. Held in memory only: a
+   * reload restores the board solved, and the attempt with it is gone.
+   */
+  const failed = useRef<{ outcome: SolveResult; token: string; displayName?: string } | null>(
+    null,
+  );
+  /**
    * Bumped whenever the card is closed or the solve started over, so an answer
    * still in flight then does not bring the card back.
    */
@@ -86,6 +97,7 @@ export function useCompetitionEntry({
   const discardAttempt = useCallback(() => {
     tokens.clear();
     pending.current = null;
+    failed.current = null;
     shown.current += 1;
     // Every board seed calls this; keeping the idle state as it is spares the
     // solver a re-render for each of them.
@@ -95,6 +107,7 @@ export function useCompetitionEntry({
   const submit = useCallback(
     async (outcome: SolveResult, token: string, displayName?: string) => {
       const view = shown.current;
+      failed.current = null;
       setState({ kind: "submitting" });
       const res = await tryFetch("competition", `/api/competitions/${puzzleId}/entries`, {
         method: "POST",
@@ -132,7 +145,9 @@ export function useCompetitionEntry({
         setState({ kind: "signIn" });
         return;
       }
-      setState({ kind: "failed", message: data?.error ?? "" });
+      const retryable = !res || res.status >= 500 || res.status === 429;
+      if (retryable) failed.current = { outcome, token, displayName };
+      setState({ kind: "failed", message: data?.error ?? "", retryable });
     },
     [puzzleId, pieceCount, tokens, onEntered],
   );
@@ -169,10 +184,16 @@ export function useCompetitionEntry({
     [submit],
   );
 
+  /** Send a submission again that failed in transit; see `EntryState`. */
+  const retry = useCallback(() => {
+    const again = failed.current;
+    if (again) void submit(again.outcome, again.token, again.displayName);
+  }, [submit]);
+
   const dismiss = useCallback(() => {
     shown.current += 1;
     setState((s) => (s.kind === "idle" ? s : IDLE));
   }, []);
 
-  return { state, beginAttempt, discardAttempt, finish, submitName, dismiss };
+  return { state, beginAttempt, discardAttempt, finish, submitName, retry, dismiss };
 }

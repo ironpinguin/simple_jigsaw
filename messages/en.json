@@ -462,8 +462,11 @@
     "moves": "{count, plural, one {# move} other {# moves}}",
     "removeEntry": "Remove {name}'s entry",
     "confirmRemoveEntry": "Remove “{name}” from the leaderboard?",
+    "removeEntryAndName": "Remove {name}'s entry and reset the name",
+    "confirmRemoveEntryAndName": "Remove “{name}” and reset the display name? They will have to choose a new name with their next entry; their other entries show no name until then.",
     "removeEntryFailed": "The entry could not be removed.",
     "yourRank": "Your rank: {rank} ({time})",
-    "signInToTakePart": "<login>Sign in</login> to take part."
+    "signInToTakePart": "<login>Sign in</login> to take part.",
+    "retry": "Try again"
   }
 }

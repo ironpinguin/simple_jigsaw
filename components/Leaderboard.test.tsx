@@ -87,6 +87,18 @@ describe("Leaderboard", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("lets an admin remove an entry together with its display name", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await mount({ isAdmin: true });
+    const reset = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Remove Ana\'s entry and reset the name"]',
+    )!;
+    await act(async () => reset.click());
+    expect(fetchMock).toHaveBeenCalledWith("/api/admin/leaderboard/e1?resetName=1", {
+      method: "DELETE",
+    });
+  });
+
   it("offers no remove button to anyone else", async () => {
     await mount();
     expect(container.querySelector("li button")).toBeNull();

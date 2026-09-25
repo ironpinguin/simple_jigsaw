@@ -462,8 +462,11 @@
     "moves": "{count, plural, one {# mossa} other {# mosse}}",
     "removeEntry": "Rimuovi la voce di {name}",
     "confirmRemoveEntry": "Rimuovere «{name}» dalla classifica?",
+    "removeEntryAndName": "Rimuovi la voce di {name} e reimposta il nome",
+    "confirmRemoveEntryAndName": "Rimuovere «{name}» e reimpostare il nome visibile? Alla prossima voce dovrà sceglierne uno nuovo; fino ad allora le sue altre voci non mostrano alcun nome.",
     "removeEntryFailed": "Non è stato possibile rimuovere la voce.",
     "yourRank": "La tua posizione: {rank} ({time})",
-    "signInToTakePart": "<login>Accedi</login> per partecipare."
+    "signInToTakePart": "<login>Accedi</login> per partecipare.",
+    "retry": "Riprova"
   }
 }

@@ -1130,6 +1130,36 @@ describe("PuzzleSolver", () => {
       expect(card()).toContain("Rank 1 on the leaderboard!");
     });
 
+    it("offers to send a submission again that failed in transit", async () => {
+      await seed();
+      // The first answer never arrives; the second one does.
+      fetchMock.mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ token: "tok-1" }),
+      }));
+      fetchMock.mockImplementationOnce(async () => {
+        throw new TypeError("network down");
+      });
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await solveIn(60_000);
+      expect(card()).toContain(messages.competition.entryFailed);
+
+      await act(async () => button(messages.competition.retry)!.click());
+
+      const [first, second] = calls("entries");
+      expect(second[1].body).toBe(first[1].body);
+      expect(card()).toContain("Rank 3 on the leaderboard!");
+    });
+
+    it("does not offer to retry a submission the server refused", async () => {
+      answers.entries = { status: 422, body: { error: "This time is not plausible." } };
+      await seed();
+      await solveIn(60_000);
+      expect(card()).toContain("This time is not plausible.");
+      expect(button(messages.competition.retry)).toBeUndefined();
+    });
+
     it("does not send an attempt the server never started", async () => {
       answers.start = { status: 409, body: { error: "not open" } };
       await seed();

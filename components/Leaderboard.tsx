@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useFormatter, useTranslations } from "next-intl";
-import { X } from "lucide-react";
+import { UserX, X } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import { formatDuration } from "@/lib/puzzle/timer";
@@ -70,13 +70,14 @@ export default function Leaderboard({
     };
   }, [active, key, loadedFor, puzzleId]);
 
-  async function remove(id: string, name: string) {
-    if (!confirm(t("confirmRemoveEntry", { name }))) return;
+  /** `resetName` for an entry removed because of its name — see the admin route. */
+  async function remove(id: string, name: string, resetName = false) {
+    const question = resetName ? "confirmRemoveEntryAndName" : "confirmRemoveEntry";
+    if (!confirm(t(question, { name }))) return;
     setRemoving(id);
     try {
-      const res = await tryFetch("competition", `/api/admin/leaderboard/${id}`, {
-        method: "DELETE",
-      });
+      const url = `/api/admin/leaderboard/${id}${resetName ? "?resetName=1" : ""}`;
+      const res = await tryFetch("competition", url, { method: "DELETE" });
       if (!res?.ok) {
         const body = res ? await res.json().catch(() => null) : null;
         alert(body?.error ?? t("removeEntryFailed"));
@@ -122,16 +123,28 @@ export default function Leaderboard({
               <span className="leaderboard-time">{formatDuration(e.ms)}</span>
               <span className="muted leaderboard-moves">{t("moves", { count: e.moves })}</span>
               {isAdmin && (
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={t("removeEntry", { name: e.displayName })}
-                  title={t("removeEntry", { name: e.displayName })}
-                  disabled={removing === e.id}
-                  onClick={() => remove(e.id, e.displayName)}
-                >
-                  <X size={16} aria-hidden="true" />
-                </button>
+                <>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t("removeEntry", { name: e.displayName })}
+                    title={t("removeEntry", { name: e.displayName })}
+                    disabled={removing === e.id}
+                    onClick={() => remove(e.id, e.displayName)}
+                  >
+                    <X size={16} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button"
+                    aria-label={t("removeEntryAndName", { name: e.displayName })}
+                    title={t("removeEntryAndName", { name: e.displayName })}
+                    disabled={removing === e.id}
+                    onClick={() => remove(e.id, e.displayName, true)}
+                  >
+                    <UserX size={16} aria-hidden="true" />
+                  </button>
+                </>
               )}
             </li>
           ))}
