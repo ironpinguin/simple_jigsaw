@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
+import { LocateFixed, Minus, Plus } from "lucide-react";
 import { canZoomIn, canZoomOut, zoomPercent } from "@/lib/puzzle/zoom";
 import type { ViewSource } from "./viewStore";
 
@@ -69,13 +70,13 @@ export default function ZoomControls({
         {t("zoomPercent", { percent: zoomPercent(scale) })}
       </output>
       <ZoomButton label={t("zoomIn")} enabled={canZoomIn(scale)} onPress={onZoomIn}>
-        +
+        <Plus size={20} aria-hidden="true" />
       </ZoomButton>
       <ZoomButton label={t("zoomOut")} enabled={canZoomOut(scale)} onPress={onZoomOut}>
-        −
+        <Minus size={20} aria-hidden="true" />
       </ZoomButton>
       <ZoomButton label={t("resetView")} onPress={onReset}>
-        ⟲
+        <LocateFixed size={20} aria-hidden="true" />
       </ZoomButton>
     </div>
   );

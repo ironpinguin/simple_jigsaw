@@ -60,6 +60,12 @@ a:hover {
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.brand svg {
+  color: var(--accent);
 }
 .brand:hover {
   text-decoration: none;
@@ -326,22 +332,156 @@ select:focus {
   color: #fff;
 }
 
+/* One row, never wrapping: the board is sized to whatever height is left below
+   it (see availableBoardHeight in PuzzleBoard), so every extra row of controls
+   comes straight off the playing area. The title is what gives way — first, by
+   its far larger shrink factor; the progress line only shortens once the title
+   is gone, which on a phone with the solved banner up it has to, or the row
+   runs past the edge of the screen. */
 .solve-toolbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 12px;
+  flex-wrap: nowrap;
   margin-bottom: 12px;
+  min-width: 0;
+}
+.solve-title {
+  margin: 0;
+  font-size: 20px;
+  flex: 1 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .progress {
   font-weight: 600;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .solved-banner {
   background: var(--success);
   color: #06231a;
   font-weight: 700;
-  padding: 10px 16px;
+  padding: 4px 10px;
   border-radius: 8px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.solve-actions,
+.solve-toggles {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+/* The popover panels are anchored to the right edge of the whole group, not to
+   their own button: the help panel is wider than the room left of its button on
+   a phone, and anchored there it would run off the left edge of the screen. */
+.solve-actions {
+  position: relative;
+}
+.icon-button {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-button > span {
+  display: inline-flex;
+}
+.icon-button:hover,
+.icon-button[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+.icon-button.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* The panels float over the board rather than pushing it down — opening one
+   must not change the height the stage was sized for. */
+.toolbar-popover-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.toolbar-popover-panel[hidden] {
+  display: none;
+}
+.solve-help .toolbar-popover-panel {
+  /* Inside .site-main's 24px side padding on either side. */
+  width: min(360px, calc(100vw - 48px));
+  padding: 12px;
+  color: var(--muted);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--surface-2);
+}
+.menu-item.active {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.solve-menu-toggles {
+  display: none;
+}
+/* A phone keeps title, progress and the two popovers in the bar; the solving
+   toggles move into the overflow menu. */
+@media (max-width: 640px) {
+  .solve-toggles {
+    display: none;
+  }
+  .solve-menu-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .solve-title {
+    font-size: 17px;
+  }
 }
 .board-wrap {
   border: 1px solid var(--border);
@@ -361,6 +501,10 @@ select:focus {
   gap: 6px;
 }
 .zoom-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   width: 38px;
   height: 38px;
   font-size: 20px;

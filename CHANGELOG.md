@@ -13,12 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before. It plays once, for the drop that completes the picture — not when a
   finished puzzle is reopened, and not when the finished picture is moved
   again. A click, tap or key press ends it early — and still does what it
-  would have done. **🔊 Applause** in the toolbar mutes the sound, and the choice is
+  would have done. **Applause** in the toolbar mutes the sound, and the choice is
   remembered in this browser for every puzzle. With *reduce motion* set in the
   operating system the fireworks are left out. Installations can swap the
   applause for their own recording without a rebuild — see *Applaus
   austauschen* in the README. (#117)
-- **🧲 Gather loose pieces** in the puzzle toolbar collects every piece that is
+- **Gather loose pieces** in the puzzle toolbar collects every piece that is
   not yet part of an assembly into the free space of the board, in neat rows
   from the top-left and clear of what has already been put together. Once most
   of the picture is assembled, the leftovers are no longer strewn between the
@@ -64,6 +64,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than the address. (#50)
 
 ### Changed
+- The puzzle toolbar now fits in a single row, so the board gets the height
+  the controls used to take. Preview, overview, *Gather loose pieces* and
+  applause are icon buttons with a tooltip; the piece count, *Share link*,
+  *Start over* and *Report* are in the **⋯** menu, and the instructions sit
+  behind **?**. A long title is shortened with an ellipsis. On a phone the
+  bar keeps only the title, progress and those two buttons, and everything
+  else is in the menu. Escape closes the menu and puts focus back on its
+  button; tabbing on out of it closes it too. The toolbar's icons, including the one on *Solved!*, the zoom
+  buttons and the logo in the site header are now drawn as graphics rather
+  than emoji or font symbols, so they look the same on every system — where
+  the installed font had no 🧲 or 🔗, an empty box used to show instead. (#123)
 - Pieces now start spread evenly over the board instead of at independent
   random spots, so none lies hidden under another. At 300 pieces the old
   placement could bury a couple of pieces completely, and they could only be

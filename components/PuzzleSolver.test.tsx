@@ -1,6 +1,6 @@
 import { useEffect, useImperativeHandle, type Ref } from "react";
 import { act } from "react";
-import { hydrateRoot, type Root } from "react-dom/client";
+import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -172,14 +172,41 @@ describe("PuzzleSolver", () => {
     });
   }
 
-  /** A toolbar toggle, found the way a user reads it — by its label. */
-  function toggle(label: string) {
-    return [...container.querySelectorAll("button")].find((b) => b.textContent === label);
+  /**
+   * A button's accessible name, as far as this toolbar needs it: its
+   * `aria-label`, or else its text without the decorative icon.
+   */
+  function nameOf(el: Element) {
+    const label = el.getAttribute("aria-label");
+    if (label !== null) return label;
+    const copy = el.cloneNode(true) as Element;
+    copy.querySelectorAll("[aria-hidden='true']").forEach((n) => n.remove());
+    return copy.textContent?.trim() ?? "";
   }
 
-  /** The reset button, found by its label the way a user reads it. */
-  function reset() {
-    return act(async () => toggle(messages.solve.reset)!.click());
+  /**
+   * A toolbar button, found the way a user reads it — by its name. The first
+   * match: on a narrow screen the toggles are repeated in the menu.
+   */
+  function button(name: string) {
+    return [...container.querySelectorAll("button")].find((b) => nameOf(b) === name);
+  }
+
+  function menuTrigger() {
+    return button(messages.solve.more)!;
+  }
+
+  /** Open the overflow menu the way a user would, unless it already is. */
+  function openMenu() {
+    return act(async () => {
+      if (menuTrigger().getAttribute("aria-expanded") !== "true") menuTrigger().click();
+    });
+  }
+
+  /** Start over from the overflow menu, the way a user reaches it. */
+  async function reset() {
+    await openMenu();
+    return act(async () => button(messages.solve.reset)!.click());
   }
 
   beforeEach(() => {
@@ -212,11 +239,132 @@ describe("PuzzleSolver", () => {
     expect(computeGrid(12, aspect)).toMatchObject({ cols: 4, rows: 3 });
   });
 
-  it("offers the report button on a public puzzle but not on a private one", () => {
+  it("offers the report entry on a public puzzle but not on a private one", async () => {
     // /api/report answers 404 for a private puzzle, so an owner or admin
     // looking at their own private puzzle would be told it does not exist.
-    expect(renderToString(tree(true))).toContain(messages.report.reportLink);
-    expect(renderToString(tree(false))).not.toContain(messages.report.reportLink);
+    await act(async () => {
+      root = createRoot(container);
+      root.render(tree(false));
+    });
+    await openMenu();
+    expect(button(messages.report.reportLink)).toBeUndefined();
+
+    await act(async () => root!.render(tree(true)));
+    expect(button(messages.report.reportLink)).toBeDefined();
+  });
+
+  describe("the toolbar", () => {
+    it("gives every icon button a name and a tooltip", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      const bar = container.querySelector(".solve-toolbar")!;
+      const icons = bar.querySelectorAll(".icon-button");
+      // Four toggles plus the help and menu triggers — and not zero, which would
+      // pass the loop below without checking anything.
+      expect(icons).toHaveLength(6);
+      for (const b of icons) {
+        expect(b.getAttribute("aria-label")).toBeTruthy();
+        expect(b.getAttribute("title")).toBeTruthy();
+      }
+    });
+
+    it("keeps the instructions behind the help button", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      const help = button(messages.solve.help)!;
+      const panel = document.getElementById(help.getAttribute("aria-controls")!)!;
+      expect(panel.textContent).toBe(messages.solve.instructions);
+      expect(panel.hidden).toBe(true);
+
+      await act(async () => help.click());
+      expect(help.getAttribute("aria-expanded")).toBe("true");
+      expect(panel.hidden).toBe(false);
+    });
+
+    it("closes the menu on Escape and returns focus to its trigger", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await openMenu();
+      const share = button(messages.solve.share)!;
+      share.focus();
+      await act(async () => {
+        share.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+
+      expect(menuTrigger().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(menuTrigger());
+    });
+
+    it("closes the menu on Escape even when focus is not inside it", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await openMenu();
+      (document.activeElement as HTMLElement | null)?.blur();
+      await act(async () => {
+        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+
+      expect(menuTrigger().getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(menuTrigger());
+    });
+
+    it("closes the help once focus moves on to the menu button", async () => {
+      // Tabbing from one trigger to the next and opening it would otherwise leave
+      // both panels open, one on top of the other.
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      const help = button(messages.solve.help)!;
+      help.focus();
+      await act(async () => help.click());
+      expect(help.getAttribute("aria-expanded")).toBe("true");
+
+      await act(async () => menuTrigger().focus());
+      expect(help.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("keeps the menu open while focus moves within it", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await openMenu();
+      menuTrigger().focus();
+      await act(async () => button(messages.solve.share)!.focus());
+      expect(menuTrigger().getAttribute("aria-expanded")).toBe("true");
+    });
+
+    it("closes the menu on a press outside it", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await openMenu();
+      await act(async () => {
+        document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      });
+
+      expect(menuTrigger().getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("opens the report dialog from the menu and hands focus back to the menu", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await openMenu();
+      await act(async () => button(messages.report.reportLink)!.click());
+      const dialog = container.querySelector<HTMLElement>("[role='dialog']")!;
+      expect(dialog).not.toBeNull();
+      expect(menuTrigger().getAttribute("aria-expanded")).toBe("false");
+
+      await act(async () => {
+        dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(container.querySelector("[role='dialog']")).toBeNull();
+      expect(document.activeElement).toBe(menuTrigger());
+    });
   });
 
   it("hydrates without a mismatch when a piece count was remembered", async () => {
@@ -328,11 +476,12 @@ describe("PuzzleSolver", () => {
 
     expect(board.showMinimap).toBe(true);
 
-    await act(async () => toggle(messages.solve.hideMap)!.click());
+    expect(button(messages.solve.overview)?.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button(messages.solve.overview)!.click());
     expect(board.showMinimap).toBe(false);
-    expect(toggle(messages.solve.showMap)?.getAttribute("aria-pressed")).toBe("false");
+    expect(button(messages.solve.overview)?.getAttribute("aria-pressed")).toBe("false");
 
-    await act(async () => toggle(messages.solve.showMap)!.click());
+    await act(async () => button(messages.solve.overview)!.click());
     expect(board.showMinimap).toBe(true);
   });
 
@@ -340,16 +489,14 @@ describe("PuzzleSolver", () => {
     container.innerHTML = serverHtml();
     await hydrate();
 
-    await act(async () => toggle(messages.solve.gather)!.click());
+    await act(async () => button(messages.solve.gather)!.click());
     expect(board.gathered).toBe(1);
   });
 
   describe("the celebration", () => {
-    /** The sound toggle, whichever state it is in. */
+    /** The sound toggle; its name stays put, the state is in aria-pressed. */
     function soundToggle() {
-      return [...container.querySelectorAll("button")].find((b) =>
-        b.textContent?.endsWith(messages.solve.sound),
-      );
+      return button(messages.solve.sound);
     }
 
     it("celebrates the drop that completes the picture, with sound by default", async () => {

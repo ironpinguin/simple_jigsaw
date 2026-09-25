@@ -28,6 +28,7 @@
     "bcryptjs": "^3.0.3",
     "canvas-confetti": "^1.9.4",
     "konva": "^10.3.0",
+    "lucide-react": "^1.48.0",
     "next": "^16.3.0",
     "next-auth": "^5.0.0-beta.25",
     "next-intl": "^4.14.5",
