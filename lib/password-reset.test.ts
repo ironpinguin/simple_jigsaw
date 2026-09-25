@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   PROBE_LIMIT,
+  PROBE_MAX_KEYS,
   PROBE_WINDOW_MS,
   RESET_EMAIL_RETRY_AFTER_MS,
   RESET_PER_EMAIL_LIMIT,
@@ -55,12 +56,26 @@ describe("recordProbe", () => {
   });
 
   it("does not walk every caller on every call", () => {
-    // The whole-map prune is O(callers seen in the last window). Running it per
+    // Walking the whole map is O(callers seen in the last window). Doing it per
     // call makes a prober spread over N addresses cost O(N²) — the limiter doing
-    // the attacker's work for it, on an unauthenticated endpoint. One sweep per
-    // window keeps the map bounded and each call O(1) in its own bucket.
-    for (let i = 0; i < 200; i++) recordProbe(`ip-${i}`, 1_000 + i);
-    expect(__resetProbeState.sweeps()).toBeLessThanOrEqual(1);
+    // the attacker's work for it, on an unauthenticated endpoint. Pruning from
+    // the oldest end drops each bucket once, so a run stays linear.
+    const calls = 3 * PROBE_WINDOW_MS / 1_000;
+    for (let i = 0; i < calls; i++) recordProbe(`ip-${i}`, 1_000 + i * 1_000);
+    expect(__resetProbeState.scanned()).toBeLessThanOrEqual(2 * calls);
+  });
+
+  it("keeps the number of callers bounded under rotating addresses", () => {
+    // A routed IPv6 /64 is 2^64 source addresses; every one is a fresh key.
+    for (let i = 0; i < PROBE_MAX_KEYS + 500; i++) recordProbe(`ip-${i}`, 1_000);
+    expect(__resetProbeState.size()).toBe(PROBE_MAX_KEYS);
+    expect(__resetProbeState.scanned()).toBeLessThanOrEqual(2 * (PROBE_MAX_KEYS + 500));
+  });
+
+  it("still refuses a spent caller while others come and go", () => {
+    for (let i = 0; i < PROBE_LIMIT; i++) recordProbe("ip-a", 1_000);
+    for (let i = 0; i < PROBE_MAX_KEYS - 1; i++) recordProbe(`ip-${i}`, 2_000);
+    expect(recordProbe("ip-a", 3_000)).toBe(false);
   });
 
   it("does not grow without bound as callers come and go", () => {

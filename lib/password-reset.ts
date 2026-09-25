@@ -38,6 +38,13 @@
 // sent — and the generic load concern that remains belongs at a real trusted
 // proxy, not a reason to hand any single caller a lever over everyone's
 // password recovery.
+//
+// Even behind a trusted proxy, a per-IP counter only holds a caller who stays
+// on one address. One who rotates (a routed IPv6 /64 is 2^64 of them) gets a
+// fresh bucket per address and sidesteps PROBE_LIMIT and RESET_PER_IP_LIMIT
+// alike. That is inherent in keying on an address and is the trusted proxy's
+// job to stop; what this file does make sure of is that such a caller cannot
+// also make the counter expensive for everybody else — see `recordProbe`.
 
 /** Per account, per window. One person recovering one account needs very few. */
 export const RESET_PER_EMAIL_LIMIT = 3;
@@ -85,67 +92,88 @@ export const RESET_EMAIL_RETRY_AFTER_MS = RESET_RATE_WINDOW_MS / RESET_PER_EMAIL
 export const PROBE_LIMIT = 60;
 export const PROBE_WINDOW_MS = 10 * 60 * 1000;
 
-/** ipHash -> timestamps within the current window. */
-const probes = new Map<string, number[]>();
-
-/** When the last full sweep ran, so the next one can be due rather than constant. */
-let lastSweepAt = 0;
-
-/** How many full sweeps have run. Test seam: the cadence is the point, below. */
-let sweeps = 0;
+/**
+ * Most distinct callers held at once. Behind a trusted proxy a client with a
+ * routed IPv6 /64 has 2^64 source addresses, so without a cap the key count is
+ * whatever that client decides it is. At a few dozen bytes a bucket this is a
+ * few hundred kilobytes, far above the distinct callers of one window that real
+ * traffic to a password-reset form produces.
+ */
+export const PROBE_MAX_KEYS = 10_000;
 
 /**
- * Drop every bucket with nothing live left in it. O(callers seen recently), so
- * it runs at most once per window rather than once per call — see `recordProbe`.
+ * One fixed window per caller. A count is all the limit reads, so there is no
+ * timestamp list to filter and nothing to allocate on a hit. The price is the
+ * usual fixed-window one — up to twice PROBE_LIMIT across a window boundary —
+ * which is fine for a counter that guards work rather than secrets.
  */
-function sweep(cutoff: number, now: number): void {
-  for (const [key, times] of probes) {
-    const live = times.filter((t) => t > cutoff);
-    if (live.length === 0) probes.delete(key);
-    else probes.set(key, live);
-  }
-  lastSweepAt = now;
-  sweeps++;
-}
+type Bucket = { count: number; windowStart: number };
+
+/**
+ * ipHash -> its current window. Kept in windowStart order: a bucket is only
+ * ever inserted when its window starts, it is dropped rather than restarted
+ * once that window is over, and a Map iterates in insertion order. So the front of the
+ * map is always the oldest window, which is what both pruning and eviction want.
+ */
+const probes = new Map<string, Bucket>();
+
+/** Buckets examined by pruning and eviction. Test seam: the bound is the point. */
+let scanned = 0;
 
 /**
  * Record one request from `ipHash` and say whether it is allowed.
  *
- * Prunes as it goes: without that, every address that ever probed would be held
- * until the process restarted. The caller's own bucket is pruned on every call,
- * which is what the limit is actually read from; the rest of the map is swept
- * only when a sweep is due.
+ * Every call does amortised O(1) work, however many callers there are. Stale
+ * buckets are dropped from the front of the map until the first live one —
+ * each bucket is dropped at most once, so that is O(1) per call over a run —
+ * and when the map is full the oldest bucket goes to make room. Walking the
+ * whole map instead would make one request cost O(callers seen recently), and
+ * behind a trusted proxy, the only configuration where this counter is
+ * enforced, a prober spread over N source addresses is exactly what fills it:
+ * the limiter would do O(N²) work over the run, making enumeration expensive
+ * for everybody but the attacker.
  *
- * The cadence is the point. Sweeping the whole map on every call makes one
- * request cost O(callers seen in the last ten minutes) — and behind a trusted
- * proxy, the only configuration where this counter is enforced at all, a prober
- * spread over N source addresses is exactly what fills that map. The limiter
- * would then do O(N²) work over the run: the mechanism that exists to make
- * enumeration expensive for the attacker, doing the attacker's work for them on
- * an unauthenticated endpoint. Sweeping once per window keeps the map bounded by
- * the callers of the last two windows and leaves each request O(1) in its own
- * bucket.
+ * What a cap cannot do is hold a caller who rotates addresses. Every address is
+ * a fresh bucket, so PROBE_LIMIT is sidestepped however the map is stored, and
+ * with more than PROBE_MAX_KEYS addresses in one window a rotating caller also
+ * evicts other callers' buckets, handing them a fresh budget. That is inherent
+ * in keying on an address; defending against it belongs at the trusted proxy.
+ * What this bounds is the amplification — one caller cannot make everybody
+ * else's request more expensive.
  */
 export function recordProbe(ipHash: string, now: number = Date.now()): boolean {
-  const cutoff = now - PROBE_WINDOW_MS;
-
-  if (now - lastSweepAt >= PROBE_WINDOW_MS) sweep(cutoff, now);
-
-  const mine = (probes.get(ipHash) ?? []).filter((t) => t > cutoff);
-  if (mine.length >= PROBE_LIMIT) {
-    probes.set(ipHash, mine);
-    return false;
+  for (const [key, bucket] of probes) {
+    scanned++;
+    if (now - bucket.windowStart < PROBE_WINDOW_MS) break;
+    probes.delete(key);
   }
-  mine.push(now);
-  probes.set(ipHash, mine);
+
+  // Whatever survived the loop is live: a stale bucket anywhere in the map
+  // would have a stale bucket, or itself, at the front.
+  let mine = probes.get(ipHash);
+  if (!mine) {
+    if (probes.size >= PROBE_MAX_KEYS) evictOldest();
+    mine = { count: 0, windowStart: now };
+    probes.set(ipHash, mine);
+  }
+
+  if (mine.count >= PROBE_LIMIT) return false;
+  mine.count++;
   return true;
+}
+
+function evictOldest(): void {
+  const oldest = probes.keys().next();
+  if (!oldest.done) {
+    scanned++;
+    probes.delete(oldest.value);
+  }
 }
 
 /** Test seam: the counter is module state, so tests need a way to clear it. */
 export function __resetProbeState(): void {
   probes.clear();
-  lastSweepAt = 0;
-  sweeps = 0;
+  scanned = 0;
 }
 __resetProbeState.size = () => probes.size;
-__resetProbeState.sweeps = () => sweeps;
+__resetProbeState.scanned = () => scanned;
