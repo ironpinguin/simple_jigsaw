@@ -186,6 +186,7 @@ function CompetitionOutcome({
           <div style={{ display: "flex", gap: 8 }}>
             <input
               id="result-display-name"
+              type="text"
               value={name}
               maxLength={DISPLAY_NAME_MAX}
               autoComplete="nickname"

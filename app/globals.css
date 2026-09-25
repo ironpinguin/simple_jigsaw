@@ -247,6 +247,7 @@ input[type="text"],
 input[type="email"],
 input[type="password"],
 input[type="file"],
+input[type="datetime-local"],
 select {
   width: 100%;
   padding: 10px 12px;
@@ -255,6 +256,10 @@ select {
   border-radius: 8px;
   color: var(--text);
   font: inherit;
+}
+/* The picker's own icon and popup follow the page's dark theme. */
+input[type="datetime-local"] {
+  color-scheme: dark;
 }
 input:focus,
 select:focus {

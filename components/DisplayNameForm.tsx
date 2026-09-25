@@ -48,6 +48,7 @@ export default function DisplayNameForm({ initial }: { initial: string | null })
         <label htmlFor="display-name">{t("displayName")}</label>
         <input
           id="display-name"
+          type="text"
           value={value}
           maxLength={DISPLAY_NAME_MAX}
           onChange={(e) => setValue(e.target.value)}
