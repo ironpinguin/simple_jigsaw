@@ -61,10 +61,10 @@ export default function BoardMinimap({
 
   // Memoised as elements, not just as data: panning re-renders this component
   // on every frame, and an identical element lets React bail out of the whole
-  // subtree instead of diffing one rect per group. It holds only because a pan
-  // re-renders this component *without* re-rendering the board — `groupList`
-  // (PuzzleBoard) is a fresh array on every board render, which is what makes
-  // the markers follow a drop.
+  // subtree instead of diffing one rect per group. That needs `groups` to stay
+  // the same array across a pan and to change when the groups do: `groupList`
+  // (PuzzleBoard) is memoised on the group store's snapshot, which every drop
+  // and gather replaces — that is what makes the markers follow them.
   const markers = useMemo(
     () => (
       <g>

@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing. (#4)
 
 ### Fixed
+- Interrupting a pinch on the board — pulling down a notification, opening
+  Control Center, the back gesture — no longer throws the next gestures off.
+  The browser cancels an interrupted gesture instead of ending it, and the board
+  only listened for the end, so afterwards the first attempt to pan the board did
+  nothing and the next pinch jumped to another zoom level on its first move.
 - The *Last updated* date on the Terms and Privacy pages now shows the date the
   document actually carries. An installation running west of UTC showed the day
   before — 4 August where the terms say 5 August — because the date was

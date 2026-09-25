@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type Ref,
 } from "react";
 import { Stage, Layer, Group, Image as KImage } from "react-konva";
@@ -35,6 +36,7 @@ import { stagePositionFor } from "@/lib/puzzle/minimap";
 import ZoomControls from "./ZoomControls";
 import BoardMinimap from "./BoardMinimap";
 import { createViewStore } from "./viewStore";
+import { createGroupStore } from "./groupStore";
 
 export interface PuzzleData {
   id: string;
@@ -73,11 +75,19 @@ interface Layout {
 
 function useHtmlImage(src: string): HTMLImageElement | null {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
+  // React re-runs this effect when a hidden board is shown again (an <Activity>,
+  // a Suspense fallback). Loading `src` afresh for that would hand back a new
+  // element, which rebuilds the layout and re-rasterises every piece.
+  const loadedSrc = useRef<string | null>(null);
   useEffect(() => {
+    if (loadedSrc.current === src) return;
     const image = new window.Image();
     image.crossOrigin = "anonymous";
     image.src = src;
-    image.onload = () => setImg(image);
+    image.onload = () => {
+      loadedSrc.current = src;
+      setImg(image);
+    };
     return () => {
       image.onload = null;
     };
@@ -146,9 +156,9 @@ function renderPieceCanvas(
 }
 
 /**
- * Fallback when there is nothing to measure: server rendering, or a test that
- * mounts the board outside the site layout. Equivalent to the old fixed budget on
- * an 800px window, and the stage floor takes over below it anyway.
+ * Fallback when there is nothing to measure: the board is not inside a `<main>`,
+ * as when a test mounts it outside the site layout. Equivalent to the old fixed
+ * budget on an 800px window, and the stage floor takes over below it anyway.
  */
 const FALLBACK_AVAILABLE_H = 590;
 
@@ -166,8 +176,7 @@ const FALLBACK_AVAILABLE_H = 590;
  * whatever follows that `<main>` — assuming, as the solve view does, that the
  * board is the last thing inside it.
  */
-function availableBoardHeight(wrap: HTMLElement | null): number {
-  if (typeof window === "undefined" || !wrap) return FALLBACK_AVAILABLE_H;
+function availableBoardHeight(wrap: HTMLElement): number {
   const main = wrap.closest("main");
   if (!main) return FALLBACK_AVAILABLE_H;
 
@@ -294,24 +303,42 @@ export default function PuzzleBoard({
   resetNonce,
   actionsRef,
 }: Props) {
-  const wrapRef = useRef<HTMLDivElement>(null);
+  // The wrapper element as state (a callback ref), not a ref object: building
+  // the layout measures the room around it, and a memo that reads a ref cannot
+  // say it depends on it.
+  const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
-  // Group model lives in refs (mutated imperatively on drag); a version counter
-  // triggers re-render only when membership/positions actually change.
-  const groupsRef = useRef<Map<number, PieceGroup>>(new Map());
-  const pieceToGroupRef = useRef<Map<string, number>>(new Map());
-  const [, setVersion] = useState(0);
-  const bump = useCallback(() => setVersion((v) => v + 1), []);
+  // Attaching the wrapper also reads its width, synchronously: waiting for a
+  // ResizeObserver instead would leave a board opened in a background tab unbuilt
+  // until the tab is shown, because a hidden page gets no resize notifications.
+  // Only the first width counts, like the observer's below.
+  //
+  // A detach is ignored. This div is the board's own root, so `null` only ever
+  // means unmounting or being hidden (an <Activity>, a Suspense fallback), and
+  // dropping the layout for that would tear the Konva stage down: it would come
+  // back unzoomed while the zoom readout and the overview kept the old view.
+  const attachWrap = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    setWrap(el);
+    const w = el.clientWidth;
+    if (w > 0) setContainerW((prev) => (prev > 0 ? prev : w));
+  }, []);
+
+  // The group model — see `groupStore` for why it is a store rather than state
+  // or refs. Written on drop, gather and seeding, never per drag frame. Both
+  // stores are held in state rather than useMemo: React may drop a memo (it does
+  // on every Fast Refresh), which would swap in an empty store.
+  const [groupStore] = useState(createGroupStore);
+  const [viewStore] = useState(createViewStore);
+  const model = useSyncExternalStore(groupStore.subscribe, groupStore.get, groupStore.get);
 
   // The group being dragged, so it can be drawn on top declaratively (see
   // renderOrder). Konva's own moveToTop() would outlive the drag, because
   // react-konva reorders nodes only when the React child order changes.
   const [draggingId, setDraggingId] = useState<number | null>(null);
-
-  const viewStore = useMemo(() => createViewStore(), []);
 
   /** Call after every write to the stage transform — see `viewStore`. */
   const publishView = useCallback(() => {
@@ -322,30 +349,30 @@ export default function PuzzleBoard({
 
   const total = cols * rows;
 
+  // The width, when the wrapper had none yet as it attached: wait for one. A
+  // ResizeObserver reports at the next rendering update rather than inside
+  // observe(), and not at all while the page is hidden — hence the read above.
   useEffect(() => {
-    if (!wrapRef.current || containerW > 0) return;
-    const w = wrapRef.current.clientWidth;
-    if (w > 0) setContainerW(w);
-    else {
-      const ro = new ResizeObserver((entries) => {
-        const cw = entries[0]?.contentRect.width ?? 0;
-        if (cw > 0) {
-          setContainerW(cw);
-          ro.disconnect();
-        }
-      });
-      ro.observe(wrapRef.current);
-      return () => ro.disconnect();
-    }
-  }, [containerW]);
+    if (!wrap || containerW > 0) return;
+    const ro = new ResizeObserver((entries) => {
+      const cw = entries[0]?.contentRect.width ?? 0;
+      if (cw > 0) {
+        setContainerW(cw);
+        ro.disconnect();
+      }
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  }, [wrap, containerW]);
 
   const layout = useMemo(() => {
-    if (!image || containerW === 0) return null;
+    if (!image || !wrap || containerW === 0) return null;
     // Measured here rather than inside buildLayout so lib/puzzle stays free of
-    // the DOM. Like the container width it is read once, when the layout is
-    // built: a later window resize does not re-lay-out the board.
-    return buildLayout(puzzle, image, containerW, cols, rows, availableBoardHeight(wrapRef.current));
-  }, [image, containerW, puzzle, cols, rows]);
+    // the DOM, and here rather than once on mount so that every new layout —
+    // another piece count, say — gets the room the window has now. The width,
+    // like before, is read once: a later resize does not re-lay-out the board.
+    return buildLayout(puzzle, image, containerW, cols, rows, availableBoardHeight(wrap));
+  }, [image, wrap, containerW, puzzle, cols, rows]);
 
   // Seed the group model whenever the layout is (re)built: resume the stored solve
   // if there is a usable one, otherwise scatter.
@@ -356,8 +383,28 @@ export default function PuzzleBoard({
   // `resetNonce` changes. (Not for hydration's sake: this component is imported
   // with `ssr: false`, so it never renders on the server. Issue #7 was about
   // `PuzzleSolver`, which does.)
+  //
+  // Only then, though: React also re-runs effects when a hidden board is shown
+  // again (an <Activity>, a Suspense fallback) and twice on mount in Strict Mode.
+  // Reseeding for that would throw away every move since the last save — all of
+  // them where storage is unavailable — so a re-run with the same inputs keeps
+  // the model it has.
+  const seededFor = useRef<{
+    layout: Layout;
+    resetNonce: number;
+    loadSolveState: () => string | null;
+  } | null>(null);
   useEffect(() => {
     if (!layout) return;
+    const last = seededFor.current;
+    if (
+      last?.layout === layout &&
+      last.resetNonce === resetNonce &&
+      last.loadSolveState === loadSolveState
+    ) {
+      return;
+    }
+    seededFor.current = { layout, resetNonce, loadSolveState };
     const { stageW, stageH } = layout;
 
     const restored = restoreSolveState(
@@ -370,28 +417,20 @@ export default function PuzzleBoard({
     // the fractions as they were saved, so each restore clamps from the original
     // rather than from the last clamp — otherwise a few resizes would walk a group
     // inward step by step.
-    const groups = new Map<number, PieceGroup>();
-    const p2g = new Map<string, number>();
-    for (const g of restored ?? layout.initialGroups) {
-      groups.set(g.id, { ...g, members: [...g.members] });
-      for (const m of g.members) p2g.set(m, g.id);
-    }
-    groupsRef.current = groups;
-    pieceToGroupRef.current = p2g;
-    bump();
-    onProgress(groups.size, total);
-    // `resetNonce` is not read: it is a dependency so that starting over re-runs
+    groupStore.replace(restored ?? layout.initialGroups);
+    onProgress(groupStore.get().groups.size, total);
+    // `resetNonce` carries no data: it is a dependency so that starting over re-runs
     // this, finds the entry the solver has just deleted gone, and falls through to
     // a fresh scatter — even though the layout itself is unchanged. A `key` on the
     // component would do it too, but that remounts and re-rasterises every piece.
-  }, [layout, cols, rows, total, onProgress, bump, loadSolveState, resetNonce]);
+  }, [layout, cols, rows, total, onProgress, groupStore, loadSolveState, resetNonce]);
 
   /** Write the current group model to the solver's storage. */
   const persist = useCallback(
     (current: Layout) => {
       saveSolveState(
         serialiseSolveState({
-          groups: groupsRef.current.values(),
+          groups: groupStore.get().groups.values(),
           cols,
           rows,
           stageW: current.stageW,
@@ -400,23 +439,23 @@ export default function PuzzleBoard({
         }),
       );
     },
-    [saveSolveState, cols, rows],
+    [saveSolveState, cols, rows, groupStore],
   );
 
   const gather = useCallback(() => {
     if (!layout) return;
-    const groups = groupsRef.current;
     const moved = gatherLoose({
-      groups: groups.values(),
+      groups: groupStore.get().groups.values(),
       stageW: layout.stageW,
       stageH: layout.stageH,
       rectOf: (pid) => layout.pieces.get(pid)?.rect,
     });
     if (moved.length === 0) return;
-    for (const g of moved) groups.set(g.id, g);
-    bump();
+    groupStore.update((groups) => {
+      for (const g of moved) groups.set(g.id, g);
+    });
     persist(layout);
-  }, [layout, bump, persist]);
+  }, [layout, groupStore, persist]);
 
   useImperativeHandle(actionsRef, () => ({ gatherLoose: gather }), [gather]);
 
@@ -429,50 +468,54 @@ export default function PuzzleBoard({
     const current = layout;
     if (!current) return;
 
-    const groups = groupsRef.current;
-    const p2g = pieceToGroupRef.current;
+    if (!groupStore.get().groups.has(groupId)) return;
 
-    const start = groups.get(groupId);
-    if (!start) return;
-    start.x = node.x();
-    start.y = node.y();
+    const { changed, size } = groupStore.update((groups, p2g) => {
+      const start = groups.get(groupId)!;
+      start.x = node.x();
+      start.y = node.y();
 
-    const { survivorId, changed } = resolveConnections(
-      groups,
-      p2g,
-      groupId,
-      rows,
-      cols,
-      current.snapDist,
-    );
+      const { survivorId, changed } = resolveConnections(
+        groups,
+        p2g,
+        groupId,
+        rows,
+        cols,
+        current.snapDist,
+      );
 
-    // Dragging is unbounded so that a piece can always reach a neighbour parked
-    // against an edge; the drop is what has to land on the board. A merge snaps
-    // the survivor onto the stationary neighbour's origin AND unions the two
-    // extents, so either can push the assembly past the edge. Moving the origin
-    // shifts the whole assembly rigidly — connections are membership, not
-    // positions — so pulling it back in cannot break a connection.
-    // `resolveConnections` always returns a live id when given one.
-    const survivor = groups.get(survivorId)!;
-    const settled = settleGroup(
-      survivor,
-      (pid) => current.pieces.get(pid)?.rect,
-      current.stageW,
-      current.stageH,
-    );
-    if (settled) {
-      survivor.x = settled.x;
-      survivor.y = settled.y;
-      // react-konva writes the x/y props only when they differ from the previous
-      // render, and the node was moved by Konva behind React's back during the
-      // drag. Settling onto the value last rendered would therefore be skipped
-      // and leave the node where it was dropped — off the board, which is the
-      // whole thing being fixed. Sync the dragged node explicitly.
-      if (survivor.id === groupId) node.position({ x: survivor.x, y: survivor.y });
-    }
+      // Dragging is unbounded so that a piece can always reach a neighbour parked
+      // against an edge; the drop is what has to land on the board. A merge snaps
+      // the survivor onto the stationary neighbour's origin AND unions the two
+      // extents, so either can push the assembly past the edge. Moving the origin
+      // shifts the whole assembly rigidly — connections are membership, not
+      // positions — so pulling it back in cannot break a connection.
+      // `resolveConnections` always returns a live id when given one.
+      const survivor = groups.get(survivorId)!;
+      const settled = settleGroup(
+        survivor,
+        (pid) => current.pieces.get(pid)?.rect,
+        current.stageW,
+        current.stageH,
+      );
+      if (settled) {
+        survivor.x = settled.x;
+        survivor.y = settled.y;
+      }
+      return { changed, size: groups.size };
+    });
 
-    bump();
-    onProgress(groups.size, total);
+    // react-konva writes the x/y props only when they differ from the previous
+    // render, and the node was moved by Konva behind React's back during the
+    // drag. A settle or a snap onto the value last rendered would therefore be
+    // skipped and leave the node where it was dropped — possibly off the board,
+    // which is the whole thing being fixed. So the dropped node is put wherever
+    // the model now has its group; a group absorbed into a stationary neighbour
+    // is gone from the model, and its node unmounts.
+    const dropped = groupStore.get().groups.get(groupId);
+    if (dropped) node.position({ x: dropped.x, y: dropped.y });
+
+    onProgress(size, total);
 
     // Drops are far too rare for debouncing to buy anything. (The seeding effect
     // also replaces the model, and deliberately does not save — see there.)
@@ -481,7 +524,7 @@ export default function PuzzleBoard({
     // Only the drop that joins the last two groups: moving the finished picture
     // around afterwards also leaves one group, and must not celebrate again.
     // After the save, so nothing the celebration does can cost the solve.
-    if (changed && groups.size === 1) onSolved();
+    if (changed && size === 1) onSolved();
   }
 
   // --- Zoom & pan -----------------------------------------------------------
@@ -574,18 +617,28 @@ export default function PuzzleBoard({
     };
     container.addEventListener("touchmove", onMove, { passive: false });
     container.addEventListener("touchend", onEnd);
+    // A pinch the system takes over — a notification swipe, the back gesture —
+    // ends in touchcancel instead. Without this the stage would stay unpannable
+    // and the next pinch would zoom from the old distance on its first move.
+    container.addEventListener("touchcancel", onEnd);
     return () => {
       container.removeEventListener("touchmove", onMove);
       container.removeEventListener("touchend", onEnd);
+      container.removeEventListener("touchcancel", onEnd);
     };
   }, [zoomAround, layout]);
 
   // Largest groups at the back, so loose pieces are never buried under an
-  // assembled block (Konva hit-tests bitmaps by their full rectangle).
-  const groupList = renderOrder(groupsRef.current.values(), draggingId);
+  // assembled block (Konva hit-tests bitmaps by their full rectangle). Memoised on
+  // the snapshot, which is never modified once published, so a re-render for
+  // anything else keeps the array — and with it the overview's marker memo.
+  const groupList = useMemo(
+    () => renderOrder(model.groups.values(), draggingId),
+    [model, draggingId],
+  );
 
   return (
-    <div ref={wrapRef} className="board-wrap" style={{ width: "100%", position: "relative" }}>
+    <div ref={attachWrap} className="board-wrap" style={{ width: "100%", position: "relative" }}>
       {layout && (
         <>
           <ZoomControls
