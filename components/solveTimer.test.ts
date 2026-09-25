@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { NO_TIMING } from "@/lib/puzzle/solveState";
 import { readClock } from "@/lib/puzzle/timer";
 import { createSolveTimer } from "./solveTimer";
 
@@ -9,7 +10,7 @@ function elapsed(timer: ReturnType<typeof createSolveTimer>, now: number) {
 describe("createSolveTimer", () => {
   it("waits for the first piece to be picked up", () => {
     const timer = createSolveTimer();
-    timer.reset(null, false);
+    timer.reset(NO_TIMING, false);
     expect(elapsed(timer, 10_000)).toBe(0);
 
     timer.grab(10_000, true);
@@ -18,7 +19,7 @@ describe("createSolveTimer", () => {
 
   it("counts a move per drop", () => {
     const timer = createSolveTimer();
-    timer.reset(null, false);
+    timer.reset(NO_TIMING, false);
     timer.grab(0, true);
     timer.drop();
     timer.drop();
@@ -28,7 +29,7 @@ describe("createSolveTimer", () => {
 
   it("pauses while the tab is hidden and carries on when it is shown", () => {
     const timer = createSolveTimer();
-    timer.reset(null, false);
+    timer.reset(NO_TIMING, false);
     timer.grab(0, true);
 
     expect(timer.hide(5_000)).toBe(true);
@@ -49,7 +50,7 @@ describe("createSolveTimer", () => {
 
   it("does not start on a pick-up in a hidden tab, but once it is shown", () => {
     const timer = createSolveTimer();
-    timer.reset(null, false);
+    timer.reset(NO_TIMING, false);
     timer.grab(0, false);
     expect(elapsed(timer, 5_000)).toBe(0);
     timer.show(5_000);
@@ -66,7 +67,7 @@ describe("createSolveTimer", () => {
 
   it("stops for good once finished", () => {
     const timer = createSolveTimer();
-    timer.reset(null, false);
+    timer.reset(NO_TIMING, false);
     timer.grab(0, true);
     timer.drop();
 
@@ -87,12 +88,26 @@ describe("createSolveTimer", () => {
     expect(timer.timing(10_000)).toEqual({ elapsedMs: 30_000, moves: 9 });
   });
 
-  it("starts over from zero on a reset", () => {
+  it("runs an untimed solve but gives nothing to save or record", () => {
     const timer = createSolveTimer();
     timer.reset(null, false);
     timer.grab(0, true);
     timer.drop();
-    timer.reset(null, false);
+    expect(elapsed(timer, 4_000)).toBe(4_000);
+    expect(timer.timing(4_000)).toBeNull();
+    expect(timer.finish(5_000)).toBeNull();
+
+    // Starting over times it again.
+    timer.reset(NO_TIMING, false);
+    expect(timer.timing(0)).toEqual({ elapsedMs: 0, moves: 0 });
+  });
+
+  it("starts over from zero on a reset", () => {
+    const timer = createSolveTimer();
+    timer.reset(NO_TIMING, false);
+    timer.grab(0, true);
+    timer.drop();
+    timer.reset(NO_TIMING, false);
     expect(timer.timing(10_000)).toEqual({ elapsedMs: 0, moves: 0 });
   });
 

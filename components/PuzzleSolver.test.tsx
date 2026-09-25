@@ -28,8 +28,10 @@ const board = vi.hoisted<{
   /** The completion callback, so a test can finish the puzzle like a drop. */
   onSolved: (() => void) | null;
   /** The timer plumbing (#118), to drive it like the board does. */
-  readTiming: (() => { elapsedMs: number; moves: number }) | null;
-  onSeeded: ((timing: { elapsedMs: number; moves: number } | null) => void) | null;
+  readTiming: (() => { elapsedMs: number; moves: number } | null) | null;
+  onSeeded:
+    | ((timing: { elapsedMs: number; moves: number } | null, solved: boolean) => void)
+    | null;
   onPieceGrab: (() => void) | null;
   onPieceDrop: (() => void) | null;
   /** How often the solver asked the board to save outside a drop. */
@@ -78,8 +80,8 @@ vi.mock("./PuzzleBoard", () => {
     loadSolveState: () => string | null;
     saveSolveState: (raw: string) => void;
     resetNonce: number;
-    readTiming: () => { elapsedMs: number; moves: number };
-    onSeeded: (timing: { elapsedMs: number; moves: number } | null) => void;
+    readTiming: () => { elapsedMs: number; moves: number } | null;
+    onSeeded: (timing: { elapsedMs: number; moves: number } | null, solved: boolean) => void;
     onPieceGrab: () => void;
     onPieceDrop: () => void;
     actionsRef?: Ref<{ gatherLoose: () => void; save: () => void } | null>;
@@ -854,10 +856,14 @@ describe("PuzzleSolver", () => {
       await act(async () => board.onPieceDrop!());
     }
 
-    async function seed(timing: { elapsedMs: number; moves: number } | null = null) {
+    /** Seed as the board does: zero for a fresh scatter, `null` for an untimed restore. */
+    async function seed(
+      timing: { elapsedMs: number; moves: number } | null = { elapsedMs: 0, moves: 0 },
+      solved = false,
+    ) {
       container.innerHTML = serverHtml();
       await hydrate();
-      await act(async () => board.onSeeded!(timing));
+      await act(async () => board.onSeeded!(timing, solved));
     }
 
     it("waits for the first piece, then counts up", async () => {
@@ -880,11 +886,11 @@ describe("PuzzleSolver", () => {
       await setVisibility("hidden");
       expect(board.saves).toBe(1);
       await pass(60_000);
-      expect(board.readTiming!().elapsedMs).toBe(5_000);
+      expect(board.readTiming!()?.elapsedMs).toBe(5_000);
 
       await setVisibility("visible");
       await pass(2_000);
-      expect(board.readTiming!().elapsedMs).toBe(7_000);
+      expect(board.readTiming!()?.elapsedMs).toBe(7_000);
     });
 
     it("does not save an untouched board when the tab hides", async () => {
@@ -950,10 +956,38 @@ describe("PuzzleSolver", () => {
 
     it("keeps a restored finished puzzle stopped", async () => {
       board.groupsFor = () => 1;
-      await seed({ elapsedMs: 60_000, moves: 9 });
+      await seed({ elapsedMs: 60_000, moves: 9 }, true);
       await move(5_000);
       expect(board.readTiming!()).toEqual({ elapsedMs: 60_000, moves: 9 });
       expect(card()).toBeNull();
+    });
+
+    it("neither shows nor records a result for an untimed solve", async () => {
+      // Restored from before the timer: no clock ran while its pieces were moved.
+      await seed(null);
+      await move(3_000);
+      await act(async () => board.onSolved!());
+
+      expect(card()).toBeNull();
+      expect(localStorage.getItem("best:p1")).toBeNull();
+      expect(board.readTiming!()).toBeNull();
+      expect(celebration.celebrate).toHaveBeenCalledTimes(1);
+    });
+
+    it("pauses and saves when the page is left while the clock runs", async () => {
+      // Leaving within the app — a link, the language switch — hides no tab.
+      await seed();
+      await move(5_000);
+      await act(async () => root!.unmount());
+      root = undefined;
+      expect(board.saves).toBe(1);
+    });
+
+    it("does not save an untouched board when the page is left", async () => {
+      await seed();
+      await act(async () => root!.unmount());
+      root = undefined;
+      expect(board.saves).toBe(0);
     });
 
     it("clears the result card on start over", async () => {

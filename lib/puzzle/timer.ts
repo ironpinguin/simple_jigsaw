@@ -69,17 +69,20 @@ export interface SolveResult {
     times of a 12- and a 300-piece solve are not comparable. */
 export type BestTimes = Record<string, SolveResult>;
 
+/** A plausible stored time: finite and not negative. */
+export function isDuration(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0;
+}
+
+/** A plausible stored move count: a whole number, not negative. */
+export function isMoveCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
 function isResult(v: unknown): v is SolveResult {
   if (typeof v !== "object" || v === null) return false;
   const { ms, moves } = v as Record<string, unknown>;
-  return (
-    typeof ms === "number" &&
-    Number.isFinite(ms) &&
-    ms >= 0 &&
-    typeof moves === "number" &&
-    Number.isInteger(moves) &&
-    moves >= 0
-  );
+  return isDuration(ms) && isMoveCount(moves);
 }
 
 /** The stored best times, dropping any entry that is not a valid result. */

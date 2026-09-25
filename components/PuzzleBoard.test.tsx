@@ -175,7 +175,7 @@ describe("PuzzleBoard", () => {
   let onSolved: ReturnType<typeof vi.fn<() => void>>;
   let timing: { elapsedMs: number; moves: number };
   let onSeeded: ReturnType<
-    typeof vi.fn<(t: { elapsedMs: number; moves: number } | null) => void>
+    typeof vi.fn<(t: { elapsedMs: number; moves: number } | null, solved: boolean) => void>
   >;
   let onPieceGrab: ReturnType<typeof vi.fn<() => void>>;
   let onPieceDrop: ReturnType<typeof vi.fn<() => void>>;
@@ -376,18 +376,44 @@ describe("PuzzleBoard", () => {
       expect(readSolveTiming(saved.at(-1)!)).toEqual({ elapsedMs: 4_000, moves: 1 });
     });
 
-    it("hands the stored timing back when it restores, and none when it scatters", async () => {
-      await mount();
-      expect(onSeeded).toHaveBeenLastCalledWith(null);
-
-      timing = { elapsedMs: 83_000, moves: 12 };
-      await joinNext();
-      stored = saved.at(-1)!;
+    /** Mount again, resuming from the last save — `edit` may change it first. */
+    async function remount(edit: (state: Record<string, unknown>) => void = () => {}) {
+      const state = JSON.parse(saved.at(-1)!);
+      edit(state);
+      stored = JSON.stringify(state);
       await act(async () => root.unmount());
       root = createRoot(container);
       await mount();
+    }
 
-      expect(onSeeded).toHaveBeenLastCalledWith({ elapsedMs: 83_000, moves: 12 });
+    it("hands the stored timing back when it restores, and zero when it scatters", async () => {
+      await mount();
+      expect(onSeeded).toHaveBeenLastCalledWith({ elapsedMs: 0, moves: 0 }, false);
+
+      timing = { elapsedMs: 83_000, moves: 12 };
+      await joinNext();
+      await remount();
+
+      expect(onSeeded).toHaveBeenLastCalledWith({ elapsedMs: 83_000, moves: 12 }, false);
+    });
+
+    it("hands back no timing for a state stored before the timer", async () => {
+      await mount();
+      await joinNext();
+      await remount((state) => {
+        delete state.elapsedMs;
+        delete state.moves;
+      });
+
+      expect(onSeeded).toHaveBeenLastCalledWith(null, false);
+    });
+
+    it("says when the state it restored is already solved", async () => {
+      await mount();
+      await solve();
+      await remount();
+
+      expect(onSeeded).toHaveBeenLastCalledWith(expect.anything(), true);
     });
 
     it("saves on request, with the current timing", async () => {

@@ -30,9 +30,12 @@ export interface SolveTimer {
   get(): SolveTimerSnapshot;
   subscribe(listener: () => void): () => void;
   /**
-   * Start from what the board seeded: the timing stored with a restored state,
-   * or `null` for a fresh scatter. `finished` for a restored solved puzzle — its
-   * clock stays stopped and moving the finished picture counts nothing.
+   * Start from what the board seeded: zero for a fresh scatter, or the timing
+   * stored with a restored state — `null` if it has none, which leaves the solve
+   * untimed: the clock runs from zero, but `timing` and `finish` give `null`, so
+   * nothing it shows is saved or recorded as a result. `finished` for a restored
+   * solved puzzle — its clock stays stopped and moving the finished picture
+   * counts nothing.
    */
   reset(timing: SolveTiming | null, finished: boolean): void;
   /** A piece was picked up. */
@@ -42,9 +45,10 @@ export interface SolveTimer {
   /** Pauses; `true` if the clock was running, i.e. there is new time to save. */
   hide(now: number): boolean;
   show(now: number): void;
-  /** Stops the clock for good and returns the result; see `reset`. */
-  finish(now: number): SolveResult;
-  timing(now: number): SolveTiming;
+  /** Stops the clock for good and returns the result, `null` if untimed; see `reset`. */
+  finish(now: number): SolveResult | null;
+  /** What to save with the solve state, `null` if untimed; see `reset`. */
+  timing(now: number): SolveTiming | null;
 }
 
 export function createSolveTimer(): SolveTimer {
@@ -53,6 +57,7 @@ export function createSolveTimer(): SolveTimer {
   // to carry on — as opposed to a restored solve still waiting for its first move.
   let active = false;
   let finished = false;
+  let timed = true;
   const listeners = new Set<() => void>();
 
   function publish(next: SolveTimerSnapshot) {
@@ -70,6 +75,7 @@ export function createSolveTimer(): SolveTimer {
     reset(timing, isFinished) {
       active = false;
       finished = isFinished;
+      timed = timing !== null;
       publish({ clock: clockAt(timing?.elapsedMs ?? 0), moves: timing?.moves ?? 0 });
     },
     grab(now, visible) {
@@ -92,8 +98,9 @@ export function createSolveTimer(): SolveTimer {
     finish(now) {
       finished = true;
       publish({ ...snapshot, clock: pauseClock(snapshot.clock, now) });
-      return { ms: snapshot.clock.elapsedMs, moves: snapshot.moves };
+      return timed ? { ms: snapshot.clock.elapsedMs, moves: snapshot.moves } : null;
     },
-    timing: (now) => ({ elapsedMs: readClock(snapshot.clock, now), moves: snapshot.moves }),
+    timing: (now) =>
+      timed ? { elapsedMs: readClock(snapshot.clock, now), moves: snapshot.moves } : null,
   };
 }

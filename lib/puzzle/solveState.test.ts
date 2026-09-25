@@ -396,13 +396,21 @@ describe("the solve timing", () => {
     expect(deserialiseSolveState(raw, BOARD)).toHaveLength(2);
   });
 
-  it("reads an entry from before the timer as zero", () => {
+  it("reads an entry from before the timer as untimed", () => {
+    // Not as zero: its pieces were moved with no clock running, and finishing it
+    // in a few seconds would otherwise stand as the best time.
     const older = JSON.parse(stored());
     delete older.elapsedMs;
     delete older.moves;
     const raw = JSON.stringify(older);
-    expect(readSolveTiming(raw)).toEqual({ elapsedMs: 0, moves: 0 });
+    expect(readSolveTiming(raw)).toBeNull();
     // Still restorable: the fields were added without a version bump.
+    expect(deserialiseSolveState(raw, BOARD)).toHaveLength(2);
+  });
+
+  it("keeps an untimed solve untimed across a save", () => {
+    const raw = serialiseSolveState({ groups: GROUPS, ...BOARD, updatedAt: 1000, timing: null });
+    expect(readSolveTiming(raw)).toBeNull();
     expect(deserialiseSolveState(raw, BOARD)).toHaveLength(2);
   });
 
@@ -414,8 +422,8 @@ describe("the solve timing", () => {
     expect(readSolveTiming(tampered(patch))).toEqual(expected);
   });
 
-  it.each([null, "", "{nope", "null"])("reads %j as zero", (raw) => {
-    expect(readSolveTiming(raw)).toEqual({ elapsedMs: 0, moves: 0 });
+  it.each([null, "", "{nope", "null"])("reads %j as untimed", (raw) => {
+    expect(readSolveTiming(raw)).toBeNull();
   });
 });
 

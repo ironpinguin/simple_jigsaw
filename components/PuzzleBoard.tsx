@@ -31,6 +31,7 @@ import {
   type Rect,
 } from "@/lib/puzzle/board";
 import {
+  NO_TIMING,
   readSolveTiming,
   restoreSolveState,
   serialiseSolveState,
@@ -298,11 +299,13 @@ interface Props {
    * The solve timer (#118) is the solver's; the board only carries it to and
    * from storage and says when a piece is picked up and put down. `readTiming`
    * is read at every save, so it has to be current by then — a drop calls
-   * `onPieceDrop` first. `onSeeded` gets the timing stored with a state it
-   * restored, or `null` when it scattered afresh.
+   * `onPieceDrop` first; `null` saves the solve as untimed. `onSeeded` gets
+   * zero when the board scattered afresh, the timing stored with a state it
+   * restored — `null` if that state has none (see `readSolveTiming`) — and
+   * whether the seeded board is already solved.
    */
-  readTiming?: () => SolveTiming;
-  onSeeded?: (timing: SolveTiming | null) => void;
+  readTiming?: () => SolveTiming | null;
+  onSeeded?: (timing: SolveTiming | null, solved: boolean) => void;
   onPieceGrab?: () => void;
   onPieceDrop?: () => void;
   /**
@@ -445,8 +448,9 @@ export default function PuzzleBoard({
     // rather than from the last clamp — otherwise a few resizes would walk a group
     // inward step by step.
     groupStore.replace(restored ?? layout.initialGroups);
-    onProgress(groupStore.get().groups.size, total);
-    onSeeded?.(restored ? readSolveTiming(raw) : null);
+    const size = groupStore.get().groups.size;
+    onProgress(size, total);
+    onSeeded?.(restored ? readSolveTiming(raw) : NO_TIMING, size === 1);
     // `resetNonce` carries no data: it is a dependency so that starting over re-runs
     // this, finds the entry the solver has just deleted gone, and falls through to
     // a fresh scatter — even though the layout itself is unchanged. A `key` on the

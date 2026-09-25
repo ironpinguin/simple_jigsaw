@@ -384,12 +384,17 @@ select:focus {
   color: var(--muted);
   white-space: nowrap;
 }
-/* Floats over the top of the board, clear of the preview in the corner. */
+/* Floats over the top of the board, centred. Centred with auto margins between
+   left and right rather than left: 50% and a translate: with only `left` set,
+   the shrink-to-fit width is capped at the half to its right, which on a phone
+   wraps the card into a narrow column. */
 .solve-result {
   position: absolute;
   top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
   z-index: 15;
   display: flex;
   align-items: center;

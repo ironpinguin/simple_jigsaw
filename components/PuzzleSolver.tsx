@@ -1,7 +1,15 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useTranslations } from "next-intl";
 import {
   CircleHelp,
@@ -197,8 +205,6 @@ export default function PuzzleSolver({
   // --- The solve timer (#118) ------------------------------------------------
 
   const [timer] = useState(createSolveTimer);
-  /** What the board last reported, for `onSeeded` — which it calls right after. */
-  const solvedRef = useRef(false);
   const bestKey = bestTimesKey(puzzle.id);
 
   /** The best result for the current piece count; read after mount, like `pc:`. */
@@ -221,13 +227,12 @@ export default function PuzzleSolver({
   const onProgress = useCallback((groups: number, boardTotal: number) => {
     setProgress({ groups, total: boardTotal });
     setSolved(groups === 1);
-    solvedRef.current = groups === 1;
   }, []);
 
   // All four are stable, which the board needs of `onSeeded` (a dependency of its
   // seeding effect) and `readTiming` (of its save).
   const onSeeded = useCallback(
-    (timing: SolveTiming | null) => timer.reset(timing, solvedRef.current),
+    (timing: SolveTiming | null, alreadySolved: boolean) => timer.reset(timing, alreadySolved),
     [timer],
   );
   const readTiming = useCallback(() => timer.timing(Date.now()), [timer]);
@@ -240,16 +245,27 @@ export default function PuzzleSolver({
   // Hiding the tab pauses the clock — and saves, since the time since the last
   // drop exists nowhere else. Browsers also hide the page on a reload or when it
   // is closed, which is what makes the time survive those.
-  useEffect(() => {
-    function onVisibility() {
-      if (document.visibilityState === "hidden") {
-        if (timer.hide(Date.now())) boardActions.current?.save();
-      } else {
-        timer.show(Date.now());
-      }
+  //
+  // Leaving the page within the app — a link, the language switch — hides
+  // nothing, so the cleanup pauses and saves too. That is why this is a layout
+  // effect: its cleanup runs before the board's own (a child's), while
+  // `boardActions` is still attached; a passive cleanup would find the handle
+  // already cleared. Set up again after such a cleanup (an <Activity> shown
+  // again, Fast Refresh), it carries on as a shown tab does.
+  useLayoutEffect(() => {
+    function pauseAndSave() {
+      if (timer.hide(Date.now())) boardActions.current?.save();
     }
+    function onVisibility() {
+      if (document.visibilityState === "hidden") pauseAndSave();
+      else timer.show(Date.now());
+    }
+    if (document.visibilityState !== "hidden") timer.show(Date.now());
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      pauseAndSave();
+    };
   }, [timer]);
 
   // The celebration hangs off this, not off `solved`: `onProgress` also marks a
@@ -260,19 +276,23 @@ export default function PuzzleSolver({
     // The board saved just before calling this, with the clock still running;
     // saving again stores the time the solve is shown with.
     boardActions.current?.save();
-    const recorded = recordBestTime(
-      withStorage((s) => s.getItem(bestKey), null),
-      pieceCount,
-      outcome,
-    );
-    withStorage((s) => s.setItem(bestKey, recorded.raw), undefined);
-    setBest(recorded.best);
-    setResult({
-      outcome,
-      beaten: recorded.isNew ? recorded.previous : null,
-      best: recorded.best,
-      isNew: recorded.isNew,
-    });
+    // An untimed solve (see `readSolveTiming`) has no time worth showing, and
+    // recording it would set a best nobody could beat.
+    if (outcome) {
+      const recorded = recordBestTime(
+        withStorage((s) => s.getItem(bestKey), null),
+        pieceCount,
+        outcome,
+      );
+      withStorage((s) => s.setItem(bestKey, recorded.raw), undefined);
+      setBest(recorded.best);
+      setResult({
+        outcome,
+        beaten: recorded.isNew ? recorded.previous : null,
+        best: recorded.best,
+        isNew: recorded.isNew,
+      });
+    }
     celebrate({ sound });
   }, [sound, timer, bestKey, pieceCount]);
 
