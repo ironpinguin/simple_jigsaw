@@ -3,8 +3,17 @@
 // Pure and dependency-free so client components can import the value sets;
 // the reporter-IP hashing lives in lib/report-ip.ts (node:crypto, server-only).
 
-/** What a *person* may choose in the report dialog. */
-export const REPORT_CATEGORIES = ["NSFW", "ILLEGAL", "COPYRIGHT", "OTHER"] as const;
+/**
+ * What a *person* may choose in the report dialog. NAME — an offensive display
+ * name on a competition leaderboard (#119) — is only offered where there is a
+ * leaderboard; see `categoriesFor`.
+ */
+export const REPORT_CATEGORIES = ["NSFW", "ILLEGAL", "COPYRIGHT", "NAME", "OTHER"] as const;
+
+/** The categories the dialog offers for a puzzle, with or without a leaderboard. */
+export function categoriesFor(hasLeaderboard: boolean): readonly UserReportCategory[] {
+  return hasLeaderboard ? REPORT_CATEGORIES : REPORT_CATEGORIES.filter((c) => c !== "NAME");
+}
 
 /**
  * Categories only the server produces. Kept out of REPORT_CATEGORIES because

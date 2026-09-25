@@ -66,6 +66,9 @@ export default async function PrivacyPage({
       <h3>{t("puzzlesTitle")}</h3>
       <p>{t("puzzlesText")}</p>
 
+      <h3>{t("leaderboardTitle")}</h3>
+      <p>{t("leaderboardText")}</p>
+
       <h3>{t("imagesTitle")}</h3>
       <p>{t("imagesText")}</p>
       {/* Written for every upload regardless of mode — even `off` produces a

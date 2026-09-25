@@ -51,6 +51,24 @@ function openAndFill(message: string) {
 }
 
 describe("ReportDialog", () => {
+  it("offers the leaderboard-name category only where there is a leaderboard", () => {
+    const names = () =>
+      [...container.querySelectorAll<HTMLInputElement>("input[type=radio]")].map((r) => r.value);
+
+    mount();
+    act(() => buttonByText(messages.report.reportLink)!.click());
+    expect(names()).not.toContain("NAME");
+
+    act(() => {
+      root.render(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <ReportDialog puzzleId="p1" hasLeaderboard />
+        </NextIntlClientProvider>,
+      );
+    });
+    expect(names()).toContain("NAME");
+  });
+
   it("keeps submit disabled until the message is long enough", () => {
     mount();
     openAndFill("short");

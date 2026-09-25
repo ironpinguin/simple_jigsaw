@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Competitions with a leaderboard.** Under *My puzzles* the owner of a
+  public puzzle can turn it into a competition, with a piece count that is
+  the same for everyone and an optional start and end. On the puzzle page a
+  trophy opens the leaderboard with display names, times and moves. Anyone
+  with an account can take part; the first entry asks for a display name,
+  which can be changed under *My puzzles* and is the only thing shown to
+  others. Times are checked against a start signed by the server and against
+  a minimum time for the piece count, so an implausible time is refused.
+  Administrators can remove single entries from the leaderboard, and a
+  display name can be reported with a new *Offensive name on the leaderboard*
+  category. The data export includes your leaderboard entries, and the
+  privacy policy describes the new data. (#119)
 - A solve timer in the puzzle toolbar. It starts with the first piece you
   pick up, pauses while the tab is in the background, and carries on after a
   reload where it left off, together with the number of moves. When the puzzle

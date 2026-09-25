@@ -35,6 +35,7 @@ export async function GET() {
         id: true,
         email: true,
         name: true,
+        displayName: true,
         role: true,
         locale: true,
         emailVerified: true,
@@ -64,11 +65,23 @@ export async function GET() {
         seed: true,
         isPublic: true,
         createdAt: true,
+        competition: { select: { pieceCount: true, startsAt: true, endsAt: true } },
+      },
+    });
+
+    const leaderboardEntries = await prisma.leaderboardEntry.findMany({
+      where: { userId: session.id },
+      orderBy: { achievedAt: "desc" },
+      select: {
+        ms: true,
+        moves: true,
+        achievedAt: true,
+        competition: { select: { puzzleId: true, puzzle: { select: { title: true } } } },
       },
     });
 
     const baseUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
-    const payload = buildAccountExport({ user, puzzles, baseUrl });
+    const payload = buildAccountExport({ user, puzzles, leaderboardEntries, baseUrl });
 
     // Dated filename so repeated downloads do not overwrite each other, and
     // no-store because this is the whole account in one response.

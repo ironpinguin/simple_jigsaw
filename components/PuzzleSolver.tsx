@@ -686,6 +686,7 @@ export default function PuzzleSolver({
       {isPublic && (
         <ReportDialog
           puzzleId={puzzle.id}
+          hasLeaderboard={competition !== null}
           open={reporting}
           onClose={() => {
             setReporting(false);
