@@ -27,7 +27,7 @@ yarn-error.log*
 /prisma/*.db
 /prisma/*.db-journal
 # derived schema for non-default DATABASE_PROVIDER (see scripts/prisma.mjs)
-/prisma/.active.prisma
+/prisma/.sqlite.prisma
 
 # generated prisma client (run `prisma generate`)
 /lib/generated/

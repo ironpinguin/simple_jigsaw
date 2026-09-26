@@ -102,10 +102,12 @@ jobs:
   # with every gate green, and the break would surface at release-images — which
   # runs only on a tag, after a tag the release process never moves (#62).
   #
-  # Built through compose rather than a build-args list of its own: both
-  # published variants are already defined in docker-compose.yml (postgresql)
-  # and docker-compose.sqlite.yml (sqlite), so this cannot drift from what
-  # actually ships. Note the -f: a bare `docker compose build` merges
+  # Built through compose: docker-compose.yml (postgresql) and
+  # docker-compose.sqlite.yml (sqlite) are the two ways the one published image
+  # is run, so this cannot drift from what actually ships. Both stacks are
+  # started, because since #112 the provider is chosen at container start —
+  # an image that builds fine can still fail to boot against either database.
+  # Note the -f: a bare `docker compose build` merges
   # docker-compose.override.yml and builds the *dev* target, proving nothing.
   #
   # Paths-filtered, because the gates already cost four jobs per Dependabot PR
@@ -115,7 +117,7 @@ jobs:
   # counted as a pass, which is a confusing thing to rely on. When nothing
   # relevant changed this job is a checkout and a grep.
   image:
-    # Tags are release-images' job; it builds both variants and pushes them.
+    # Tags are release-images' job; it builds the image and pushes it.
     if: "!startsWith(github.ref, 'refs/tags/v')"
     runs-on: ubuntu-latest
     steps:
@@ -133,10 +135,13 @@ jobs:
           fi
           # Everything the image build itself consumes: the recipe, the compose
           # files that define the two variants, the dependency manifests npm ci
-          # installs from, and the Prisma schema plus the script the build stage
-          # runs to generate its client. App source is already covered by the
-          # build job, which runs the same `next build`.
-          relevant='^(Dockerfile|\.dockerignore|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|scripts/prisma\.mjs|\.github/workflows/ci\.yml$)'
+          # installs from, the Prisma schema, its config and the script the
+          # build stage runs to generate both clients, and the scripts the image
+          # ships. App source is otherwise covered by the build job, which runs
+          # the same `next build` — except lib/db.ts, which picks the client at
+          # container start: a build proves nothing about that, only booting
+          # both stacks does.
+          relevant='^(Dockerfile|\.dockerignore|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|prisma\.config\.ts|scripts/|lib/db\.ts|\.github/workflows/ci\.yml$)'
           changed="$(git diff --name-only \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}")"
@@ -148,7 +153,7 @@ jobs:
             echo "affected=false" >> "$GITHUB_OUTPUT"
             echo "No image-relevant file changed; not building."
           fi
-      - name: Build both published variants
+      - name: Build the image
         if: steps.scope.outputs.affected == 'true'
         run: |
           docker compose -f docker-compose.yml build app
@@ -163,12 +168,26 @@ jobs:
         run: |
           docker compose -f docker-compose.sqlite.yml up -d --wait --wait-timeout 180
           curl -sf --retry 3 http://localhost:3000/api/health/ready
-      - name: Container logs, if it did not come up
+      - name: Tear down the SQLite stack
+        if: steps.scope.outputs.affected == 'true'
+        run: docker compose -f docker-compose.sqlite.yml down -v
+      # The same image against Postgres. Both stacks bind port 3000, hence one
+      # after the other.
+      - name: Start the Postgres stack and wait for it to be healthy
+        if: steps.scope.outputs.affected == 'true'
+        run: |
+          docker compose -f docker-compose.yml up -d --wait --wait-timeout 180
+          curl -sf --retry 3 http://localhost:3000/api/health/ready
+      - name: Container logs, if a stack did not come up
         if: failure() && steps.scope.outputs.affected == 'true'
-        run: docker compose -f docker-compose.sqlite.yml logs --no-color --tail 80
+        run: |
+          docker compose -f docker-compose.sqlite.yml logs --no-color --tail 80
+          docker compose -f docker-compose.yml logs --no-color --tail 80
       - name: Tear down
         if: always() && steps.scope.outputs.affected == 'true'
-        run: docker compose -f docker-compose.sqlite.yml down -v
+        run: |
+          docker compose -f docker-compose.sqlite.yml down -v
+          docker compose -f docker-compose.yml down -v
 
   # Static application security testing with Semgrep (community rulesets, no
   # token required). Fails the job on any finding and uploads SARIF to the
@@ -212,7 +231,7 @@ jobs:
           sarif_file: semgrep.sarif
 
   # -------------------------------------------------------------------------
-  # Release (tags only): build versioned Docker images and push them to the
+  # Release (tags only): build the versioned Docker image and push it to the
   # GitHub Container Registry, then create a GitHub Release.
   # -------------------------------------------------------------------------
   release-images:
@@ -222,16 +241,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # PostgreSQL image: :<version> and :latest
-          - db_provider: postgresql
-            tag_suffix: ""
-          # SQLite image: :<version>-sqlite and :latest-sqlite
-          - db_provider: sqlite
-            tag_suffix: "-sqlite"
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -247,15 +256,21 @@ jobs:
           file: ./Dockerfile
           target: runner
           push: true
-          build-args: |
-            DATABASE_PROVIDER=${{ matrix.db_provider }}
+          # One image for both databases since #112; DATABASE_PROVIDER picks one
+          # at container start. The -sqlite tags are the same image, kept so
+          # that installs pinned to :latest-sqlite keep updating — they already
+          # set DATABASE_PROVIDER=sqlite, which is all the image needs.
+          # Deprecated in the release after 0.7.0; drop these two lines in a
+          # later one, together with the -sqlite line in release-github.
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}${{ matrix.tag_suffix }}
-            ghcr.io/${{ github.repository }}:latest${{ matrix.tag_suffix }}
-          cache-from: type=gha,scope=${{ matrix.db_provider }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.db_provider }}
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.ref_name }}-sqlite
+            ghcr.io/${{ github.repository }}:latest-sqlite
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
 
-  # Create a GitHub Release for the tag once both images are pushed.
+  # Create a GitHub Release for the tag once the image is pushed.
   release-github:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [release-images]
@@ -279,8 +294,8 @@ jobs:
           Automated release for $TAG.
           See the [changelog](https://github.com/$REPO/blob/$TAG/CHANGELOG.md) for everything in this release.
 
-          Images:
-          - \`$IMAGE:$TAG\` (PostgreSQL)
-          - \`$IMAGE:$TAG-sqlite\` (SQLite)
+          Image: \`$IMAGE:$TAG\` — PostgreSQL or SQLite, chosen with
+          \`DATABASE_PROVIDER\` at container start. \`$IMAGE:$TAG-sqlite\` is
+          the same image, deprecated and kept for existing SQLite installs.
           EOF
           gh release create "$TAG" --title "Release $TAG" --notes-file notes.md

@@ -99,6 +99,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than the address. (#50)
 
 ### Changed
+- **One Docker image for PostgreSQL and SQLite.** The image now carries both
+  database clients, and `DATABASE_PROVIDER` picks one when the container
+  starts, so switching databases is a variable rather than a different image.
+  `:latest-sqlite` and `:<version>-sqlite` are still published and are the same
+  image (now deprecated, see below); existing SQLite installs keep working
+  without changes, since they already set `DATABASE_PROVIDER=sqlite`. The `DATABASE_PROVIDER` build argument
+  is gone. A Kubernetes `purge-expired` job needs the config map as well as the
+  secret now (see `deploy/kubernetes/README.md`). Prisma is updated to 7, which
+  connects through a driver adapter per database. For a local SQLite database
+  outside Docker, a relative `DATABASE_URL` such as `file:./prisma/dev.db` is
+  now resolved from the project directory rather than from `prisma/`, and
+  `npm run db:push` and the maintenance scripts (`make-admin`, `create-user`,
+  `purge-expired`) read `DATABASE_URL` and `DATABASE_PROVIDER` from `.env` the
+  way the app does; variables set in the environment still win. (#112)
 - The puzzle toolbar now fits in a single row, so the board gets the height
   the controls used to take. Preview, overview, *Gather loose pieces* and
   applause are icon buttons with a tooltip; the piece count, *Share link*,
@@ -126,6 +140,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exactly as before — but it now runs in the Node.js server process instead of
   the Edge runtime, and `next dev` and `next build` no longer print a
   deprecation warning on every start. Nothing to configure when deploying. (#85)
+
+### Deprecated
+- The `:latest-sqlite` and `:<version>-sqlite` image tags. They point at the
+  same image as `:latest` and `:<version>` and will stop being published in a
+  later release. Switch to `ghcr.io/ironpinguin/simple_jigsaw:latest` (or a
+  version tag) and keep `DATABASE_PROVIDER=sqlite` set. (#112)
 
 ## [0.7.0] - 2026-09-20
 

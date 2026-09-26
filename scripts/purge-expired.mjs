@@ -14,12 +14,10 @@
 // On the host, provide DATABASE_URL yourself:
 //   DATABASE_URL=postgresql://jigsaw:jigsaw@localhost:5432/jigsaw npm run purge-expired
 
-import pkg from "../lib/generated/prisma/index.js";
-
-const { PrismaClient } = pkg;
+import { createPrisma } from "./db-client.mjs";
 
 async function main() {
-  const prisma = new PrismaClient();
+  const prisma = createPrisma();
   try {
     // Mirrors expiredTokenFilter() in lib/token-ttl.ts, which is the source of
     // truth for the boundary — repeated because this file is plain ESM and

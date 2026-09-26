@@ -6,9 +6,7 @@
 // On the host, provide DATABASE_URL yourself:
 //   DATABASE_URL=postgresql://jigsaw:jigsaw@localhost:5432/jigsaw npm run make-admin -- you@example.com
 
-import pkg from "../lib/generated/prisma/index.js";
-
-const { PrismaClient } = pkg;
+import { createPrisma } from "./db-client.mjs";
 
 async function main() {
   const email = (process.argv[2] ?? "").toLowerCase().trim();
@@ -17,7 +15,7 @@ async function main() {
     process.exit(1);
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createPrisma();
   try {
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {

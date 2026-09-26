@@ -295,11 +295,10 @@ problem rather than a functional one. That is the opposite of a missing
 unable to run, so uploads are held for review instead of being published
 unchecked.
 
-**One exception to "everything is environment":** the database provider is
-baked. `Dockerfile` takes `ARG DATABASE_PROVIDER=postgresql` and the generated
-Prisma client must match it at runtime, so switching between PostgreSQL and
-SQLite needs a differently built image, not a different variable —
-`docker-compose.sqlite.yml` builds its own for that reason.
+**The database provider is environment too** since #112. The image carries a
+generated Prisma client for PostgreSQL and one for SQLite, and
+`DATABASE_PROVIDER` picks one at container start (`lib/db.ts`). Switching
+databases is a different variable, not a differently built image.
 
 The policy's recipients section names all four message types and says that the
 two notice mails also carry a puzzle title, so it matches the flows above

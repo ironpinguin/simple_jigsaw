@@ -6,10 +6,8 @@
 // This is an operator action: it bypasses the ban list and marks the account
 // verified so it can log in immediately.
 
-import pkg from "../lib/generated/prisma/index.js";
+import { createPrisma } from "./db-client.mjs";
 import bcrypt from "bcryptjs";
-
-const { PrismaClient } = pkg;
 
 async function main() {
   const args = process.argv.slice(2);
@@ -39,7 +37,7 @@ async function main() {
   }
 
   const e = email.toLowerCase().trim();
-  const prisma = new PrismaClient();
+  const prisma = createPrisma();
   try {
     if (await prisma.user.findUnique({ where: { email: e } })) {
       console.error(`A user with that email already exists: ${e}`);

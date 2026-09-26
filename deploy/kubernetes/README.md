@@ -99,10 +99,10 @@ spec:
             - name: purge
               image: ghcr.io/ironpinguin/simple_jigsaw:latest
               command: ["npm", "run", "purge-expired"]
-              # Only the secret: the script needs DATABASE_URL and nothing
-              # else, and the Prisma client is baked for the build-time
-              # provider, so DATABASE_PROVIDER from the configmap would not
-              # change what it talks to.
+              # DATABASE_URL from the secret and DATABASE_PROVIDER from the
+              # configmap: the image carries a client for both databases and
+              # the script picks one the way the app does.
               envFrom:
+                - configMapRef: { name: jigsaw-config }
                 - secretRef: { name: jigsaw-secrets }
 ```

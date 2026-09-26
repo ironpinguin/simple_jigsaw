@@ -5,10 +5,10 @@
 #   runner – slim(ish) production image that runs `next start`
 #
 # Both dev and runner sync the Prisma schema with `prisma db push` on startup,
-# so no separate migration step is required. The datasource provider is chosen
-# via DATABASE_PROVIDER ("postgresql" default | "sqlite"); the build stage bakes
-# the matching Prisma client, so pass it as a build arg for a SQLite image
-# (docker-compose.sqlite.yml does this).
+# so no separate migration step is required. One image serves both databases:
+# the build generates a Prisma client for each provider, and DATABASE_PROVIDER
+# ("postgresql" default | "sqlite") picks one at container start — for the
+# schema sync and for the app (lib/db.ts). It is not a build arg any more.
 
 FROM node:26-alpine AS base
 WORKDIR /app
@@ -18,8 +18,10 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 # ---- dependencies ----
 FROM base AS deps
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
+# postinstall generates both Prisma clients through this script.
+COPY scripts/prisma.mjs ./scripts/prisma.mjs
 RUN npm ci
 
 # ---- NSFW model ----
@@ -47,15 +49,17 @@ CMD ["sh", "-c", "npm run db:generate && npm run db:push && exec npx next dev"]
 
 # ---- production build ----
 FROM base AS build
-ARG DATABASE_PROVIDER=postgresql
-ENV DATABASE_PROVIDER=$DATABASE_PROVIDER
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Generate the Prisma client for the chosen provider, then build (Next bundles
-# the client, so build- and run-time providers must match).
-RUN node scripts/prisma.mjs generate && npx next build
+# Generate both Prisma clients, then build. Next bundles both; lib/db.ts
+# constructs only the one DATABASE_PROVIDER names at runtime.
+#
+# .next/cache is the build's own cache — turbopack's, roughly 180 MB — and
+# nothing at runtime reads it; the runner would otherwise ship it. Next creates
+# the directory again if it needs one (the image optimiser's cache).
+RUN node scripts/prisma.mjs generate && npx next build && rm -rf .next/cache
 
 # ---- production runner ----
 FROM base AS runner
@@ -67,10 +71,11 @@ COPY --from=build /app/public ./public
 COPY --from=build /app/lib/generated ./lib/generated
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/next.config.ts ./next.config.ts
+COPY --from=build /app/prisma.config.ts ./prisma.config.ts
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/scripts ./scripts
 COPY --from=model /app/models ./models
 EXPOSE 3000
-# The client is already baked for the build-time provider; just sync the schema
-# to the database for the active provider, then start.
+# Both clients are already generated; sync the schema to the database for the
+# provider this container is started with, then start.
 CMD ["sh", "-c", "npm run db:push && exec npx next start"]

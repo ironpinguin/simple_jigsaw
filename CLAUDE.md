@@ -48,10 +48,13 @@ with Vitest and easy to extend.
   `messages/en.json` *and* `messages/it.json`. DE is the default; the locale
   lives in the URL prefix (`/de`, `/en`, `/it`), routing in `i18n/routing.ts`.
   API error messages and transactional mails are translated too.
-- **Two database providers** — `prisma/schema.prisma` is the single source, and
-  `scripts/prisma.mjs` rewrites only the `datasource` line for SQLite. SQLite
-  has no Prisma enums, so role/type columns are strings validated in code (see
-  `lib/roles.ts`). Schema changes must work on both; use `npm run db:push`.
+- **Two database providers, one image** — `prisma/schema.prisma` is the single
+  source; `scripts/prisma.mjs` derives the SQLite schema and generates a client
+  for each, and `lib/db.ts` picks one (with its Prisma 7 driver adapter) from
+  `DATABASE_PROVIDER` at boot. The app is typed against the SQLite client, the
+  stricter of the two. SQLite has no Prisma enums, so role/type columns are
+  strings validated in code (see `lib/roles.ts`). Schema changes must work on
+  both; use `npm run db:push`.
 - **Puzzle core** — `lib/puzzle/` is pure and seed-deterministic (`prng.ts`).
   Keep it free of React and I/O so it stays testable; edges are shared between
   neighbours, so a tab always matches its blank.

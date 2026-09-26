@@ -80,7 +80,7 @@ body:
       description: |
         Release-Tag, Image-Tag oder Commit-Hash.
         Release tag, image tag or commit hash.
-      placeholder: v0.4.0 · latest-sqlite · b1bfd5e
+      placeholder: v0.4.0 · latest · b1bfd5e
     validations:
       required: true
 
