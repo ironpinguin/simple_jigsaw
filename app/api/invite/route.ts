@@ -1,31 +1,15 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import { consumeToken, recordClaimFailure, type ClaimRefusal } from "@/lib/tokens";
+import type { ClaimRefusal } from "@/lib/tokens";
+import { Refused, redeemToken } from "@/lib/token-redeem";
 import { checkEmailBanned } from "@/lib/moderation";
-import { isTransientTransactionError } from "@/lib/prisma-errors";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
 import { getErrorT, resolveBrowserLocale } from "@/lib/i18n-server";
 
 /** Why an activation was refused, beyond the two a claim itself can report. */
 type InviteRefusal = ClaimRefusal | "accountNotFound" | "emailBanned";
-
-/**
- * A refusal decided inside the transaction. Thrown rather than returned so the
- * claim rolls back with it — the route's answer is chosen from it afterwards.
- * Without this an invitation died on a moderation decision that an admin can
- * reverse, while the link it killed stayed dead (#50).
- */
-class Refused extends Error {
-  constructor(
-    readonly reason: InviteRefusal,
-    /** Whose activation this was, once the claim has told us. For the log. */
-    readonly userId?: string,
-  ) {
-    super(reason);
-  }
-}
 
 /**
  * The answer to a moderation refusal, and the log line that goes with it.
@@ -70,7 +54,16 @@ export async function POST(request: Request) {
   // checks that go with it are still the ones inside the transaction, so
   // nothing here can be raced into an activation — only into wasted work.
   const known = await prisma.verificationToken.findFirst({
-    where: { token: parsed.data.token, type: "INVITE" },
+    where: {
+      token: parsed.data.token,
+      type: "INVITE",
+      // An expired row survives its click — the claim's delete rolls back with
+      // the refusal (lib/tokens.ts) — so without this one expired invite could
+      // be replayed for a bcrypt round and a write transaction each time until
+      // the retention sweep takes it. `gte` because isExpired refuses only `<`:
+      // the same boundary the claim and the sweep draw.
+      expiresAt: { gte: new Date() },
+    },
     select: { user: { select: { id: true, email: true } } },
   });
   if (!known) {
@@ -101,14 +94,20 @@ export async function POST(request: Request) {
   // write that threw each used to leave the invitee unactivated with a dead
   // link, and INVITE is minted only by an admin (no self-service resend), so
   // only an operator could rescue them.
-  try {
-    await prisma.$transaction(async (tx) => {
-      const claim = await consumeToken(parsed.data.token, "INVITE", tx);
-      if (!claim.ok) throw new Refused(claim.reason);
-
-      const user = await tx.user.findUnique({ where: { id: claim.userId } });
-      if (!user) throw new Refused("accountNotFound", claim.userId);
-      if (await checkEmailBanned(user.email, tx)) throw new Refused("emailBanned", user.id);
+  //
+  // A transaction that never started, collided or ran out its deadline comes
+  // back as `unavailable`, like a claim that could not run: nothing was spent
+  // and a retry may work. Anything else — a failed write, a bug in here — is a
+  // 500, and the invitation survives it.
+  const redeemed = await redeemToken<void, InviteRefusal>(
+    parsed.data.token,
+    "INVITE",
+    async (tx, userId) => {
+      const user = await tx.user.findUnique({ where: { id: userId } });
+      if (!user) throw new Refused<InviteRefusal>("accountNotFound", userId);
+      if (await checkEmailBanned(user.email, tx)) {
+        throw new Refused<InviteRefusal>("emailBanned", user.id);
+      }
 
       await tx.user.update({
         where: { id: user.id },
@@ -120,24 +119,11 @@ export async function POST(request: Request) {
           termsVersion: TERMS_VERSION,
         },
       });
-    });
-  } catch (error) {
-    // A transaction that never started, or that ran out its deadline, throws
-    // here rather than inside the claim — on the SQLite stack, whose single
-    // connection one activation holds for the length of the whole callback,
-    // that is the shape a second concurrent activation takes. It means exactly
-    // what a failed claim means: nothing was spent and a retry may work. Left
-    // as an unknown error it would be a bare 500, and the claim counters would
-    // stay clean while every activation in the instance failed.
-    if (isTransientTransactionError(error)) {
-      recordClaimFailure("INVITE", error);
-      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
-    }
-    // Anything else — a failed write, a bug in here — is a 500. What changed is
-    // that the invitation survives it.
-    if (!(error instanceof Refused)) throw error;
+    },
+  );
 
-    switch (error.reason) {
+  if (!redeemed.ok) {
+    switch (redeemed.reason) {
       // 503, not 400, when the claim could not be attempted: the invite is still
       // valid and the row is still there, so a retry may work — and this is the
       // one route where refusing wrongly means an account nobody but an admin
@@ -151,13 +137,13 @@ export async function POST(request: Request) {
       // back with it.
       case "accountNotFound":
       case "emailBanned":
-        return refuse(t, error.reason, error.userId);
+        return refuse(t, redeemed.reason, redeemed.userId);
       // The success response sits directly after this switch, so falling out of
       // it would report an activation that never happened. A reason added to
       // InviteRefusal and not to this switch fails the build here, and anything
       // that still reaches it at runtime becomes a 500 rather than an `ok`.
       default: {
-        const unhandled: never = error.reason;
+        const unhandled: never = redeemed.reason;
         throw new Error(`[invite] unhandled refusal ${String(unhandled)}`);
       }
     }

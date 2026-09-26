@@ -5,6 +5,7 @@ import { randomBytes } from "crypto";
 import { prisma } from "./db";
 import { tokenExpiry, isExpired, type TokenKind } from "./token-ttl";
 import { maybePurgeExpiredTokens } from "./retention";
+import { isTransientTransactionError } from "./prisma-errors";
 
 /** Why a redemption was refused. Only `unavailable` is worth retrying. */
 export type ClaimRefusal = "invalid" | "unavailable";
@@ -110,7 +111,8 @@ export function tokenClaimStatus(): {
 
 /**
  * Book a claim that could not be attempted at all, for a caller that knows the
- * attempt failed before `consumeToken` could say so itself — a `$transaction`
+ * attempt failed before `consumeToken` could say so itself. `redeemToken`
+ * (lib/token-redeem.ts) is that caller — a `$transaction`
  * that never started or ran out its deadline throws around the claim, not
  * inside it (#50). Without this the counters stay clean and the readiness probe
  * keeps reporting a healthy redeem path while every activation in the instance
@@ -194,11 +196,11 @@ export async function revokeTokens(userId: string, type: TokenKind): Promise<num
  *
  * Given a transaction's client in `db`, "spent" means spent once that
  * transaction commits: a caller that rolls back hands the link back intact.
- * `db` is required rather than defaulting to the module client, so a new redeem
- * path has to choose where its claim runs instead of inheriting the one choice
- * that leaves a gap. Every redeem route claims this way — invite and verify since #50, password
- * reset since #91 — so that a failure after the claim never spends a link
- * without delivering what it authorised.
+ * Routes do not call this directly: `redeemToken` (lib/token-redeem.ts) runs
+ * it inside the transaction with the work it authorises, and eslint.config.mjs
+ * forbids importing it anywhere else — the module client satisfies `TokenDb`
+ * too, so the type alone could not stop a claim that spends the link before a
+ * write that may still fail (#50, #91).
  *
  * One consequence worth naming, because it reverses what this function does on
  * its own: an expired row is deleted here *before* the expiry is read, so that
@@ -224,7 +226,12 @@ export async function consumeToken(
     // ever reordered.
     ({ count: claimed } = await db.verificationToken.deleteMany({ where: { token, type } }));
   } catch (error) {
-    claims.failures += 1;
+    // A transaction that expired or collided under the delete is the weaker
+    // signal `recordClaimFailure` books, not a DELETE that was refused: the
+    // commonest cause is two redemptions colliding, and booking it as a failure
+    // would hold the probe red on a single slow transaction.
+    if (isTransientTransactionError(error)) claims.unattempted += 1;
+    else claims.failures += 1;
     claims.lastFailureAt = Date.now();
     // Names its subject: which link type is broken, and whose account is stuck,
     // are the two things an operator needs and neither is recoverable from the

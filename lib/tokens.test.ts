@@ -320,6 +320,26 @@ describe("recordClaimFailure", () => {
     expect(tokenClaimStatus().degraded).toBe(true);
   });
 
+  it("books a transaction that expired under the delete as unattempted, not failed", async () => {
+    // P2028/P2034 raised by the delete itself: a slow or colliding transaction,
+    // not a DELETE the database refused. As a failure it degraded the probe on
+    // one; as unattempted it gets the three a collision is allowed.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    findUnique.mockResolvedValue({
+      token: "abc",
+      type: "EMAIL_VERIFY",
+      userId: "user-1",
+      expiresAt: new Date(NOW + 1000),
+    });
+    deleteMany.mockRejectedValue(Object.assign(new Error("transaction expired"), { code: "P2028" }));
+
+    await expect(consumeToken("abc", "EMAIL_VERIFY", prisma)).resolves.toEqual({
+      ok: false,
+      reason: "unavailable",
+    });
+    expect(tokenClaimStatus()).toMatchObject({ failures: 0, unattempted: 1, degraded: false });
+  });
+
   it("is cleared by the next claim that actually removes a row", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     findUnique.mockResolvedValue({

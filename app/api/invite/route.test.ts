@@ -230,6 +230,36 @@ describe("POST /api/invite", () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
+  it("turns an expired invitation away before the hash as well", async () => {
+    // The claim's delete rolls back with its refusal, so an expired row
+    // survives being clicked; a pre-check that ignored expiry would let one
+    // such invite buy a bcrypt round per request until the retention sweep.
+    // `gte`, matching isExpired, which refuses only `<`.
+    await callPost(VALID);
+
+    expect(tokenFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ expiresAt: { gte: expect.any(Date) } }),
+      }),
+    );
+  });
+
+  it("answers 503 for a write conflict after the claim without marking the redeem path", async () => {
+    // P2034 from the activating write: the DELETE worked, so this says nothing
+    // about the redeem path, and booking it would turn the probe amber on
+    // conflicts in the user row. Still a retry, and the claim rolls back.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    txUserUpdate.mockRejectedValue(Object.assign(new Error("write conflict"), { code: "P2034" }));
+
+    const res = await callPost(VALID);
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
+    expect(recordClaimFailureMock).not.toHaveBeenCalled();
+    expect(txState.rolledBack).toBe(1);
+    error.mockRestore();
+  });
+
   it("answers 503 when the transaction itself could not be run", async () => {
     // P2028 comes out of `$transaction`, not out of `consumeToken`, so it used
     // to escape the refusal switch as a bare 500. The invitation is untouched

@@ -15,6 +15,26 @@ const eslintConfig = [
     // skipped it implicitly; the ESLint CLI does not, so say so here.
     ignores: ["node_modules/**", ".next/**", "lib/generated/**", "next-env.d.ts"],
   },
+  {
+    // A claim outside redeemToken's transaction spends the link before the
+    // work it authorises, and a failed write then leaves it dead (#50, #91).
+    // The module client satisfies consumeToken's parameter type too, so this
+    // rule is what actually keeps new redeem paths on the helper.
+    files: ["**/*.ts", "**/*.tsx"],
+    ignores: ["lib/token-redeem.ts", "**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: ["@/lib/tokens", "./tokens", "../tokens"].map((name) => ({
+            name,
+            importNames: ["consumeToken"],
+            message: "Redeem through redeemToken from @/lib/token-redeem instead.",
+          })),
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;
