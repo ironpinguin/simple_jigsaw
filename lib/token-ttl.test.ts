@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { expiredTokenFilter, isExpired, tokenExpiry, TOKEN_TTL_MS } from "./token-ttl";
+import {
+  expiredTokenFilter,
+  isExpired,
+  liveTokenFilter,
+  tokenExpiry,
+  TOKEN_TTL_MS,
+} from "./token-ttl";
 
 /**
  * Evaluate a Prisma comparison filter the way the database would, reading the
@@ -14,6 +20,10 @@ function matches(filter: { expiresAt: Record<string, Date> }, expiresAt: Date): 
       return expiresAt.getTime() < cutoff.getTime();
     case "lte":
       return expiresAt.getTime() <= cutoff.getTime();
+    case "gt":
+      return expiresAt.getTime() > cutoff.getTime();
+    case "gte":
+      return expiresAt.getTime() >= cutoff.getTime();
     default:
       throw new Error(`unhandled operator: ${operator}`);
   }
@@ -50,6 +60,32 @@ describe("expiredTokenFilter", () => {
     // stamps the new row; a cutoff derived from anything but `now` would eat it.
     for (const type of ["EMAIL_VERIFY", "INVITE"] as const) {
       expect(matches(expiredTokenFilter(NOW), tokenExpiry(type, NOW))).toBe(false);
+    }
+  });
+});
+
+describe("liveTokenFilter", () => {
+  it("selects exactly the tokens isExpired accepts", () => {
+    // The redeem routes' pre-check and the claim have to agree: a pre-check
+    // stricter than the claim turns a valid link away, a looser one lets an
+    // expired link buy the expensive work the pre-check exists to skip.
+    const filter = liveTokenFilter(NOW);
+    for (const offset of [-TOKEN_TTL_MS.INVITE, -1000, -1, 0, 1, 1000, TOKEN_TTL_MS.INVITE]) {
+      const expiresAt = new Date(NOW + offset);
+      expect({ offset, live: matches(filter, expiresAt) }).toEqual({
+        offset,
+        live: !isExpired(expiresAt, NOW),
+      });
+    }
+  });
+
+  it("keeps a token expiring exactly at the cutoff, and is the sweep's complement", () => {
+    expect(matches(liveTokenFilter(NOW), new Date(NOW))).toBe(true);
+    for (const offset of [-1, 0, 1]) {
+      const expiresAt = new Date(NOW + offset);
+      expect(matches(liveTokenFilter(NOW), expiresAt)).toBe(
+        !matches(expiredTokenFilter(NOW), expiresAt),
+      );
     }
   });
 });

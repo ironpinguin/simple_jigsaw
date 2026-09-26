@@ -251,13 +251,16 @@ describe("POST /api/invite", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     txUserUpdate.mockRejectedValue(Object.assign(new Error("write conflict"), { code: "P2034" }));
 
-    const res = await callPost(VALID);
+    try {
+      const res = await callPost(VALID);
 
-    expect(res.status).toBe(503);
-    await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
-    expect(recordClaimFailureMock).not.toHaveBeenCalled();
-    expect(txState.rolledBack).toBe(1);
-    error.mockRestore();
+      expect(res.status).toBe(503);
+      await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
+      expect(recordClaimFailureMock).not.toHaveBeenCalled();
+      expect(txState.rolledBack).toBe(1);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("answers 503 when the transaction itself could not be run", async () => {

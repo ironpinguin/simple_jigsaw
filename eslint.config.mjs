@@ -20,17 +20,25 @@ const eslintConfig = [
     // work it authorises, and a failed write then leaves it dead (#50, #91).
     // The module client satisfies consumeToken's parameter type too, so this
     // rule is what actually keeps new redeem paths on the helper.
-    files: ["**/*.ts", "**/*.tsx"],
-    ignores: ["lib/token-redeem.ts", "**/*.test.ts"],
+    //
+    // Matched by pattern, not by a list of exact specifiers: any relative depth
+    // (`../../lib/tokens`), the alias, or an explicit extension all resolve to
+    // the same module, and an exact list let every spelling it did not name
+    // through. Static imports and re-exports only — a dynamic `import()` or a
+    // `require` is not something this rule can see.
+    files: ["**/*.{ts,tsx,js,jsx,mjs}"],
+    ignores: ["lib/token-redeem.ts", "**/*.test.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",
         {
-          paths: ["@/lib/tokens", "./tokens", "../tokens"].map((name) => ({
-            name,
-            importNames: ["consumeToken"],
-            message: "Redeem through redeemToken from @/lib/token-redeem instead.",
-          })),
+          patterns: [
+            {
+              regex: "(^|/)tokens(\\.[cm]?[jt]sx?)?$",
+              importNames: ["consumeToken"],
+              message: "Redeem through redeemToken from @/lib/token-redeem instead.",
+            },
+          ],
         },
       ],
     },

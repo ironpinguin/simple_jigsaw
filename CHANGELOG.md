@@ -52,10 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A password-reset link is no longer used up when setting the new password
   fails. Clicking it again works, and the error message now says so instead of
   asking for a new link. (#91)
-- An expired invitation link is turned away before any work is done, as an
-  expired password-reset link already is, so it can no longer be sent again
-  and again to keep the server busy. Two users redeeming links at the same time
-  no longer make the readiness check report the redeem path as degraded. (#132)
+- Expired invitation links and unknown or expired address-confirmation links
+  are now turned away before any work is done, as expired password-reset links
+  already are, so they can no longer be sent again and again to keep the server
+  busy. Two users redeeming links at the same time no longer make the
+  readiness check report the redeem path as degraded. (#132)
 - The rate limit on password-reset requests keeps its memory bounded: it
   holds at most 10,000 callers at once and does a small, bounded amount of
   work per request, so a client sending from many addresses can no longer make

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   txUserUpdate,
   prismaUserUpdate,
+  tokenFindFirst,
   consumeTokenMock,
   recordClaimFailureMock,
   transaction,
@@ -11,6 +12,7 @@ const {
 } =
   vi.hoisted(() => {
   const txUserUpdate = vi.fn();
+  const tokenFindFirst = vi.fn();
   const tx = { user: { update: txUserUpdate } };
   // A separate double for the module-level client: sharing one would make the
   // assertions below unfalsifiable, since a route that confirmed the address on
@@ -34,6 +36,7 @@ const {
   return {
     txUserUpdate,
     prismaUserUpdate,
+    tokenFindFirst,
     consumeTokenMock: vi.fn(),
     recordClaimFailureMock: vi.fn(),
     transaction,
@@ -43,7 +46,11 @@ const {
   });
 
 vi.mock("@/lib/db", () => ({
-  prisma: { user: { update: prismaUserUpdate }, $transaction: transaction },
+  prisma: {
+    user: { update: prismaUserUpdate },
+    verificationToken: { findFirst: tokenFindFirst },
+    $transaction: transaction,
+  },
 }));
 vi.mock("@/lib/tokens", () => ({
   consumeToken: consumeTokenMock,
@@ -69,6 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   txState.committed = 0;
   txState.rolledBack = 0;
+  tokenFindFirst.mockResolvedValue({ id: "t1" });
   consumeTokenMock.mockResolvedValue({ ok: true, userId: "user-1" });
   txUserUpdate.mockResolvedValue({});
 });
@@ -151,6 +159,45 @@ describe("POST /api/verify", () => {
     expect(res.status).toBe(503);
     await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
     expect(recordClaimFailureMock).toHaveBeenCalledWith("EMAIL_VERIFY", expect.anything());
+  });
+
+  it("turns an unknown or expired link away without opening a transaction", async () => {
+    // Unauthenticated and unthrottled: without the cheap read first, every
+    // garbage token bought an interactive write transaction, and one that
+    // could not start in time was booked against the redeem path.
+    tokenFindFirst.mockResolvedValue(null);
+
+    const res = await callPost({ token: "tok" });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "verifyInvalid" });
+    expect(transaction).not.toHaveBeenCalled();
+    expect(tokenFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          type: "EMAIL_VERIFY",
+          expiresAt: { gte: expect.any(Date) },
+        }),
+      }),
+    );
+  });
+
+  it("answers 503 for a write conflict after the claim without marking the redeem path", async () => {
+    // The DELETE worked, so a conflict on the user row says nothing about the
+    // redeem path. Still a retry, and the claim rolls back with it.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    txUserUpdate.mockRejectedValue(Object.assign(new Error("write conflict"), { code: "P2034" }));
+
+    try {
+      const res = await callPost({ token: "tok" });
+
+      expect(res.status).toBe(503);
+      await expect(res.json()).resolves.toEqual({ error: "linkUnavailable" });
+      expect(recordClaimFailureMock).not.toHaveBeenCalled();
+      expect(txState.rolledBack).toBe(1);
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it("still fails loudly when the transaction throws something unexpected", async () => {

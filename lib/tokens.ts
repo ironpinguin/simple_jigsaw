@@ -40,11 +40,12 @@ type ClaimState = {
    */
   lost: number;
   /**
-   * Claims that never got to run at all, since the last one that did — a
-   * transaction that could not be started or that ran out its deadline
-   * (`recordClaimFailure`). Kept apart from `failures` because it is weaker
-   * evidence: the commonest cause is two redemptions colliding, not a redeem
-   * path that is broken for everyone.
+   * Claims defeated by their transaction rather than by the DELETE, since the
+   * last one that removed a row: a transaction that could not be started or
+   * that ran out its deadline around the claim (`recordClaimFailure`), or one
+   * that expired or collided under the delete itself (`consumeToken`). Kept
+   * apart from `failures` because it is weaker evidence: the commonest cause is
+   * two redemptions colliding, not a redeem path that is broken for everyone.
    */
   unattempted: number;
 };

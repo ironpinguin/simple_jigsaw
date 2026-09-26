@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { prisma } from "@/lib/db";
 import { redeemToken } from "@/lib/token-redeem";
+import { liveTokenFilter } from "@/lib/token-ttl";
 import { getErrorT } from "@/lib/i18n-server";
 
 const Schema = z.object({ token: z.string().min(1) });
@@ -10,6 +12,20 @@ export async function POST(request: Request) {
   const parsed = Schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: t("invalidRequest") }, { status: 400 });
+  }
+
+  // A cheap indexed read first, as on the invite and reset routes. This route
+  // is unauthenticated and unthrottled, and without it every unknown or expired
+  // token opened an interactive write transaction — on SQLite, serialised
+  // against every other writer, and one that could not start in time booked
+  // itself against the redeem path in the readiness probe, where nothing but a
+  // successful claim clears it. A filter, not the decision: the claim below is.
+  const known = await prisma.verificationToken.findFirst({
+    where: { token: parsed.data.token, type: "EMAIL_VERIFY", ...liveTokenFilter(Date.now()) },
+    select: { id: true },
+  });
+  if (!known) {
+    return NextResponse.json({ error: t("verifyInvalid") }, { status: 400 });
   }
 
   // Claim and confirmation in one transaction (#50). The claim is irreversible

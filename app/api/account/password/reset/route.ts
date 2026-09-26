@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { revokeTokens } from "@/lib/tokens";
 import { Refused, redeemToken, type Redemption } from "@/lib/token-redeem";
+import { liveTokenFilter } from "@/lib/token-ttl";
 import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
 
@@ -37,12 +38,10 @@ export async function POST(request: Request) {
     where: {
       token: parsed.data.token,
       type: "PASSWORD_RESET",
-      // An expired row now survives its click — the claim's delete rolls back
-      // with the refusal (lib/tokens.ts) — so without this one expired link
+      // An expired row survives its click, so without this one expired link
       // could be replayed for a bcrypt round and a write transaction each time
-      // until the retention sweep takes it. `gte` because isExpired refuses
-      // only `<`: the same boundary the claim and the sweep draw.
-      expiresAt: { gte: new Date() },
+      // until the retention sweep takes it. See liveTokenFilter.
+      ...liveTokenFilter(Date.now()),
     },
     select: { id: true },
   });

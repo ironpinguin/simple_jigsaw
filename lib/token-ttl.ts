@@ -36,3 +36,15 @@ export function isExpired(expiresAt: Date, now: number): boolean {
 export function expiredTokenFilter(now: number): { expiresAt: { lt: Date } } {
   return { expiresAt: { lt: new Date(now) } };
 }
+
+/**
+ * The complement of `expiredTokenFilter`: the rows `isExpired` would still
+ * accept. For the redeem routes' cheap pre-check, which has to turn an expired
+ * link away before any expensive work — the claim's delete rolls back with its
+ * refusal, so an expired row survives being clicked and could otherwise be
+ * replayed until the sweep takes it. `gte` for the same reason the sweep uses
+ * `lt`: a token expiring precisely at `now` is still redeemable.
+ */
+export function liveTokenFilter(now: number): { expiresAt: { gte: Date } } {
+  return { expiresAt: { gte: new Date(now) } };
+}

@@ -131,22 +131,6 @@ describe("redeemToken", () => {
     expect(message).not.toContain("live-secret-link");
   });
 
-  it("answers a refused claim with its own verdict when the transaction then fails", async () => {
-    // The claim refused and booked itself; a transient error on the way out
-    // must neither be booked again nor turn an invalid link into a retry.
-    consumeTokenMock.mockResolvedValue({ ok: false, reason: "invalid" });
-    transaction.mockImplementationOnce(async (fn) => {
-      await fn(tx).catch(() => {});
-      throw transient("P2028");
-    });
-
-    await expect(redeemToken("tok", "INVITE", vi.fn())).resolves.toEqual({
-      ok: false,
-      reason: "invalid",
-    });
-    expect(recordClaimFailureMock).not.toHaveBeenCalled();
-  });
-
   it("rethrows anything else untouched, after rolling back", async () => {
     // A failed write or a bug is the caller's to answer; hiding it behind
     // "try again" would be wrong, and the link survives it either way.

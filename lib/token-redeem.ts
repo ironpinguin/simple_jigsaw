@@ -27,7 +27,10 @@ export class Refused<R extends string = string> extends Error {
 
 /**
  * The outcome of a redemption. `ok` means the transaction committed: the link
- * is spent and `work` ran exactly once. Anything else means neither happened.
+ * is spent and `work` ran exactly once. A refusal means nothing was committed —
+ * the link is intact — though `work` may already have run, in part or in full,
+ * before the rollback; anything it did outside the transaction's client stays
+ * done.
  *
  * `unavailable` covers every failure a retry may fix — a claim that could not
  * run and a transaction that collided or timed out — so a caller answers it with
@@ -77,15 +80,13 @@ export async function redeemToken<T, R extends string = never>(
     if (!isTransientTransactionError(error)) throw error;
 
     // Transient: nothing was spent and a retry may work. Which counter it
-    // belongs to depends on how far the claim got.
-    if (claim === undefined) {
+    // belongs to depends on how far the claim got. A claim that came back
+    // refused never lands here: Prisma swallows the rollback's own error and
+    // rethrows the callback's, which is the Refused handled above.
+    if (!claim?.ok) {
       recordClaimFailure(type, error);
       return { ok: false, reason: "unavailable" };
     }
-    // The claim refused and booked itself; the transaction then failed on the
-    // way out. Its own verdict is the answer, and counting again would book it
-    // twice.
-    if (!claim.ok) return { ok: false, reason: claim.reason };
     console.error(
       `[tokens] the ${type} redemption for user ${claim.userId} collided after its claim ` +
         `and was rolled back; refusing it:`,

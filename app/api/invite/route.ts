@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import type { ClaimRefusal } from "@/lib/tokens";
 import { Refused, redeemToken } from "@/lib/token-redeem";
+import { liveTokenFilter } from "@/lib/token-ttl";
 import { checkEmailBanned } from "@/lib/moderation";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
@@ -57,12 +58,10 @@ export async function POST(request: Request) {
     where: {
       token: parsed.data.token,
       type: "INVITE",
-      // An expired row survives its click — the claim's delete rolls back with
-      // the refusal (lib/tokens.ts) — so without this one expired invite could
-      // be replayed for a bcrypt round and a write transaction each time until
-      // the retention sweep takes it. `gte` because isExpired refuses only `<`:
-      // the same boundary the claim and the sweep draw.
-      expiresAt: { gte: new Date() },
+      // An expired row survives its click, so without this one expired invite
+      // could be replayed for a bcrypt round and a write transaction each time
+      // until the retention sweep takes it. See liveTokenFilter.
+      ...liveTokenFilter(Date.now()),
     },
     select: { user: { select: { id: true, email: true } } },
   });
