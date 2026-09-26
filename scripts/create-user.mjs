@@ -9,7 +9,6 @@
 import { createPrisma } from "./db-client.mjs";
 import bcrypt from "bcryptjs";
 
-
 async function main() {
   const args = process.argv.slice(2);
   const admin = args.includes("--admin");

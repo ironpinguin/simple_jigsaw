@@ -18,6 +18,14 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
+// DATABASE_PROVIDER from .env, as the app gets it through Next and the Prisma
+// CLI gets DATABASE_URL through prisma.config.ts: without this a host checkout
+// set to sqlite in .env would push the Postgres schema at its SQLite URL.
+// Variables already set win; no file is not an error.
+try {
+  process.loadEnvFile();
+} catch {}
+
 const PROVIDERS = ["postgresql", "sqlite"];
 const SCHEMA = "prisma/schema.prisma";
 

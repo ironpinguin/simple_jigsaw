@@ -8,7 +8,6 @@
 
 import { createPrisma } from "./db-client.mjs";
 
-
 async function main() {
   const email = (process.argv[2] ?? "").toLowerCase().trim();
   if (!email) {

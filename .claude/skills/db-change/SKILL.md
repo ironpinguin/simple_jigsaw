@@ -76,6 +76,11 @@ quietly.
   vanishes.
 - **A required column without a default** on a table that already has rows —
   `db push` will offer to reset the data. Add a default or make it optional.
+- **Querying `prisma` inside a `$transaction` callback.** Use the callback's
+  `tx` for everything. On SQLite, `lib/db.ts` makes queries from outside a
+  transaction wait until it ends (one connection, see
+  `serializeSqliteTransactions`), so a callback that queries through `prisma`
+  waits on itself until Prisma's transaction timeout kills it.
 - **Only testing Postgres.** SQLite installs run the same released image
   (`DATABASE_PROVIDER=sqlite`, also tagged `:latest-sqlite`); they are not a
   side experiment.

@@ -16,7 +16,6 @@
 
 import { createPrisma } from "./db-client.mjs";
 
-
 async function main() {
   const prisma = createPrisma();
   try {

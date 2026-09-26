@@ -50,6 +50,124 @@ export function databaseProvider(): Provider {
   return raw as Provider;
 }
 
+type SqliteConnection = Awaited<ReturnType<PrismaBetterSqlite3["connect"]>>;
+
+/**
+ * better-sqlite3 is a single connection, and the adapter queues transactions
+ * only against each other. A query from outside a transaction runs on that
+ * same connection, so it runs *inside* whichever interactive transaction is
+ * open: it reads that transaction's uncommitted writes, and when the
+ * transaction rolls back — a refused token claim does, by design — its own
+ * write goes with it, although its caller was told it succeeded. Prisma 6's
+ * engine never ran another request's query on a transaction's connection.
+ *
+ * So a query from outside waits until no transaction is open, and so does the
+ * next transaction. Transactions here are short on purpose (mail and storage
+ * I/O stay outside them), and Prisma's own `timeout` ends any that is not.
+ * Exported for lib/db.test.ts.
+ */
+export function serializeSqliteTransactions(connection: SqliteConnection): SqliteConnection {
+  let open = false;
+  let closed: Promise<void> = Promise.resolve();
+
+  async function whenIdle<T>(run: () => Promise<T>): Promise<T> {
+    // A loop rather than one await: every waiter wakes on the same close, and
+    // a transaction among them may reopen the gate before the rest run.
+    while (open) await closed;
+    // Called in the same tick as the check, and better-sqlite3 executes the
+    // statement synchronously inside the call, so nothing can slip a BEGIN in
+    // between.
+    return run();
+  }
+
+  return {
+    provider: connection.provider,
+    adapterName: connection.adapterName,
+    queryRaw: (query) => whenIdle(() => connection.queryRaw(query)),
+    executeRaw: (query) => whenIdle(() => connection.executeRaw(query)),
+    executeScript: (script) => whenIdle(() => connection.executeScript(script)),
+    getConnectionInfo: connection.getConnectionInfo?.bind(connection),
+    dispose: () => connection.dispose(),
+    async startTransaction(isolationLevel) {
+      while (open) await closed;
+      open = true;
+      let release = () => {};
+      closed = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let ended = false;
+      const end = () => {
+        if (ended) return;
+        ended = true;
+        open = false;
+        release();
+      };
+
+      const tx = await connection.startTransaction(isolationLevel).catch((error: unknown) => {
+        end();
+        throw error;
+      });
+      // Prisma always finishes with commit() or rollback(), after it has sent
+      // the COMMIT or ROLLBACK itself — also for a transaction it gave up
+      // waiting for — so those two are where the gate opens again.
+      return {
+        provider: tx.provider,
+        adapterName: tx.adapterName,
+        options: tx.options,
+        queryRaw: (query) => tx.queryRaw(query),
+        executeRaw: (query) => tx.executeRaw(query),
+        createSavepoint: tx.createSavepoint?.bind(tx),
+        rollbackToSavepoint: tx.rollbackToSavepoint?.bind(tx),
+        releaseSavepoint: tx.releaseSavepoint?.bind(tx),
+        commit: () => tx.commit().finally(end),
+        rollback: () => tx.rollback().finally(end),
+      };
+    },
+  };
+}
+
+function sqliteAdapter(url: string) {
+  // Epoch milliseconds, which is how Prisma 6 stored DateTime on SQLite; the
+  // adapter's default is ISO text. SQLite orders every integer before every
+  // string, so on a database Prisma 6 wrote, ISO parameters would make each
+  // `lt: new Date()` match every old row and each `gte` none of them — every
+  // outstanding link expired at once, and swept.
+  const factory = new PrismaBetterSqlite3({ url }, { timestampFormat: "unixepoch-ms" });
+  return {
+    provider: "sqlite" as const,
+    adapterName: factory.adapterName,
+    async connect() {
+      // better-sqlite3 opens an anonymous in-memory database for an empty
+      // path: an unset DATABASE_URL would come up fine and keep nothing.
+      // Checked here, on first use, because `next build` imports this module
+      // without a database.
+      if (!url) throw new Error("DATABASE_URL is not set");
+      return serializeSqliteTransactions(await factory.connect());
+    },
+  };
+}
+
+/**
+ * The `?schema=` of a Postgres URL. The Prisma CLI honours it, so `db push`
+ * creates the tables there; the pg adapter ignores it and has to be told, or
+ * the app would query `public` and find nothing. Absent means `public`.
+ */
+function postgresSchema(url: string): string | undefined {
+  try {
+    return new URL(url).searchParams.get("schema") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * How long a query waits for a Postgres connection, new or from the full pool.
+ * pg's default is forever; Prisma 6 gave up after 5 s (connect) and 10 s
+ * (pool), so an unreachable database was an error a route could answer rather
+ * than a request that hangs.
+ */
+const PG_CONNECTION_TIMEOUT_MS = 10_000;
+
 function createClient(): Db {
   const url = process.env.DATABASE_URL ?? "";
   const log: Prisma.LogLevel[] =
@@ -58,12 +176,15 @@ function createClient(): Db {
   if (databaseProvider() === "sqlite") {
     // `file:` URLs resolve against the working directory, which in the image
     // is /app; the compose stack uses an absolute path on its volume.
-    return new SqliteClient({ adapter: new PrismaBetterSqlite3({ url }), log });
+    return new SqliteClient({ adapter: sqliteAdapter(url), log });
   }
   // Cast across the two generated classes: structurally the Postgres client
   // accepts everything `Db` can express. See `Db`.
   return new PostgresClient({
-    adapter: new PrismaPg({ connectionString: url }),
+    adapter: new PrismaPg(
+      { connectionString: url, connectionTimeoutMillis: PG_CONNECTION_TIMEOUT_MS },
+      { schema: postgresSchema(url) },
+    ),
     log,
   }) as unknown as Db;
 }

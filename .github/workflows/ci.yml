@@ -135,10 +135,13 @@ jobs:
           fi
           # Everything the image build itself consumes: the recipe, the compose
           # files that define the two variants, the dependency manifests npm ci
-          # installs from, and the Prisma schema, its config and the script the
-          # build stage runs to generate both clients. App source is already
-          # covered by the build job, which runs the same `next build`.
-          relevant='^(Dockerfile|\.dockerignore|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|prisma\.config\.ts|scripts/prisma\.mjs|\.github/workflows/ci\.yml$)'
+          # installs from, the Prisma schema, its config and the script the
+          # build stage runs to generate both clients, and the scripts the image
+          # ships. App source is otherwise covered by the build job, which runs
+          # the same `next build` — except lib/db.ts, which picks the client at
+          # container start: a build proves nothing about that, only booting
+          # both stacks does.
+          relevant='^(Dockerfile|\.dockerignore|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|prisma\.config\.ts|scripts/|lib/db\.ts|\.github/workflows/ci\.yml$)'
           changed="$(git diff --name-only \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}")"

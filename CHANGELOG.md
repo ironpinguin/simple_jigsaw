@@ -109,7 +109,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   secret now (see `deploy/kubernetes/README.md`). Prisma is updated to 7, which
   connects through a driver adapter per database. For a local SQLite database
   outside Docker, a relative `DATABASE_URL` such as `file:./prisma/dev.db` is
-  now resolved from the project directory rather than from `prisma/`. (#112)
+  now resolved from the project directory rather than from `prisma/`, and
+  `npm run db:push` and the maintenance scripts (`make-admin`, `create-user`,
+  `purge-expired`) read `DATABASE_URL` and `DATABASE_PROVIDER` from `.env` the
+  way the app does; variables set in the environment still win. (#112)
 - The puzzle toolbar now fits in a single row, so the board gets the height
   the controls used to take. Preview, overview, *Gather loose pieces* and
   applause are icon buttons with a tooltip; the piece count, *Share link*,
