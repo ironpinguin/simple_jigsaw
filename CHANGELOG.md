@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-26
+
 ### Added
 - **Competitions with a leaderboard.** Under *My puzzles* the owner of a
   public puzzle can turn it into a competition, with a piece count that is
@@ -569,7 +571,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.7.0...main
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.8.0...main
+[0.8.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.6.0
 [0.5.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.5.0
