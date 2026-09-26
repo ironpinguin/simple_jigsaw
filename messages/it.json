@@ -365,7 +365,7 @@
     "inviteInvalid": "Il link di invito non è valido o è scaduto.",
     "resetInvalid": "Il link per reimpostare la password non è valido o è scaduto.",
     "linkUnavailable": "Il link non può essere riscattato in questo momento. Riprova tra un attimo.",
-    "resetNotApplied": "Il link era valido, ma la nuova password non è stata salvata — e il link è ormai consumato. Richiedi un nuovo link e riprova.",
+    "resetNotApplied": "Il link era valido, ma la nuova password non è stata salvata. Il link è ancora valido: riprova tra un attimo.",
     "accountNotFound": "Account non trovato.",
     "lastAdminDemote": "L'ultimo admin non può essere declassato.",
     "lastAdminDelete": "L'ultimo admin non può essere eliminato.",

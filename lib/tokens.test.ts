@@ -23,6 +23,7 @@ import {
   type TokenDb,
 } from "./tokens";
 import { tokenExpiry } from "./token-ttl";
+import { prisma } from "./db";
 
 const NOW = Date.UTC(2026, 7, 9, 12, 0, 0);
 
@@ -121,7 +122,7 @@ describe("consumeToken", () => {
   it("returns the user and removes the row", async () => {
     findUnique.mockResolvedValue(row);
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+    await expect(consumeToken("abc", "EMAIL_VERIFY", prisma)).resolves.toEqual({
       ok: true,
       userId: "user-1",
     });
@@ -161,7 +162,7 @@ describe("consumeToken", () => {
     // outright on a real database: nothing matches, so nothing is ever claimed.
     findUnique.mockResolvedValue({ ...row, type: "INVITE" });
 
-    await expect(consumeToken("abc", "INVITE")).resolves.toEqual({ ok: true, userId: "user-1" });
+    await expect(consumeToken("abc", "INVITE", prisma)).resolves.toEqual({ ok: true, userId: "user-1" });
     expect(deleteMany).toHaveBeenCalledWith({ where: { token: "abc", type: "INVITE" } });
   });
 
@@ -170,7 +171,7 @@ describe("consumeToken", () => {
     // does get clicked leaves nothing behind either.
     findUnique.mockResolvedValue({ ...row, expiresAt: new Date(NOW - 1) });
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+    await expect(consumeToken("abc", "EMAIL_VERIFY", prisma)).resolves.toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -180,7 +181,7 @@ describe("consumeToken", () => {
   it("refuses a token issued for another purpose without deleting it", async () => {
     findUnique.mockResolvedValue({ ...row, type: "INVITE" });
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+    await expect(consumeToken("abc", "EMAIL_VERIFY", prisma)).resolves.toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -200,7 +201,7 @@ describe("consumeToken", () => {
     findUnique.mockResolvedValue(row);
     deleteMany.mockResolvedValue({ count: 0 });
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+    await expect(consumeToken("abc", "EMAIL_VERIFY", prisma)).resolves.toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -214,7 +215,7 @@ describe("consumeToken", () => {
     findUnique.mockResolvedValue(row);
     deleteMany.mockResolvedValue({ count: 0 });
 
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
 
     expect(logged).not.toHaveBeenCalled();
     expect(tokenClaimStatus()).toMatchObject({ lost: 1, failures: 0, degraded: false });
@@ -229,7 +230,7 @@ describe("consumeToken", () => {
     findUnique.mockResolvedValue(row);
     deleteMany.mockRejectedValue(new Error("permission denied for table"));
 
-    await expect(consumeToken("abc", "EMAIL_VERIFY")).resolves.toEqual({
+    await expect(consumeToken("abc", "EMAIL_VERIFY", prisma)).resolves.toEqual({
       ok: false,
       reason: "unavailable",
     });
@@ -244,7 +245,7 @@ describe("consumeToken", () => {
     findUnique.mockResolvedValue({ ...row, type: "INVITE" });
     deleteMany.mockRejectedValue(new Error("permission denied for table"));
 
-    await consumeToken("abc", "INVITE");
+    await consumeToken("abc", "INVITE", prisma);
 
     const [message] = logged.mock.calls[0];
     expect(message).toContain("INVITE");
@@ -255,7 +256,7 @@ describe("consumeToken", () => {
   it("refuses an unknown token", async () => {
     findUnique.mockResolvedValue(null);
 
-    await expect(consumeToken("nope", "EMAIL_VERIFY")).resolves.toEqual({
+    await expect(consumeToken("nope", "EMAIL_VERIFY", prisma)).resolves.toEqual({
       ok: false,
       reason: "invalid",
     });
@@ -314,7 +315,7 @@ describe("recordClaimFailure", () => {
     });
     deleteMany.mockRejectedValue(new Error("permission denied"));
 
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
 
     expect(tokenClaimStatus().degraded).toBe(true);
   });
@@ -331,7 +332,7 @@ describe("recordClaimFailure", () => {
     for (let i = 0; i < 3; i += 1) recordClaimFailure("EMAIL_VERIFY", new Error("timed out"));
     expect(tokenClaimStatus().degraded).toBe(true);
 
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
 
     expect(tokenClaimStatus()).toMatchObject({ unattempted: 0, degraded: false });
   });
@@ -363,7 +364,7 @@ describe("tokenClaimStatus", () => {
     findUnique.mockResolvedValue(row);
     deleteMany.mockRejectedValue(new Error("permission denied for table"));
 
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
 
     expect(tokenClaimStatus()).toMatchObject({
       failures: 1,
@@ -380,14 +381,14 @@ describe("tokenClaimStatus", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     findUnique.mockResolvedValue(row);
     deleteMany.mockRejectedValue(new Error("permission denied for table"));
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
 
     deleteMany.mockReset().mockResolvedValue({ count: 0 });
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
     expect(tokenClaimStatus()).toMatchObject({ failures: 1, degraded: true });
 
     deleteMany.mockReset().mockResolvedValue({ count: 1 });
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
     expect(tokenClaimStatus()).toMatchObject({ failures: 0, degraded: false });
   });
 
@@ -396,9 +397,9 @@ describe("tokenClaimStatus", () => {
     findUnique.mockResolvedValue(row);
     deleteMany.mockRejectedValue(new Error("permission denied for table"));
 
-    await consumeToken("abc", "EMAIL_VERIFY");
-    await consumeToken("abc", "EMAIL_VERIFY");
-    await consumeToken("abc", "EMAIL_VERIFY");
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
+    await consumeToken("abc", "EMAIL_VERIFY", prisma);
 
     expect(tokenClaimStatus()).toMatchObject({ failures: 3, degraded: true });
   });
