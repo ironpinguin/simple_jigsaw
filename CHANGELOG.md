@@ -141,6 +141,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the Edge runtime, and `next dev` and `next build` no longer print a
   deprecation warning on every start. Nothing to configure when deploying. (#85)
 
+### Security
+- Cleared the two advisories Prisma 7 brought in through its CLI: `mysql2`
+  (credentials sent in plaintext to a rogue MySQL server, GHSA-3f6p-5ww8-9rcr)
+  and `deepmerge-ts` (stack exhaustion on recursive objects). Neither was
+  reachable — the app never connects to MySQL, and the merge only sees our own
+  `prisma.config.ts` — but both shipped in the image. `prisma` pins the
+  vulnerable versions, so `overrides` lift them to `mysql2` 3.22+ and
+  `deepmerge-ts` 8.
+
 ### Deprecated
 - The `:latest-sqlite` and `:<version>-sqlite` image tags. They point at the
   same image as `:latest` and `:<version>` and will stop being published in a
