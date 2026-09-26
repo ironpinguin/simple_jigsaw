@@ -314,6 +314,23 @@ describe("POST /api/account/password/reset", () => {
     expect(recordClaimFailureMock).toHaveBeenCalledWith("PASSWORD_RESET", error);
   });
 
+  it("answers a write conflict after the claim as a retry without marking the redeem path", async () => {
+    // P2034 from the password write: the DELETE worked, so it says nothing
+    // about the redeem path, and the claim rolls back so the link still works.
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    userUpdate.mockRejectedValue(Object.assign(new Error("write conflict"), { code: "P2034" }));
+    try {
+      const res = await call(VALID);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: "linkUnavailable" });
+      expect(recordClaimFailureMock).not.toHaveBeenCalled();
+      expect(txState.rolledBack).toBe(1);
+      expect(revokeTokensMock).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("does not hash a password for a link that does not exist", async () => {
     // The hash runs before the transaction, so an unknown token must be turned
     // away first — otherwise every garbage request buys ~100ms of bcrypt.

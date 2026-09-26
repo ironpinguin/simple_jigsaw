@@ -2,22 +2,13 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { consumeToken, recordClaimFailure, revokeTokens, type ClaimRefusal } from "@/lib/tokens";
-import { isTransientTransactionError } from "@/lib/prisma-errors";
+import { revokeTokens } from "@/lib/tokens";
+import { Refused, redeemToken, type Redemption } from "@/lib/token-redeem";
+import { liveTokenFilter } from "@/lib/token-ttl";
 import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
 
 const Schema = z.object({ token: z.string().min(1), password: passwordField });
-
-/**
- * A refusal decided inside the transaction. Thrown rather than returned so the
- * claim rolls back with it — the route's answer is chosen from it afterwards.
- */
-class Refused extends Error {
-  constructor(readonly reason: ClaimRefusal) {
-    super(reason);
-  }
-}
 
 export async function POST(request: Request) {
   const t = await getErrorT();
@@ -47,12 +38,10 @@ export async function POST(request: Request) {
     where: {
       token: parsed.data.token,
       type: "PASSWORD_RESET",
-      // An expired row now survives its click — the claim's delete rolls back
-      // with the refusal (lib/tokens.ts) — so without this one expired link
+      // An expired row survives its click, so without this one expired link
       // could be replayed for a bcrypt round and a write transaction each time
-      // until the retention sweep takes it. `gte` because isExpired refuses
-      // only `<`: the same boundary the claim and the sweep draw.
-      expiresAt: { gte: new Date() },
+      // until the retention sweep takes it. See liveTokenFilter.
+      ...liveTokenFilter(Date.now()),
     },
     select: { id: true },
   });
@@ -69,7 +58,7 @@ export async function POST(request: Request) {
   // failure after the link was checked from one before it — only the first may
   // say the link was valid — and so the log can name whose reset it was.
   let claimedBy: string | undefined;
-  let userId: string;
+  let redeemed: Redemption<void>;
   try {
     // Before the transaction, and deliberately so: bcrypt at cost 10 is ~100ms
     // of CPU that needs no database, and inside it would hold a write lock that
@@ -78,10 +67,8 @@ export async function POST(request: Request) {
     // renders as "the link may have expired".
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-    userId = await prisma.$transaction(async (tx) => {
-      const claim = await consumeToken(parsed.data.token, "PASSWORD_RESET", tx);
-      if (!claim.ok) throw new Refused(claim.reason);
-      claimedBy = claim.userId;
+    redeemed = await redeemToken(parsed.data.token, "PASSWORD_RESET", async (tx, userId) => {
+      claimedBy = userId;
 
       // Read for emailVerified alone, and only to leave an existing one alone.
       // Setting it matters for the account that never confirmed — lib/auth.ts
@@ -93,7 +80,7 @@ export async function POST(request: Request) {
       // unconditionally would restate a 2024 confirmation as today for
       // everybody who ever resets, in their own Art. 15 export.
       const account = await tx.user.findUnique({
-        where: { id: claim.userId },
+        where: { id: userId },
         select: { emailVerified: true },
       });
       // The token cascades with its account, so a claim for one that is gone
@@ -110,7 +97,7 @@ export async function POST(request: Request) {
       // hash-then-stamp in app/api/account/password/route.ts.
       const now = new Date();
       await tx.user.update({
-        where: { id: claim.userId },
+        where: { id: userId },
         data: {
           passwordHash,
           // Ends every other session: the jwt callback refuses any token
@@ -122,24 +109,8 @@ export async function POST(request: Request) {
           emailVerified: account.emailVerified ?? now,
         },
       });
-      return claim.userId;
     });
   } catch (error) {
-    // A transaction that never started, or that ran out its deadline, throws
-    // here rather than inside the claim, and means what a failed claim means:
-    // nothing was spent and a retry may work.
-    if (isTransientTransactionError(error)) {
-      recordClaimFailure("PASSWORD_RESET", error);
-      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
-    }
-    if (error instanceof Refused) {
-      // "unavailable" means the store could not be read, not that the link is
-      // bad — telling the user their valid link is invalid would send them
-      // round the request loop for nothing. See lib/tokens.ts.
-      return error.reason === "unavailable"
-        ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
-        : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
-    }
     // Failed before the claim came back — the hash, or reading the token — so
     // nothing has said the link is valid (the pre-check above does not look at
     // everything the claim does), only that nothing was spent.
@@ -163,6 +134,17 @@ export async function POST(request: Request) {
     );
     return NextResponse.json({ error: t("resetNotApplied") }, { status: 503 });
   }
+
+  if (!redeemed.ok) {
+    // "unavailable" means the store could not be read, or the transaction
+    // collided — not that the link is bad. Telling the user their valid link
+    // is invalid would send them round the request loop for nothing. See
+    // lib/token-redeem.ts.
+    return redeemed.reason === "unavailable"
+      ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
+      : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
+  }
+  const { userId } = redeemed;
 
   // Other PASSWORD_RESET links can still be live for this account — the
   // per-address rule in the request route allows a handful an hour, and a reset
