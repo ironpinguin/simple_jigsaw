@@ -44,27 +44,44 @@ export async function POST(request: Request) {
   // endpoint would buy ~100ms of bcrypt. Not the decision: the single-use claim
   // inside the transaction is, so nothing here can be raced into a reset.
   const known = await prisma.verificationToken.findFirst({
-    where: { token: parsed.data.token, type: "PASSWORD_RESET" },
+    where: {
+      token: parsed.data.token,
+      type: "PASSWORD_RESET",
+      // An expired row now survives its click — the claim's delete rolls back
+      // with the refusal (lib/tokens.ts) — so without this one expired link
+      // could be replayed for a bcrypt round and a write transaction each time
+      // until the retention sweep takes it. `gte` because isExpired refuses
+      // only `<`: the same boundary the claim and the sweep draw.
+      expiresAt: { gte: new Date() },
+    },
     select: { id: true },
   });
   if (!known) {
     return NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
   }
 
-  // Before the transaction, and deliberately so: bcrypt at cost 10 is ~100ms of
-  // CPU that needs no database, and inside it would hold a write lock that
-  // long — on SQLite, against every other writer.
-  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
-
   // Claim and write in one transaction (#91), as the invite and verify routes
   // have since #50. The claim is irreversible on its own and lands before the
   // work it authorises, so a write that threw here used to leave the password
   // unchanged and the link spent. Rolling back hands the link back instead.
+  //
+  // `claimedBy` is set once the claim has succeeded, so the catch can tell a
+  // failure after the link was checked from one before it — only the first may
+  // say the link was valid — and so the log can name whose reset it was.
+  let claimedBy: string | undefined;
   let userId: string;
   try {
+    // Before the transaction, and deliberately so: bcrypt at cost 10 is ~100ms
+    // of CPU that needs no database, and inside it would hold a write lock that
+    // long — on SQLite, against every other writer. Inside the try all the
+    // same, so a throw is answered below rather than as the bare 500 the page
+    // renders as "the link may have expired".
+    const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+
     userId = await prisma.$transaction(async (tx) => {
       const claim = await consumeToken(parsed.data.token, "PASSWORD_RESET", tx);
       if (!claim.ok) throw new Refused(claim.reason);
+      claimedBy = claim.userId;
 
       // Read for emailVerified alone, and only to leave an existing one alone.
       // Setting it matters for the account that never confirmed — lib/auth.ts
@@ -74,13 +91,16 @@ export async function POST(request: Request) {
       // lib/account-export.ts publishes it as a date, and the privacy copy
       // promises it says when you confirmed your address. Writing it
       // unconditionally would restate a 2024 confirmation as today for
-      // everybody who ever resets, in their own Art. 15 export. A row that
-      // vanished between the claim and here reads as null and the update below
-      // throws P2025, which rolls the claim back like any other failed write.
+      // everybody who ever resets, in their own Art. 15 export.
       const account = await tx.user.findUnique({
         where: { id: claim.userId },
         select: { emailVerified: true },
       });
+      // The token cascades with its account, so a claim for one that is gone
+      // should not happen. If it does, the link is as good as invalid: letting
+      // the update throw P2025 would answer resetNotApplied, whose "try again"
+      // can never come true.
+      if (!account) throw new Refused("invalid");
 
       // Stamped after the hash, never before it: read ahead of the bcrypt
       // round, passwordChangedAt would be dated a whole hash — 60-150 ms —
@@ -99,7 +119,7 @@ export async function POST(request: Request) {
           // Clicking a link sent to the address proves what the confirmation
           // mail asks, so a reset doubles as verification — for an address
           // that has not been confirmed yet. An earlier confirmation stands.
-          emailVerified: account?.emailVerified ?? now,
+          emailVerified: account.emailVerified ?? now,
         },
       });
       return claim.userId;
@@ -120,13 +140,25 @@ export async function POST(request: Request) {
         ? NextResponse.json({ error: t("linkUnavailable") }, { status: 503 })
         : NextResponse.json({ error: t("resetInvalid") }, { status: 400 });
     }
+    // Failed before the claim came back — the hash, or reading the token — so
+    // nothing has said the link is valid (the pre-check above does not look at
+    // everything the claim does), only that nothing was spent.
+    if (claimedBy === undefined) {
+      console.error(
+        "[account-password-reset] redeeming a reset link failed before it was checked; " +
+          "nothing was spent:",
+        error,
+      );
+      return NextResponse.json({ error: t("linkUnavailable") }, { status: 503 });
+    }
     // The write failed and the claim rolled back with it, so the link still
     // works. Letting this throw would answer with the generic 500 the page
     // renders as auth.resetFailed, "the link may have expired" — the one
     // explanation that is certainly wrong. Say what happened instead, and log
     // it, because nothing else records why the write failed.
     console.error(
-      "[account-password-reset] setting a new password failed; the link was not spent:",
+      `[account-password-reset] setting a new password for user ${claimedBy} failed; ` +
+        `the link was not spent:`,
       error,
     );
     return NextResponse.json({ error: t("resetNotApplied") }, { status: 503 });

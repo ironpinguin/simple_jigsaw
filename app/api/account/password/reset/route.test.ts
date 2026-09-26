@@ -185,7 +185,11 @@ describe("POST /api/account/password/reset", () => {
     consumeTokenMock.mockResolvedValue({ ok: false, reason: "unavailable" });
     const res = await call(VALID);
     expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "linkUnavailable" });
     expect(userUpdate).not.toHaveBeenCalled();
+    // consumeToken has already counted this one; booking it again would count
+    // one refused delete twice.
+    expect(recordClaimFailureMock).not.toHaveBeenCalled();
   });
 
   it("refuses a password under the minimum without spending the link", async () => {
@@ -252,6 +256,43 @@ describe("POST /api/account/password/reset", () => {
     expect(txState.rolledBack).toBe(1);
     expect(revokeTokensMock).not.toHaveBeenCalled();
     expect(logged).toHaveBeenCalled();
+    // Names whose reset failed: nothing else in the log ties the error to one.
+    expect(logged.mock.calls[0][0]).toContain("u1");
+  });
+
+  it("does not call the link valid when it failed before the link was checked", async () => {
+    // A store that went away while reading the token: the pre-check does not
+    // look at everything the claim does, so resetNotApplied ("the link was
+    // valid") would be a guess. Nothing was spent, so a retry is still right.
+    consumeTokenMock.mockRejectedValue(new Error("connection reset"));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await call(VALID);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "linkUnavailable" });
+    expect(txState.rolledBack).toBe(1);
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it("answers a hash that throws without a bare 500", async () => {
+    // A 500 renders as auth.resetFailed, "the link may have expired" — wrong,
+    // since nothing was claimed yet.
+    hashMock.mockRejectedValue(new Error("bcrypt failed"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await call(VALID);
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "linkUnavailable" });
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a claim whose account has gone rather than inviting a retry", async () => {
+    // resetNotApplied says the link still works; for an account that no longer
+    // exists no retry ever could.
+    userFindUnique.mockResolvedValue(null);
+    const res = await call(VALID);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "resetInvalid" });
+    expect(userUpdate).not.toHaveBeenCalled();
+    expect(txState.rolledBack).toBe(1);
   });
 
   it("rolls the claim back when refusing it", async () => {
@@ -282,6 +323,19 @@ describe("POST /api/account/password/reset", () => {
     expect(await res.json()).toEqual({ error: "resetInvalid" });
     expect(hashMock).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it("turns an expired link away before the hash as well", async () => {
+    // The claim's delete rolls back with its refusal, so an expired row
+    // survives being clicked; a pre-check that ignored expiry would let one
+    // such link buy a bcrypt round per request until the retention sweep.
+    // `gte`, matching isExpired, which refuses only `<`.
+    await call(VALID);
+    expect(tokenFindFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ expiresAt: { gte: expect.any(Date) } }),
+      }),
+    );
   });
 
   it("writes a passwordChangedAt that makes a session issued before the reset stale, and one issued after fresh", async () => {
