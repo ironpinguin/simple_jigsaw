@@ -20,9 +20,6 @@ services:
     build:
       context: .
       target: runner
-      args:
-        # Bake the SQLite Prisma client into the image.
-        DATABASE_PROVIDER: sqlite
     restart: unless-stopped
     ports:
       - "3000:3000"

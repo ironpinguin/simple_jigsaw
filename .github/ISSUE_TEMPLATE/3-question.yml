@@ -61,4 +61,4 @@ body:
       description: |
         Falls die Frage eine bestimmte Version betrifft.
         If the question relates to a specific version.
-      placeholder: v0.4.0 · latest-sqlite · b1bfd5e
+      placeholder: v0.4.0 · latest · b1bfd5e

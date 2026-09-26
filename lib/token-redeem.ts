@@ -2,8 +2,7 @@
 // transaction, and the answer to every way that can fail. Shared by the invite,
 // verify and password-reset routes, which each used to carry their own copy.
 
-import type { Prisma } from "./generated/prisma";
-import { prisma } from "./db";
+import { prisma, type DbTransaction } from "./db";
 import { consumeToken, recordClaimFailure, type ClaimRefusal, type TokenClaim } from "./tokens";
 import { isTransientTransactionError } from "./prisma-errors";
 import type { TokenKind } from "./token-ttl";
@@ -63,7 +62,7 @@ export type Redemption<T, R extends string = never> =
 export async function redeemToken<T, R extends string = never>(
   token: string,
   type: TokenKind,
-  work: (tx: Prisma.TransactionClient, userId: string) => Promise<T>,
+  work: (tx: DbTransaction, userId: string) => Promise<T>,
 ): Promise<Redemption<T, R>> {
   let claim: TokenClaim | undefined;
   try {

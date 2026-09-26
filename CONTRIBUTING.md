@@ -74,10 +74,12 @@ git push origin v1.2.0
 The tag run of `.github/workflows/ci.yml` then:
 
 1. Runs the quality gates against the tagged commit.
-2. Builds two Docker images with Buildx and pushes them to the GitHub Container
-   Registry (`ghcr.io/ironpinguin/simple_jigsaw`):
-   - `<image>:<tag>` and `:latest` — PostgreSQL build
-   - `<image>:<tag>-sqlite` and `:latest-sqlite` — SQLite build
+2. Builds the Docker image with Buildx and pushes it to the GitHub Container
+   Registry (`ghcr.io/ironpinguin/simple_jigsaw`). One image serves both
+   databases; `DATABASE_PROVIDER` picks one at container start:
+   - `<image>:<tag>` and `:latest`
+   - `<image>:<tag>-sqlite` and `:latest-sqlite` — the same image, deprecated:
+     kept for existing SQLite installs and dropped in a later release
 3. Creates a GitHub Release for the tag.
 
 Before tagging, move the `## [Unreleased]` entries in `CHANGELOG.md` under a new

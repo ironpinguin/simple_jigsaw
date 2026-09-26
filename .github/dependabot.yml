@@ -32,6 +32,15 @@ updates:
       # The first run disproved it: thirteen accumulated majors arrived as a
       # single PR (#61), which is not reviewable at all. Grouping majors only
       # looks tidy while there are none pending.
+      #
+      # The one exception is a single project's own packages. Prisma's CLI, its
+      # client and the two driver adapters are released in lockstep and only
+      # work at the same version: Prisma 7 arrived as separate CLI and client
+      # PRs that each failed CI on its own, because they were halves of one
+      # change (#112). Still one project's migration per PR. Minors and patches
+      # land in the group above, which matches first.
+      prisma:
+        patterns: ["prisma", "@prisma/*"]
     ignore:
       # Pinned to whatever next-intl depends on rather than to the newest
       # release. This devDependency exists for one reason: so that
@@ -59,21 +68,6 @@ updates:
       # the meantime; only the major is held.
       - dependency-name: "eslint"
         versions: [">=10.0.0"]
-      # Prisma 7 is a migration, not a bump, and #112 tracks it: the datasource
-      # `url` is no longer allowed in the schema, connection config moves to a
-      # prisma.config.ts, and PrismaClient refuses to construct without a driver
-      # adapter. With two providers driven from one schema (see
-      # scripts/prisma.mjs) that means an adapter each and a runtime choice
-      # where DATABASE_PROVIDER is currently a build-time schema rewrite.
-      #
-      # Dependabot offered it as two PRs — the CLI and the client — which fail
-      # separately because they are halves of one change, and between them
-      # occupied two of the five slots above. Prisma 6 minors and patches keep
-      # arriving; lift this when #112 lands.
-      - dependency-name: "prisma"
-        versions: [">=7.0.0"]
-      - dependency-name: "@prisma/client"
-        versions: [">=7.0.0"]
       # TypeScript 7 is the native port, and the compiler itself is fine with
       # this codebase — `tsc --noEmit`, the test suite and `next build` all pass
       # under 7.0.2. What refuses is the lint toolchain: typescript-eslint

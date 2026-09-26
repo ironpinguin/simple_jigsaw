@@ -12,7 +12,9 @@ services:
     build:
       context: .
       target: dev
-    command: sh -c "npx prisma generate && npx prisma db push --skip-generate && exec npx next dev"
+    # Through scripts/prisma.mjs, like the images: it generates both clients,
+    # which lib/db.ts imports, and pushes to the provider this stack runs.
+    command: sh -c "npm run db:generate && npm run db:push && exec npx next dev"
     volumes:
       - .:/app
       # Keep container-built dirs from being shadowed by the bind mount (and keep

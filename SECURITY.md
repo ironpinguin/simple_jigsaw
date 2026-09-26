@@ -12,7 +12,7 @@ not patched in place.
 | < 0.6 | ❌ |
 
 Container images follow the same rule: `ghcr.io/ironpinguin/simple_jigsaw:latest`
-(and `:latest-sqlite`) track the newest release. A published tag is never moved —
+(and the deprecated `:latest-sqlite`, the same image) track the newest release. A published tag is never moved —
 if something is wrong with a release, it is fixed forward in the next one.
 
 ---

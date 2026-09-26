@@ -1,19 +1,21 @@
 // Prisma schema for the jigsaw puzzle app.
 //
 // The datasource provider is switchable between "postgresql" (default) and
-// "sqlite" via the DATABASE_PROVIDER env var — the container derives the active
-// schema through scripts/prisma.mjs so the same models run on both. Because
+// "sqlite" via the DATABASE_PROVIDER env var. scripts/prisma.mjs derives the
+// SQLite schema from this one and generates a client for each provider, so the
+// same models run on both and one image serves either. The connection URL lives
+// in prisma.config.ts for the CLI and reaches the app through a driver adapter
+// (lib/db.ts) — Prisma 7 no longer accepts it here. Because
 // Prisma enums are not supported on SQLite, role/type columns are plain strings
 // validated in application code (see lib/roles.ts).
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../lib/generated/prisma"
+  output   = "../lib/generated/postgresql"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {

@@ -10,16 +10,28 @@ description: Use when editing prisma/schema.prisma or anything about persistence
 
 ## How the two providers work
 
-`scripts/prisma.mjs` reads `DATABASE_PROVIDER` (`postgresql` default, or
-`sqlite`) and, for anything but Postgres, writes `prisma/.active.prisma` with
-only the datasource `provider` line swapped, then runs prisma against it. That
+`scripts/prisma.mjs` derives `prisma/.sqlite.prisma` from the committed schema
+with only the datasource `provider` and the generator `output` swapped. That
 derived file is gitignored — never edit or commit it, and never add a second
 schema file.
 
+- `generate` always builds **both** clients: `lib/generated/postgresql` and
+  `lib/generated/sqlite`. One image serves either database; `lib/db.ts` picks
+  the client and its driver adapter from `DATABASE_PROVIDER` at boot.
+- Every other command (`db push`, …) runs against the provider
+  `DATABASE_PROVIDER` names (`postgresql` default, or `sqlite`).
+- The connection URL is not in the schema (Prisma 7 refuses it): the CLI reads
+  `DATABASE_URL` through `prisma.config.ts`, the app hands it to the adapter.
+
 ```bash
-npm run db:push       # node scripts/prisma.mjs db push --skip-generate
-npm run db:generate   # node scripts/prisma.mjs generate
+npm run db:push       # node scripts/prisma.mjs db push
+npm run db:generate   # node scripts/prisma.mjs generate  (both clients)
 ```
+
+The app is typed against the **SQLite** client (`Db` in `lib/db.ts`), whose
+query API is a subset of the Postgres one. A Postgres-only option such as
+`mode: "insensitive"` or `skipDuplicates` therefore fails the typecheck instead
+of the SQLite install.
 
 There are **no committed migrations**. The dev container runs `prisma db push`
 on boot, and the images do the same — so `db push` is the mechanism, and
@@ -42,7 +54,8 @@ quietly.
 
 1. Edit `prisma/schema.prisma`. For an enumerated column: `String` + comment +
    union in `lib/roles.ts`.
-2. `npm run db:generate` — the client lands in `lib/generated/prisma`
+2. `npm run db:generate` — both clients land in `lib/generated/postgresql` and
+   `lib/generated/sqlite`
    (gitignored; `postinstall` regenerates it).
 3. Push and exercise on **both** providers:
    ```bash
@@ -58,10 +71,11 @@ quietly.
 ## Common mistakes
 
 - **Adding a Prisma `enum`.** Generates fine on Postgres, breaks the SQLite
-  image at build time — and CI builds both.
-- **Editing `prisma/.active.prisma`.** It is regenerated on every run; the edit
+  client — and `db:generate` builds both, so it fails every build.
+- **Editing `prisma/.sqlite.prisma`.** It is regenerated on every run; the edit
   vanishes.
 - **A required column without a default** on a table that already has rows —
   `db push` will offer to reset the data. Add a default or make it optional.
-- **Only testing Postgres.** The SQLite image is a released artifact
-  (`:latest-sqlite`), not a side experiment.
+- **Only testing Postgres.** SQLite installs run the same released image
+  (`DATABASE_PROVIDER=sqlite`, also tagged `:latest-sqlite`); they are not a
+  side experiment.

@@ -106,10 +106,15 @@ Das startet nur **app + mailpit**: die Daten liegen in einer **SQLite-Datei** un
 die Bilder im **lokalen Dateisystem** (beides im Volume `sqlitedata`) — kein
 Postgres, kein RustFS.
 
+Es ist **dasselbe Image** wie für Postgres: Es enthält einen Prisma-Client für
+jede Datenbank, und `DATABASE_PROVIDER` wählt beim Containerstart einen aus.
+Umsteigen heißt also, die Variable (und `DATABASE_URL`) zu ändern, nicht ein
+anderes Image zu bauen.
+
 Hintergrund: `prisma/schema.prisma` ist die einzige Quelle; `scripts/prisma.mjs`
-leitet für einen anderen Provider nur die `datasource`-Zeile ab. Da Prisma-Enums
-auf SQLite nicht unterstützt werden, sind Rollen-/Typ-Spalten Strings (validiert
-im Code, siehe `lib/roles.ts`).
+leitet für SQLite nur die `datasource`- und `output`-Zeile ab und erzeugt beide
+Clients. Da Prisma-Enums auf SQLite nicht unterstützt werden, sind
+Rollen-/Typ-Spalten Strings (validiert im Code, siehe `lib/roles.ts`).
 
 ## Konten, Rollen & Admin
 
@@ -200,11 +205,13 @@ npm test        # Vitest: Raster, Kanten-Passung, Outlines, Gruppen, Banns/Token
 ## Releases
 
 Releases werden per **SemVer-Tag** ausgelöst. Ein Tag `vX.Y.Z` startet die
-Release-Jobs in GitHub Actions, die zwei Docker-Images mit Buildx bauen und in
+Release-Jobs in GitHub Actions, die das Docker-Image mit Buildx bauen und in
 die **GitHub Container Registry** (`ghcr.io/ironpinguin/simple_jigsaw`) pushen:
 
-- `…:vX.Y.Z` und `…:latest` — PostgreSQL-Build
-- `…:vX.Y.Z-sqlite` und `…:latest-sqlite` — SQLite-Build
+- `…:vX.Y.Z` und `…:latest` — für PostgreSQL und SQLite (`DATABASE_PROVIDER`)
+- `…:vX.Y.Z-sqlite` und `…:latest-sqlite` — dasselbe Image, **veraltet**: nur
+  noch für bestehende SQLite-Installationen und in einem späteren Release
+  entfernt. Stattdessen `…:latest` mit `DATABASE_PROVIDER=sqlite`.
 
 und einen GitHub-Release-Eintrag anlegt. Details in
 [CONTRIBUTING.md](CONTRIBUTING.md).

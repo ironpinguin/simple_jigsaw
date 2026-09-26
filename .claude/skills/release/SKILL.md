@@ -45,12 +45,14 @@ without its commit on `main` leaves the history confusing.
 `.github/workflows/ci.yml` runs `lint`, `test`, `build` and `sast` against the
 tagged commit, then:
 
-- **`release-images`** — a Buildx matrix producing two images from the same
-  Dockerfile via the `DATABASE_PROVIDER` build arg, pushed to GHCR:
-  `ghcr.io/ironpinguin/simple_jigsaw:v0.5.0` + `:latest` (PostgreSQL) and
-  `:v0.5.0-sqlite` + `:latest-sqlite` (SQLite).
+- **`release-images`** — builds the one image (it serves PostgreSQL and
+  SQLite; `DATABASE_PROVIDER` picks at container start) and pushes it to GHCR
+  under four tags: `ghcr.io/ironpinguin/simple_jigsaw:v0.5.0` + `:latest`, and
+  `:v0.5.0-sqlite` + `:latest-sqlite` as aliases of the same image for existing
+  SQLite installs. The aliases are deprecated (#112); when a release drops them,
+  say so under `### Removed` in the changelog.
 - **`release-github`** — creates the GitHub release for the tag, with notes
-  pointing at `CHANGELOG.md` and both image names.
+  pointing at `CHANGELOG.md` and the image name.
 
 Both authenticate with the automatic `GITHUB_TOKEN`; no extra secrets. The repo
 must allow read/write workflow permissions (Settings → Actions → General).
@@ -62,9 +64,14 @@ gh run watch                        # or: gh run list --limit 3
 gh release view "v$VERSION"
 ```
 
-Check that **both** matrix legs pushed. A green `release-github` with a failed
-SQLite image leg means `:latest-sqlite` is stale while the release page claims
-otherwise.
+Check that all four tags point at the same digest — a `-sqlite` tag left on an
+older digest means SQLite installs stopped updating:
+
+```bash
+for t in "v$VERSION" latest "v$VERSION-sqlite" latest-sqlite; do
+  docker buildx imagetools inspect "ghcr.io/ironpinguin/simple_jigsaw:$t" --format '{{json .Manifest.Digest}}'
+done
+```
 
 ## If it goes wrong
 
