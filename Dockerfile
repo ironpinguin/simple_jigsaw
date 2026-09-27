@@ -18,7 +18,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 # ---- dependencies ----
 FROM base AS deps
-COPY package.json package-lock.json prisma.config.ts ./
+# .npmrc makes the install fail on an unreviewed dependency install script
+# (allowScripts in package.json, #141) instead of skipping it silently.
+COPY package.json package-lock.json .npmrc prisma.config.ts ./
 COPY prisma ./prisma
 # postinstall generates both Prisma clients through this script.
 COPY scripts/prisma.mjs ./scripts/prisma.mjs
