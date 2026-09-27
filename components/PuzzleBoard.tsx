@@ -14,6 +14,7 @@ import { Stage, Layer, Group, Image as KImage } from "react-konva";
 import type Konva from "konva";
 import { generateEdges, type EdgeGrid } from "@/lib/puzzle/edges";
 import { pieceOutlinePath } from "@/lib/puzzle/outline";
+import type { PieceStyle } from "@/lib/puzzle/style";
 import {
   pieceId,
   renderOrder,
@@ -52,6 +53,8 @@ export interface PuzzleData {
   /** The creator's default piece count (the solver may pick another). */
   pieceCount: number;
   seed: number;
+  /** The creator's default piece style (the solver may pick another). */
+  pieceStyle: PieceStyle;
 }
 
 interface PieceInfo {
@@ -203,6 +206,7 @@ function buildLayout(
   containerW: number,
   cols: number,
   rows: number,
+  pieceStyle: PieceStyle,
   availableH: number,
 ): Layout {
   const { seed } = puzzle;
@@ -216,7 +220,7 @@ function buildLayout(
   });
   const { stageW, stageH, pieceW, pieceH, snapDist } = geo;
 
-  const grid = generateEdges(cols, rows, seed);
+  const grid = generateEdges(cols, rows, seed, pieceStyle);
 
   const pieces = new Map<string, PieceInfo>();
   const order: string[] = [];
@@ -268,6 +272,11 @@ interface Props {
   puzzle: PuzzleData;
   cols: number;
   rows: number;
+  /**
+   * The shape to cut. Changing it rebuilds the layout and resumes the stored
+   * solve — the grid is the same, so every group still fits.
+   */
+  pieceStyle: PieceStyle;
   /** `PuzzleSolver` owns the toggle. */
   showMinimap: boolean;
   onProgress: (groups: number, total: number) => void;
@@ -320,6 +329,7 @@ export default function PuzzleBoard({
   puzzle,
   cols,
   rows,
+  pieceStyle,
   showMinimap,
   onProgress,
   onSolved,
@@ -400,8 +410,8 @@ export default function PuzzleBoard({
     // the DOM, and here rather than once on mount so that every new layout —
     // another piece count, say — gets the room the window has now. The width,
     // like before, is read once: a later resize does not re-lay-out the board.
-    return buildLayout(puzzle, image, containerW, cols, rows, availableBoardHeight(wrap));
-  }, [image, wrap, containerW, puzzle, cols, rows]);
+    return buildLayout(puzzle, image, containerW, cols, rows, pieceStyle, availableBoardHeight(wrap));
+  }, [image, wrap, containerW, puzzle, cols, rows, pieceStyle]);
 
   // Seed the group model whenever the layout is (re)built: resume the stored solve
   // if there is a usable one, otherwise scatter.

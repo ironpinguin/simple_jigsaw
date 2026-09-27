@@ -107,6 +107,9 @@ model Puzzle {
   cols        Int
   rows        Int
   seed        Int
+  // Default piece shape; solvers may switch, a competition keeps this one.
+  // "classic" | "wooden" — PIECE_STYLES in lib/puzzle/style.ts.
+  pieceStyle  String   @default("classic")
   isPublic    Boolean  @default(true)
   createdAt   DateTime @default(now())
 

@@ -49,6 +49,7 @@ const PUZZLE = {
   cols: 8,
   rows: 6,
   seed: 7,
+  pieceStyle: "wooden",
   isPublic: false,
   createdAt: new Date("2026-01-01"),
   ownerId: "owner-1",
@@ -121,6 +122,14 @@ describe("GET /api/puzzles/[id]", () => {
     const res = await callGet();
     expect(res.status).toBe(200);
     expect(getSessionViewerMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the piece style, and classic for a value it does not know", async () => {
+    findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true });
+    expect((await (await callGet()).json()).puzzle.pieceStyle).toBe("wooden");
+
+    findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true, pieceStyle: "hexagonal" });
+    expect((await (await callGet()).json()).puzzle.pieceStyle).toBe("classic");
   });
 });
 

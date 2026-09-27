@@ -71,9 +71,13 @@ function respondToCreateWith(puzzleResponse: Record<string, unknown>) {
   vi.stubGlobal("fetch", fetchMock);
 }
 
-/** Pick a file and submit — the only path that reaches the navigation call. */
-async function submitForm() {
+/**
+ * Pick a file and submit — the only path that reaches the navigation call.
+ * `beforeSubmit` runs on the mounted form, to set other fields first.
+ */
+async function submitForm(beforeSubmit?: () => void) {
   mount();
+  if (beforeSubmit) await act(async () => beforeSubmit());
   const fileInput = container.querySelector<HTMLInputElement>("#file")!;
   const file = new File(["data"], "photo.png", { type: "image/png" });
   await act(async () => {
@@ -225,5 +229,36 @@ describe("CreateForm success navigation", () => {
     await submitForm();
 
     expect(pushMock).toHaveBeenCalledWith("/puzzle/puzzle-1");
+  });
+});
+
+describe("CreateForm piece style", () => {
+  /** The body the form sent to /api/puzzles. */
+  function createBody() {
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/puzzles")!;
+    return JSON.parse((call[1] as RequestInit).body as string);
+  }
+
+  function styleButton(label: string) {
+    return [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => b.textContent === label,
+    )!;
+  }
+
+  it("creates a classic puzzle unless another style is picked", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+
+    await submitForm();
+
+    expect(createBody().pieceStyle).toBe("classic");
+  });
+
+  it("sends the style the creator picked", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+
+    await submitForm(() => styleButton(messages.pieceStyle.wooden).click());
+
+    expect(createBody().pieceStyle).toBe("wooden");
+    expect(styleButton(messages.pieceStyle.wooden).getAttribute("aria-pressed")).toBe("true");
   });
 });

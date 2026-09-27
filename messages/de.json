@@ -88,6 +88,11 @@
     "createFailed": "Puzzle konnte nicht erstellt werden.",
     "genericFail": "Etwas ist schiefgelaufen."
   },
+  "pieceStyle": {
+    "label": "Teileform",
+    "classic": "Klassisch",
+    "wooden": "Holz"
+  },
   "solve": {
     "loading": "Puzzle wird geladen…",
     "progress": "{connected} / {total} verbunden",

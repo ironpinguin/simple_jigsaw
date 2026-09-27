@@ -165,6 +165,27 @@ describe("POST /api/puzzles", () => {
       }),
     );
   });
+
+  it("stores the classic piece style when none is given", async () => {
+    await callPost(BODY);
+    expect(txCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ pieceStyle: "classic" }) }),
+    );
+  });
+
+  it("stores the piece style the creator picked", async () => {
+    const res = await callPost({ ...BODY, pieceStyle: "wooden" });
+    expect(res.status).toBe(201);
+    expect(txCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ pieceStyle: "wooden" }) }),
+    );
+  });
+
+  it("rejects a piece style it does not know", async () => {
+    const res = await callPost({ ...BODY, pieceStyle: "hexagonal" });
+    expect(res.status).toBe(400);
+    expect(txCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("automatic moderation", () => {

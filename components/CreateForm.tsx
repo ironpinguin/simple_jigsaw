@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { PIECE_PRESETS } from "@/lib/puzzle/grid";
+import { DEFAULT_PIECE_STYLE, PIECE_STYLES, type PieceStyle } from "@/lib/puzzle/style";
 
 export default function CreateForm() {
   const t = useTranslations("create");
+  const tStyle = useTranslations("pieceStyle");
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [pieceCount, setPieceCount] = useState<number>(48);
+  const [pieceStyle, setPieceStyle] = useState<PieceStyle>(DEFAULT_PIECE_STYLE);
   const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,6 +82,7 @@ export default function CreateForm() {
           imageWidth: upData.width,
           imageHeight: upData.height,
           pieceCount,
+          pieceStyle,
           isPublic,
         }),
       });
@@ -135,6 +139,23 @@ export default function CreateForm() {
               onClick={() => setPieceCount(n)}
             >
               {n}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label>{tStyle("label")}</label>
+        <div className="preset-row">
+          {PIECE_STYLES.map((s) => (
+            <button
+              type="button"
+              key={s}
+              className={`preset ${pieceStyle === s ? "active" : ""}`}
+              aria-pressed={pieceStyle === s}
+              onClick={() => setPieceStyle(s)}
+            >
+              {tStyle(s)}
             </button>
           ))}
         </div>

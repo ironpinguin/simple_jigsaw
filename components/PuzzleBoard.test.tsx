@@ -125,6 +125,7 @@ const puzzle = {
   imageHeight: 900,
   pieceCount: 12,
   seed: 7,
+  pieceStyle: "classic" as const,
 };
 // computeGrid(12, 4/3) is 4 x 3.
 const COLS = 4;
@@ -188,6 +189,7 @@ describe("PuzzleBoard", () => {
           puzzle={puzzle}
           cols={grid.cols}
           rows={grid.rows}
+          pieceStyle="classic"
           showMinimap={false}
           onProgress={onProgress}
           onSolved={onSolved}
