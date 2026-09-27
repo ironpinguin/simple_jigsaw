@@ -116,6 +116,23 @@ export const CompetitionSettingsSchema = z
 
 export type CompetitionSettings = z.infer<typeof CompetitionSettingsSchema>;
 
+/** A competition as the owner's settings form reads it back from the API. */
+export function competitionDto(c: CompetitionWindow & { pieceCount: number }) {
+  return {
+    pieceCount: c.pieceCount,
+    startsAt: c.startsAt?.toISOString() ?? null,
+    endsAt: c.endsAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * The window of a competition ended at `now`. An upcoming one starts at the same
+ * moment, so the window stays in order — start before end — and reads as ended.
+ */
+export function endedWindow(c: CompetitionWindow, now: Date): CompetitionWindow {
+  return { startsAt: c.startsAt && c.startsAt > now ? now : c.startsAt, endsAt: now };
+}
+
 /** How many entries the leaderboard shows. */
 export const LEADERBOARD_SIZE = 20;
 

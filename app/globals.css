@@ -317,8 +317,27 @@ select:focus {
 .competition-settings svg {
   vertical-align: -2px;
 }
-.competition-form {
+.competition-form,
+.competition-settings .leaderboard {
   width: 100%;
+}
+.competition-settings .card-actions {
+  margin-top: 0;
+}
+/* A puzzle card is far narrower than the solve popover, and the owner reads the
+   board to know who won: each entry takes two lines here, the full name beside
+   the place and time and moves below it, instead of a name cut to three letters. */
+.competition-settings .leaderboard-list li {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.competition-settings .leaderboard-name {
+  flex-basis: calc(100% - 2.2em - 8px);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.competition-settings .leaderboard-time {
+  margin-left: calc(2.2em + 8px);
 }
 .competition-form input,
 .competition-form select {

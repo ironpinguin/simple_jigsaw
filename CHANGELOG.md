@@ -15,6 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   choice is remembered per puzzle. Switching keeps your progress. In a
   competition the creator's style applies to everyone. Existing puzzles keep
   exactly their shape. (#120)
+- **Competition results for the owner.** Under *My puzzles* the owner of a
+  competition can open its leaderboard, while it runs and after it has
+  ended, and download the whole leaderboard as a CSV file (rank, display
+  name, time, moves, when) to use the result elsewhere. (#139)
+
+### Changed
+- **Ending a competition keeps its leaderboard.** *End competition* now
+  closes it — no more entries — and the final leaderboard stays visible and
+  downloadable. Removing a competition together with its leaderboard is the
+  new *Delete competition*. The privacy policy says so. (#139)
 
 ## [0.8.0] - 2026-09-26
 
