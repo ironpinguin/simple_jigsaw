@@ -75,6 +75,7 @@
     "protobufjs": false,
     "@parcel/watcher": false,
     "unrs-resolver": false,
-    "@swc/core": false
+    "@swc/core": false,
+    "fsevents": false
   }
 }
