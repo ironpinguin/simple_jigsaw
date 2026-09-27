@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getSessionViewer } from "@/lib/auth";
 import { canViewPuzzle } from "@/lib/visibility";
 import PuzzleSolver from "@/components/PuzzleSolver";
+import { toPieceStyle } from "@/lib/puzzle/style";
 
 // Loads the puzzle from the DB per request; do not prerender at build time.
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export default async function PuzzlePage({
     imageHeight: puzzle.imageHeight,
     pieceCount: puzzle.pieceCount,
     seed: puzzle.seed,
+    pieceStyle: toPieceStyle(puzzle.pieceStyle),
   };
 
   return (

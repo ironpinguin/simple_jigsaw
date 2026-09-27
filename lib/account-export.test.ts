@@ -25,6 +25,7 @@ const puzzle = {
   cols: 10,
   rows: 10,
   seed: 42,
+  pieceStyle: "classic",
   isPublic: true,
   createdAt: new Date(Date.UTC(2026, 0, 4)),
 };
@@ -97,6 +98,7 @@ describe("buildAccountExport", () => {
       cols: 10,
       rows: 10,
       seed: 42,
+      pieceStyle: "classic",
       isPublic: true,
     });
   });

@@ -37,6 +37,7 @@ import { DISPLAY_NAME_MAX, competitionPhase } from "@/lib/competition";
 import { Link as IntlLink } from "@/i18n/navigation";
 import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
+import { isPieceStyle, PIECE_STYLES, type PieceStyle } from "@/lib/puzzle/style";
 import {
   MAX_STORED_SOLVES,
   SOLVE_KEY_PREFIX,
@@ -248,7 +249,9 @@ export default function PuzzleSolver({
   const t = useTranslations("solve");
   const tReport = useTranslations("report");
   const tComp = useTranslations("competition");
+  const tStyle = useTranslations("pieceStyle");
   const storageKey = `pc:${puzzle.id}`;
+  const styleKey = `ps:${puzzle.id}`;
   const solveKey = solveStateKey(puzzle.id);
 
   // Piece count is per solver: default to the creator's value, but remember the
@@ -273,6 +276,18 @@ export default function PuzzleSolver({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see above
     if ((PIECE_PRESETS as readonly number[]).includes(saved)) setPieceCount(saved);
   }, [storageKey, fixedCount]);
+
+  // The piece style follows the piece count: the creator's default, the solver's
+  // remembered choice applied after mount, and fixed while there is a competition
+  // — to the creator's style, so every entry on the leaderboard cut the same.
+  const [pieceStyle, setPieceStyle] = useState<PieceStyle>(puzzle.pieceStyle);
+
+  useEffect(() => {
+    if (fixedCount) return;
+    const saved = withStorage((s) => s.getItem(styleKey), null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
+    if (isPieceStyle(saved)) setPieceStyle(saved);
+  }, [styleKey, fixedCount]);
 
   const { cols, rows } = useMemo(
     () => computeGrid(pieceCount, puzzle.imageWidth / puzzle.imageHeight),
@@ -553,6 +568,15 @@ export default function PuzzleSolver({
     clearSolveState();
   }
 
+  function changeStyle(style: PieceStyle) {
+    if (style === pieceStyle) return;
+    // No warning and nothing cleared or saved, unlike a new count: the grid stays
+    // the same, so the board carries the solve over in memory, clock included —
+    // which also holds where storage is blocked.
+    setPieceStyle(style);
+    withStorage((s) => s.setItem(styleKey, style), undefined);
+  }
+
   async function share() {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -677,6 +701,33 @@ export default function PuzzleSolver({
                 </select>
               </label>
             )}
+            {fixedCount ? (
+              <div className="menu-item">
+                {tStyle("label")}
+                <span className="muted" style={{ marginLeft: "auto" }}>
+                  {tStyle(pieceStyle)}
+                </span>
+              </div>
+            ) : (
+              <label className="menu-item">
+                {tStyle("label")}
+                <select
+                  id="piece-style"
+                  name="pieceStyle"
+                  value={pieceStyle}
+                  onChange={(e) => {
+                    if (isPieceStyle(e.target.value)) changeStyle(e.target.value);
+                  }}
+                  style={{ width: "auto", marginLeft: "auto" }}
+                >
+                  {PIECE_STYLES.map((s) => (
+                    <option key={s} value={s}>
+                      {tStyle(s)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             {/* Stays open so the "copied" confirmation can be seen. */}
             <button className="menu-item" type="button" onClick={share}>
               <LinkIcon size={ICON_SIZE} aria-hidden="true" /> {copied ? t("copied") : t("share")}
@@ -788,6 +839,7 @@ export default function PuzzleSolver({
           puzzle={puzzle}
           cols={cols}
           rows={rows}
+          pieceStyle={pieceStyle}
           showMinimap={showMap}
           onProgress={onProgress}
           onSolved={onSolved}

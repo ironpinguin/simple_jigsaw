@@ -18,6 +18,8 @@ const board = vi.hoisted<{
   groupsFor: (total: number) => number;
   /** What the solver last asked the board to show; see the overview toggle. */
   showMinimap: boolean | null;
+  /** The piece style the solver last asked the board to cut. */
+  pieceStyle: string | null;
   /** The solve-state plumbing, captured so a test can drive it like the board. */
   loadSolveState: (() => string | null) | null;
   saveSolveState: ((raw: string) => void) | null;
@@ -40,6 +42,7 @@ const board = vi.hoisted<{
   reportsFor: () => true,
   groupsFor: (total) => total,
   showMinimap: null,
+  pieceStyle: null,
   loadSolveState: null,
   saveSolveState: null,
   resetNonce: null,
@@ -70,6 +73,7 @@ vi.mock("./PuzzleBoard", () => {
   function BoardStub({
     cols,
     rows,
+    pieceStyle,
     showMinimap,
     onProgress,
     onSolved,
@@ -84,6 +88,7 @@ vi.mock("./PuzzleBoard", () => {
   }: {
     cols: number;
     rows: number;
+    pieceStyle: string;
     showMinimap: boolean;
     onProgress: (groups: number, total: number) => void;
     onSolved: () => void;
@@ -114,6 +119,9 @@ vi.mock("./PuzzleBoard", () => {
       board.showMinimap = showMinimap;
     }, [showMinimap]);
     useEffect(() => {
+      board.pieceStyle = pieceStyle;
+    }, [pieceStyle]);
+    useEffect(() => {
       board.onSolved = onSolved;
     }, [onSolved]);
     useEffect(() => {
@@ -138,6 +146,7 @@ const puzzle = {
   imageHeight: 800,
   pieceCount: 108, // what the creator picked; the fallback when nothing is stored
   seed: 1,
+  pieceStyle: "classic" as const,
 };
 
 const storageKey = `pc:${puzzle.id}`;
@@ -258,6 +267,7 @@ describe("PuzzleSolver", () => {
     board.reportsFor = () => true;
     board.groupsFor = (total) => total;
     board.showMinimap = null;
+    board.pieceStyle = null;
     board.gathered = 0;
     board.onSolved = null;
     board.readTiming = null;
@@ -518,6 +528,66 @@ describe("PuzzleSolver", () => {
     await choose("48");
 
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  describe("the piece style", () => {
+    function styleSelect() {
+      return container.querySelector<HTMLSelectElement>("#piece-style");
+    }
+
+    function chooseStyle(value: string) {
+      const el = styleSelect()!;
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+      setter.call(el, value);
+      return act(async () => {
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+
+    it("cuts the creator's style when the solver has not picked one", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(board.pieceStyle).toBe("classic");
+      expect(styleSelect()?.value).toBe("classic");
+    });
+
+    it("applies the remembered style after mount", async () => {
+      window.localStorage.setItem("ps:p1", "wooden");
+      container.innerHTML = serverHtml();
+
+      await hydrate();
+
+      expect(board.pieceStyle).toBe("wooden");
+      expect(styleSelect()?.value).toBe("wooden");
+    });
+
+    it("ignores a stored value that is not a style", async () => {
+      window.localStorage.setItem("ps:p1", "hexagonal");
+      container.innerHTML = serverHtml();
+
+      await hydrate();
+
+      expect(board.pieceStyle).toBe("classic");
+    });
+
+    it("switches style without asking and keeps the saved solve", async () => {
+      // Same grid, so the board carries it over in the new shape — nothing to lose.
+      const confirm = vi.spyOn(window, "confirm");
+      window.localStorage.setItem(solveKey, solveJson(7));
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await chooseStyle("wooden");
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(board.pieceStyle).toBe("wooden");
+      expect(window.localStorage.getItem("ps:p1")).toBe("wooden");
+      expect(window.localStorage.getItem(solveKey)).toBe(solveJson(7));
+      // Nothing written: the board keeps its model in memory, so an untouched
+      // puzzle gets no stored solve to warn about on a later piece-count change.
+      expect(board.saves).toBe(0);
+    });
   });
 
   it("shows the board overview until the solver switches it off", async () => {
@@ -1088,6 +1158,13 @@ describe("PuzzleSolver", () => {
       await seed();
       expect(progress().total).toBe(CONNECTIONS_12);
       expect(select()).toBeNull();
+    });
+
+    it("fixes the creator's piece style, ignoring the solver's remembered one", async () => {
+      window.localStorage.setItem("ps:p1", "wooden");
+      await seed();
+      expect(board.pieceStyle).toBe("classic");
+      expect(container.querySelector("#piece-style")).toBeNull();
     });
 
     it("starts an attempt on the first piece and enters the finished time", async () => {

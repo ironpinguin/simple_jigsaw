@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A second piece style: wooden.** Besides the classic shape, puzzles can be
+  cut like hand-sawn wooden pieces — large, round knobs on a narrow neck,
+  almost straight edges and nearly square corners. The creator picks the style when
+  creating a puzzle; solvers can switch it under *More actions*, and the
+  choice is remembered per puzzle. Switching keeps your progress. In a
+  competition the creator's style applies to everyone. Existing puzzles keep
+  exactly their shape. (#120)
+
 ## [0.8.0] - 2026-09-26
 
 ### Added

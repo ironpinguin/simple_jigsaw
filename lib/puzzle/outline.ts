@@ -5,7 +5,7 @@
 // the same edge objects, the shared boundary is one identical curve traced in
 // opposite directions — a perfect fit.
 
-import type { Edge, EdgeGrid, EdgeJitter } from "./edges";
+import type { Edge, EdgeGrid, EdgeJitter, WoodJitter } from "./edges";
 
 export interface Point {
   x: number;
@@ -51,6 +51,61 @@ function tabTemplate(j: EdgeJitter): ReadonlyArray<readonly [number, number]> {
   ];
 }
 
+/** Bezier handle length for a quarter circle, as a fraction of the radius. */
+const KAPPA = 0.5523;
+
+/**
+ * Wooden knob, same (t, p) convention as `tabTemplate`: a narrow neck carrying
+ * a large, nearly round head — the keyhole shape of a hand-sawn piece — on an
+ * edge that is straight but for a faint bow. Returns the 24 bezier points after
+ * the start corner (8 cubic segments). It reads the same jitter fields as the
+ * classic knob plus the edge's `WoodJitter`.
+ */
+function woodTemplate(
+  j: EdgeJitter,
+  w: WoodJitter,
+): ReadonlyArray<readonly [number, number]> {
+  const c = 0.5 + j.pos; // neck centre along the edge
+  const nw = 0.05 * j.wN; // neck half-width at its narrowest
+  const r = 0.15 * w.hs; // head radius along the edge
+  const R = r / TAB; // the same radius in knob-height units: round on a square cell
+  const lean = 0.02 * j.sk; // the head sits slightly off the neck
+  const cx = c + lean;
+  const hl = 0.85 * j.hL; // height of the head's widest point, per side
+  const hr = 0.85 * j.hR;
+  const top = 0.85 + R; // apex
+  const waist = 0.3 * j.uc; // where the neck is narrowest
+  const raw: Array<readonly [number, number]> = [
+    [0.3, 0],
+    [c - nw - 0.12, 0],
+    [c - nw - 0.07, 0], // straight shoulder
+    [c - nw - 0.02, 0],
+    [c - nw, waist - 0.18],
+    [c - nw, waist], // curls up into the neck
+    [c - nw, waist + 0.15],
+    [cx - r, hl - KAPPA * (hl - waist)],
+    [cx - r, hl], // swells into the head's left side
+    [cx - r, hl + KAPPA * (top - hl)],
+    [cx - KAPPA * r, top],
+    [cx, top], // round over the top
+    [cx + KAPPA * r, top],
+    [cx + r, hr + KAPPA * (top - hr)],
+    [cx + r, hr],
+    [cx + r, hr - KAPPA * (hr - waist)],
+    [c + nw, waist + 0.15],
+    [c + nw, waist], // back into the neck
+    [c + nw, waist - 0.18],
+    [c + nw + 0.02, 0],
+    [c + nw + 0.07, 0],
+    [c + nw + 0.12, 0],
+    [0.7, 0],
+    [1, 0], // shoulder → corner
+  ];
+  // The bow vanishes at both corners (sin 0 = sin π = 0), so corners stay put.
+  const bow = (t: number) => w.a1 * Math.sin(Math.PI * t) + w.a2 * Math.sin(2 * Math.PI * t);
+  return raw.map(([t, p]) => [t, p + bow(t)] as const);
+}
+
 /**
  * Point list (including the start corner) for one edge from corner A to B. The
  * perpendicular is derived from the edge direction, so knobs sit correctly even
@@ -76,7 +131,8 @@ function edgePoints(edge: Edge, a: Point, b: Point, tab: number): Point[] {
   const s = edge.sign;
 
   const pts: Point[] = [{ x: a.x, y: a.y }];
-  for (const [t, p] of tabTemplate(edge.jitter)) {
+  const template = edge.wood ? woodTemplate(edge.jitter, edge.wood) : tabTemplate(edge.jitter);
+  for (const [t, p] of template) {
     const off = p * tab * s;
     pts.push({ x: a.x + t * dx + off * px, y: a.y + t * dy + off * py });
   }

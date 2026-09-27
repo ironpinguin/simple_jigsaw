@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { generateEdges } from "./edges";
 import { computeGrid, PIECE_PRESETS } from "./grid";
 import { pieceOutlinePoints } from "./outline";
+import { PIECE_STYLES } from "./style";
 import { renderOrder, resolveConnections, pieceId, type PieceGroup } from "./groups";
 import {
   boardGeometry,
@@ -62,14 +63,15 @@ describe("pieceBox", () => {
   const pieceW = 100;
   const pieceH = 80;
 
-  it("fits the whole outline inside the bitmap with the padding intact", () => {
+  it.each(PIECE_STYLES)("fits the whole %s outline inside the bitmap with the padding intact", (style) => {
+    const styled = generateEdges(4, 3, 777, style);
     // The strong property: every outline point must land at least PIECE_PAD away
     // from each bitmap edge. This is what pins offsetX/offsetY and the padding —
     // asserting only that the canvas is "bigger than the cell" does not.
     for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 4; c++) {
-        const box = pieceBox(grid, r, c, pieceW, pieceH);
-        for (const p of pieceOutlinePoints(grid, r, c, pieceW, pieceH)) {
+        const box = pieceBox(styled, r, c, pieceW, pieceH);
+        for (const p of pieceOutlinePoints(styled, r, c, pieceW, pieceH)) {
           expect(box.offsetX + p.x).toBeGreaterThanOrEqual(PIECE_PAD - 1e-9);
           expect(box.offsetY + p.y).toBeGreaterThanOrEqual(PIECE_PAD - 1e-9);
           expect(box.offsetX + p.x).toBeLessThanOrEqual(box.canvasW - PIECE_PAD + 1e-9);

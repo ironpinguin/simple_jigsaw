@@ -88,6 +88,11 @@
     "createFailed": "The puzzle could not be created.",
     "genericFail": "Something went wrong."
   },
+  "pieceStyle": {
+    "label": "Piece style",
+    "classic": "Classic",
+    "wooden": "Wooden"
+  },
   "solve": {
     "loading": "Loading puzzle…",
     "progress": "{connected} / {total} connected",

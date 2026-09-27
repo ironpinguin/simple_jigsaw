@@ -88,6 +88,11 @@
     "createFailed": "Impossibile creare il puzzle.",
     "genericFail": "Qualcosa è andato storto."
   },
+  "pieceStyle": {
+    "label": "Forma dei pezzi",
+    "classic": "Classica",
+    "wooden": "Legno"
+  },
   "solve": {
     "loading": "Caricamento puzzle…",
     "progress": "{connected} / {total} collegati",

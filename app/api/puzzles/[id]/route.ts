@@ -7,6 +7,7 @@ import { copyObject, deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
 import { AUTO_REPORT_CATEGORIES } from "@/lib/reports";
+import { toPieceStyle } from "@/lib/puzzle/style";
 import { z } from "zod";
 
 export async function GET(
@@ -40,6 +41,7 @@ export async function GET(
       cols: puzzle.cols,
       rows: puzzle.rows,
       seed: puzzle.seed,
+      pieceStyle: toPieceStyle(puzzle.pieceStyle),
       isPublic: puzzle.isPublic,
       createdAt: puzzle.createdAt,
     },

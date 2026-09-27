@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
+import { DEFAULT_PIECE_STYLE, PIECE_STYLES } from "@/lib/puzzle/style";
 import { getErrorT } from "@/lib/i18n-server";
 import { readNsfwConfig, requiresReview, toVerdictLabel, type VerdictLabel } from "@/lib/nsfw";
 import { notifyAdminsOfReport } from "@/lib/report-notify";
@@ -15,6 +16,7 @@ const CreateSchema = z.object({
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
   pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n)),
+  pieceStyle: z.enum(PIECE_STYLES).optional().default(DEFAULT_PIECE_STYLE),
   isPublic: z.boolean().optional().default(true),
 });
 
@@ -100,7 +102,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
   }
 
-  const { title, imageKey, imageWidth, imageHeight, pieceCount, isPublic } = parsed.data;
+  const { title, imageKey, imageWidth, imageHeight, pieceCount, pieceStyle, isPublic } = parsed.data;
 
   // Who already references this key, and publicly or not. One read answers two
   // questions: whether someone *else* references it (the rejection right below)
@@ -158,6 +160,7 @@ export async function POST(request: Request) {
         imageWidth,
         imageHeight,
         pieceCount,
+        pieceStyle,
         cols,
         rows,
         seed,

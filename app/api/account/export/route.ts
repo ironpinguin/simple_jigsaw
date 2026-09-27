@@ -65,6 +65,7 @@ export async function GET() {
           cols: true,
           rows: true,
           seed: true,
+          pieceStyle: true,
           isPublic: true,
           createdAt: true,
           competition: { select: { pieceCount: true, startsAt: true, endsAt: true } },
