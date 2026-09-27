@@ -26,6 +26,13 @@ const eslintConfig = [
     // the same module, and an exact list let every spelling it did not name
     // through. Static imports and re-exports only — a dynamic `import()` or a
     // `require` is not something this rule can see.
+    //
+    // Kept as a lint rule on purpose (#134). Moving redeemToken into
+    // lib/tokens.ts and dropping the consumeToken export would enforce this by
+    // the module system instead, but lib/tokens.test.ts would then have to test
+    // the claim through a mocked transaction rather than directly — and those
+    // tests pin exactly the claim semantics this rule protects. A dynamic import
+    // of consumeToken would stand out in review.
     files: ["**/*.{ts,tsx,js,jsx,mjs}"],
     ignores: ["lib/token-redeem.ts", "**/*.test.{ts,tsx}"],
     rules: {

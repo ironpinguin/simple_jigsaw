@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
-import type { ClaimRefusal } from "@/lib/tokens";
-import { Refused, redeemToken } from "@/lib/token-redeem";
+import { redeemToken } from "@/lib/token-redeem";
 import { liveTokenFilter } from "@/lib/token-ttl";
 import { checkEmailBanned } from "@/lib/moderation";
 import { TERMS_VERSION } from "@/lib/legal";
 import { InviteSchema, signupErrorKey } from "@/lib/signup";
 import { getErrorT, resolveBrowserLocale } from "@/lib/i18n-server";
 
-/** Why an activation was refused, beyond the two a claim itself can report. */
-type InviteRefusal = ClaimRefusal | "accountNotFound" | "emailBanned";
+/**
+ * Why an activation was refused, beyond the two a claim itself can report —
+ * those `redeemToken` adds on its own, and naming them here would let the
+ * work's `refuse` say "unavailable".
+ */
+type InviteRefusal = "accountNotFound" | "emailBanned";
 
 /**
  * The answer to a moderation refusal, and the log line that goes with it.
@@ -23,9 +26,9 @@ type InviteRefusal = ClaimRefusal | "accountNotFound" | "emailBanned";
  * the address — this lands in a log for someone who may since have asked to be
  * erased.
  */
-function refuse(
+function refusalResponse(
   t: (key: string) => string,
-  reason: "accountNotFound" | "emailBanned",
+  reason: InviteRefusal,
   userId?: string,
 ): NextResponse {
   if (reason === "accountNotFound") {
@@ -68,8 +71,10 @@ export async function POST(request: Request) {
   if (!known) {
     return NextResponse.json({ error: t("inviteInvalid") }, { status: 400 });
   }
-  if (!known.user) return refuse(t, "accountNotFound");
-  if (await checkEmailBanned(known.user.email)) return refuse(t, "emailBanned", known.user.id);
+  if (!known.user) return refusalResponse(t, "accountNotFound");
+  if (await checkEmailBanned(known.user.email)) {
+    return refusalResponse(t, "emailBanned", known.user.id);
+  }
 
   // Both before the transaction, and deliberately so. bcrypt at cost 10 is
   // ~100ms of CPU: inside, it would hold a write lock for that long — on SQLite,
@@ -101,12 +106,10 @@ export async function POST(request: Request) {
   const redeemed = await redeemToken<void, InviteRefusal>(
     parsed.data.token,
     "INVITE",
-    async (tx, userId) => {
+    async (tx, userId, refuse) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
-      if (!user) throw new Refused<InviteRefusal>("accountNotFound", userId);
-      if (await checkEmailBanned(user.email, tx)) {
-        throw new Refused<InviteRefusal>("emailBanned", user.id);
-      }
+      if (!user) return refuse("accountNotFound");
+      if (await checkEmailBanned(user.email, tx)) return refuse("emailBanned");
 
       await tx.user.update({
         where: { id: user.id },
@@ -136,7 +139,7 @@ export async function POST(request: Request) {
       // back with it.
       case "accountNotFound":
       case "emailBanned":
-        return refuse(t, redeemed.reason, redeemed.userId);
+        return refusalResponse(t, redeemed.reason, redeemed.userId);
       // The success response sits directly after this switch, so falling out of
       // it would report an activation that never happened. A reason added to
       // InviteRefusal and not to this switch fails the build here, and anything

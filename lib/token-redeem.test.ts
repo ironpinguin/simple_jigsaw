@@ -30,7 +30,8 @@ vi.mock("./tokens", () => ({
   recordClaimFailure: recordClaimFailureMock,
 }));
 
-import { Refused, redeemToken } from "./token-redeem";
+import type { ClaimRefusal } from "./tokens";
+import { redeemToken } from "./token-redeem";
 
 const transient = (code: "P2028" | "P2034") =>
   Object.assign(new Error(`transient ${code}`), { code });
@@ -58,7 +59,7 @@ describe("redeemToken", () => {
       value: "done",
     });
     expect(consumeTokenMock).toHaveBeenCalledWith("tok", "INVITE", tx);
-    expect(work).toHaveBeenCalledWith(tx, "user-1");
+    expect(work).toHaveBeenCalledWith(tx, "user-1", expect.any(Function));
     expect(txState.committed).toBe(1);
   });
 
@@ -88,13 +89,58 @@ describe("redeemToken", () => {
   });
 
   it("rolls the claim back with a refusal from the work, and reports it with its user", async () => {
-    const result = await redeemToken<void, "emailBanned">("tok", "INVITE", async (_tx, userId) => {
-      throw new Refused("emailBanned", userId);
-    });
+    const after = vi.fn();
+    const result = await redeemToken<void, "emailBanned">(
+      "tok",
+      "INVITE",
+      async (_tx, _userId, refuse) => {
+        refuse("emailBanned");
+        after(); // never reached: refuse throws, even without the usual `return`
+      },
+    );
 
     expect(result).toEqual({ ok: false, reason: "emailBanned", userId: "user-1" });
+    expect(after).not.toHaveBeenCalled();
     expect(txState.rolledBack).toBe(1);
     expect(txState.committed).toBe(0);
+  });
+
+  it("lets the work call a link invalid in a route without reasons of its own", async () => {
+    const result = await redeemToken("tok", "PASSWORD_RESET", async (_tx, _userId, refuse) => {
+      return refuse("invalid");
+    });
+
+    // The claimed user, without the work having to pass it on.
+    expect(result).toEqual({ ok: false, reason: "invalid", userId: "user-1" });
+    expect(txState.rolledBack).toBe(1);
+  });
+
+  it("checks a refusal's reason where it is thrown (compile-time, #134)", () => {
+    // Never run — the assertions are the type checker's, via `npm run build`
+    // and `tsc`: each marked line must fail to compile, and an unused
+    // expect-error directive is itself an error, so a loosened `Refuse` breaks
+    // the build.
+    const typeOnly = () => {
+      void redeemToken("tok", "EMAIL_VERIFY", async (_tx, _userId, refuse) => {
+        // @ts-expect-error -- no reasons of its own (R = never): only "invalid"
+        return refuse("accountNotFound");
+      });
+      void redeemToken<void, "emailBanned">("tok", "INVITE", async (_tx, _userId, refuse) => {
+        // @ts-expect-error -- "retry" is the transaction's to say, never the work's
+        return refuse("unavailable");
+      });
+      // Not even for a route whose own reasons name it, as the invite route's
+      // once did by spelling out `ClaimRefusal | …`.
+      void redeemToken<void, ClaimRefusal | "emailBanned">(
+        "tok",
+        "INVITE",
+        async (_tx, _userId, refuse) => {
+          // @ts-expect-error -- "unavailable" is excluded from Refuse whatever R says
+          return refuse("unavailable");
+        },
+      );
+    };
+    expect(typeof typeOnly).toBe("function");
   });
 
   it("books a transaction that failed before the claim ran", async () => {
