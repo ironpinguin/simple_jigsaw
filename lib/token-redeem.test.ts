@@ -30,6 +30,7 @@ vi.mock("./tokens", () => ({
   recordClaimFailure: recordClaimFailureMock,
 }));
 
+import type { ClaimRefusal } from "./tokens";
 import { redeemToken } from "./token-redeem";
 
 const transient = (code: "P2028" | "P2034") =>
@@ -92,8 +93,8 @@ describe("redeemToken", () => {
     const result = await redeemToken<void, "emailBanned">(
       "tok",
       "INVITE",
-      async (_tx, userId, refuse) => {
-        refuse("emailBanned", userId);
+      async (_tx, _userId, refuse) => {
+        refuse("emailBanned");
         after(); // never reached: refuse throws, even without the usual `return`
       },
     );
@@ -109,7 +110,8 @@ describe("redeemToken", () => {
       return refuse("invalid");
     });
 
-    expect(result).toEqual({ ok: false, reason: "invalid" });
+    // The claimed user, without the work having to pass it on.
+    expect(result).toEqual({ ok: false, reason: "invalid", userId: "user-1" });
     expect(txState.rolledBack).toBe(1);
   });
 
@@ -127,6 +129,16 @@ describe("redeemToken", () => {
         // @ts-expect-error -- "retry" is the transaction's to say, never the work's
         return refuse("unavailable");
       });
+      // Not even for a route whose own reasons name it, as the invite route's
+      // once did by spelling out `ClaimRefusal | …`.
+      void redeemToken<void, ClaimRefusal | "emailBanned">(
+        "tok",
+        "INVITE",
+        async (_tx, _userId, refuse) => {
+          // @ts-expect-error -- "unavailable" is excluded from Refuse whatever R says
+          return refuse("unavailable");
+        },
+      );
     };
     expect(typeof typeOnly).toBe("function");
   });

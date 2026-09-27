@@ -8,22 +8,18 @@ import { isTransientTransactionError } from "./prisma-errors";
 import type { TokenKind } from "./token-ttl";
 
 /**
- * A refusal decided inside `work`. Thrown rather than returned so the claim
- * rolls back with it — the link survives a refusal an admin or the user can
- * still reverse (#50) — and handed back by `redeemToken` as a refused
- * `Redemption` rather than as an error.
+ * A refusal, the claim's own or one decided inside `work`. Thrown rather than
+ * returned so the claim rolls back with it — the link survives a refusal an
+ * admin or the user can still reverse (#50) — and handed back by `redeemToken`
+ * as a refused `Redemption` rather than as an error.
  *
  * Not exported: `work` refuses through the `refuse` it is handed, whose reason
  * is checked against the route's own `R` (#134). A public class let any string
  * through, and `redeemToken` then passed it on typed as a `ClaimRefusal` — in a
  * route with `R = never`, a stray reason quietly became "invalid link".
  */
-class Refused<R extends string = string> extends Error {
-  constructor(
-    readonly reason: R,
-    /** Whose redemption this was, once the claim has told us. For the log. */
-    readonly userId?: string,
-  ) {
+class Refused extends Error {
+  constructor(readonly reason: string) {
     super(reason);
     this.name = "Refused";
   }
@@ -39,9 +35,21 @@ class Refused<R extends string = string> extends Error {
  * `"invalid"` for a link that turns out to be as good as bad (an account that
  * is gone), or one of the route's own reasons. Never `"unavailable"` — that
  * means "retry", which only a failed transaction can say, not a decision made
- * in `work`.
+ * in `work` — and excluded here rather than by convention, so an `R` that
+ * happens to name it cannot let it back in.
+ *
+ * No user id: `work` only ever runs after a successful claim, so the refusal
+ * carries the claimed user without being told.
  */
-export type Refuse<R extends string> = (reason: "invalid" | R, userId?: string) => never;
+export type Refuse<R extends string> = (reason: Exclude<"invalid" | R, "unavailable">) => never;
+
+/**
+ * The `refuse` every `work` is handed. It takes any string only here, where
+ * nothing can call it but `redeemToken`; `Refuse<R>` narrows it for `work`.
+ */
+function refuse(reason: string): never {
+  throw new Refused(reason);
+}
 
 /**
  * The outcome of a redemption. `ok` means the transaction committed: the link
@@ -92,9 +100,6 @@ export async function redeemToken<T, R extends string = never>(
   type: TokenKind,
   work: (tx: DbTransaction, userId: string, refuse: Refuse<R>) => Promise<T>,
 ): Promise<Redemption<T, R>> {
-  const refuse: Refuse<R> = (reason, userId) => {
-    throw new Refused(reason, userId);
-  };
   let claim: TokenClaim | undefined;
   try {
     return await prisma.$transaction(async (tx) => {
@@ -105,9 +110,12 @@ export async function redeemToken<T, R extends string = never>(
     });
   } catch (error) {
     if (error instanceof Refused) {
-      // Sound, unlike before #134: only `refuse` (typed `"invalid" | R`) and the
-      // claim's own refusal (a `ClaimRefusal`) construct one.
-      return { ok: false, reason: error.reason as ClaimRefusal | R, userId: error.userId };
+      // Sound, unlike before #134: only `refuse` (typed through `Refuse<R>`)
+      // and the claim's own refusal (a `ClaimRefusal`) construct one. A refusal
+      // from `work` came after a successful claim, so it is that user's; the
+      // claim's own refusal has none to report.
+      const reason = error.reason as ClaimRefusal | R;
+      return { ok: false, reason, userId: claim?.ok ? claim.userId : undefined };
     }
     if (!isTransientTransactionError(error)) throw error;
 
