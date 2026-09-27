@@ -72,6 +72,25 @@ describe("Leaderboard", () => {
     expect(container.textContent).toContain("48 pieces (competition)");
   });
 
+  it("invites the first entry while open, but not once the competition is over", async () => {
+    const empty = (phase: string) => ({
+      ...BOARD,
+      competition: { ...BOARD.competition, endsAt: "2026-01-01T00:00:00.000Z", phase },
+      entries: [],
+      you: null,
+    });
+    fetchMock.mockImplementation(async () => ({ ok: true, status: 200, json: async () => empty("OPEN") }));
+    await mount();
+    expect(container.textContent).toContain(messages.competition.noEntries);
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    fetchMock.mockImplementation(async () => ({ ok: true, status: 200, json: async () => empty("CLOSED") }));
+    await mount();
+    expect(container.textContent).toContain(messages.competition.noEntriesClosed);
+    expect(container.textContent).not.toContain(messages.competition.noEntries);
+  });
+
   it("loads again when the solver's entry changed the board", async () => {
     await mount();
     await mount({ version: 1 });

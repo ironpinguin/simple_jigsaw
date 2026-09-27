@@ -2,18 +2,9 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getErrorT } from "@/lib/i18n-server";
-import { CompetitionSettingsSchema } from "@/lib/competition";
+import { CompetitionSettingsSchema, competitionDto } from "@/lib/competition";
 
 type Params = { params: Promise<{ id: string }> };
-
-/** The competition as the owner's settings form shows it. */
-function toDto(c: { pieceCount: number; startsAt: Date | null; endsAt: Date | null }) {
-  return {
-    pieceCount: c.pieceCount,
-    startsAt: c.startsAt?.toISOString() ?? null,
-    endsAt: c.endsAt?.toISOString() ?? null,
-  };
-}
 
 /**
  * Turn the owner's puzzle into a competition, or change its window. Only a
@@ -58,10 +49,13 @@ export async function PUT(request: Request, { params }: Params) {
     create: { puzzleId: id, pieceCount, startsAt, endsAt },
     update: { pieceCount, startsAt, endsAt },
   });
-  return NextResponse.json({ competition: toDto(competition) });
+  return NextResponse.json({ competition: competitionDto(competition) });
 }
 
-/** End the competition. The leaderboard goes with it (cascade). */
+/**
+ * Delete the competition, and its leaderboard with it (cascade). Ending one is
+ * `POST …/competition/end`, which keeps the result (#139).
+ */
 export async function DELETE(_request: Request, { params }: Params) {
   const t = await getErrorT();
   const user = await getSessionUser();

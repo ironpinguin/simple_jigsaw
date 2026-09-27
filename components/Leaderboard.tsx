@@ -20,7 +20,7 @@ interface Loaded extends LeaderboardData {
 
 /**
  * A puzzle's competition leaderboard (#119), inside the solve toolbar's trophy
- * popover. Loaded when first shown and again whenever `version` changes — the
+ * popover and, for the owner, on /my (#139). Loaded when first shown and again whenever `version` changes — the
  * solver bumps it after an entry lands — rather than on page load: most visits
  * never open it.
  */
@@ -110,7 +110,7 @@ export default function Leaderboard({
         {status} · {t("fixedPieces", { count: competition.pieceCount })}
       </p>
       {entries.length === 0 ? (
-        <p className="muted">{t("noEntries")}</p>
+        <p className="muted">{t(competition.phase === "CLOSED" ? "noEntriesClosed" : "noEntries")}</p>
       ) : (
         <ol className="leaderboard-list">
           {entries.map((e) => (

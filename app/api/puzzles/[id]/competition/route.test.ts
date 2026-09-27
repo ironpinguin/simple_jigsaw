@@ -112,7 +112,7 @@ describe("PUT /api/puzzles/[id]/competition", () => {
 });
 
 describe("DELETE /api/puzzles/[id]/competition", () => {
-  it("ends the owner's competition, scoped to the owner in the write", async () => {
+  it("deletes the owner's competition, scoped to the owner in the write", async () => {
     const res = await DELETE(new Request("http://test", { method: "DELETE" }), params);
     expect(res.status).toBe(200);
     expect(m.deleteMany).toHaveBeenCalledWith({
@@ -120,7 +120,7 @@ describe("DELETE /api/puzzles/[id]/competition", () => {
     });
   });
 
-  it("answers 404 when there is nothing of the owner's to end", async () => {
+  it("answers 404 when there is nothing of the owner's to delete", async () => {
     m.deleteMany.mockResolvedValue({ count: 0 });
     const res = await DELETE(new Request("http://test", { method: "DELETE" }), params);
     expect(res.status).toBe(404);

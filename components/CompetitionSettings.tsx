@@ -2,12 +2,13 @@
 
 import { useId, useState } from "react";
 import { useFormatter, useTranslations } from "next-intl";
-import { Trophy } from "lucide-react";
+import { Download, Trophy } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import { PIECE_PRESETS } from "@/lib/puzzle/grid";
 import { COMPETITION_DATE_FORMAT, competitionPhase } from "@/lib/competition";
 import { fromLocalInput, toLocalInput } from "@/lib/local-datetime";
+import Leaderboard from "./Leaderboard";
 
 export interface OwnerCompetition {
   pieceCount: number;
@@ -18,7 +19,8 @@ export interface OwnerCompetition {
 
 /**
  * The owner's side of a competition (#119), inside a puzzle's card on /my:
- * a summary line, and a form to start, change or end it.
+ * a summary line, the leaderboard with its CSV download (#139), and a form to
+ * start, change, end or delete it.
  */
 export default function CompetitionSettings({
   puzzleId,
@@ -43,19 +45,25 @@ export default function CompetitionSettings({
   const [endsAt, setEndsAt] = useState(toLocalInput(initial?.endsAt ?? null));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showBoard, setShowBoard] = useState(false);
+  /** Bumped after ending, so an open leaderboard shows the final state. */
+  const [boardVersion, setBoardVersion] = useState(0);
 
   const when = (iso: string) => format.dateTime(new Date(iso), COMPETITION_DATE_FORMAT);
 
-  function summary(c: OwnerCompetition): string {
-    // The phase is read from the clock at render; a card left open across the
-    // start or end date shows the old phase until the page is reloaded.
-    const phase = competitionPhase(
+  // The phase is read from the clock at render; a card left open across the
+  // start or end date shows the old phase until the page is reloaded.
+  const phaseOf = (c: OwnerCompetition) =>
+    competitionPhase(
       {
         startsAt: c.startsAt ? new Date(c.startsAt) : null,
         endsAt: c.endsAt ? new Date(c.endsAt) : null,
       },
       new Date(),
     );
+
+  function summary(c: OwnerCompetition): string {
+    const phase = phaseOf(c);
     const entries = t("entries", { count: c.entries });
     if (phase === "UPCOMING") return `${t("startsOn", { date: when(c.startsAt!) })} · ${entries}`;
     if (phase === "CLOSED") return `${t("endedOn", { date: when(c.endsAt!) })} · ${entries}`;
@@ -101,16 +109,44 @@ export default function CompetitionSettings({
     }
   }
 
+  /** Close it now and keep the result — see the `end` route. */
   async function end() {
     if (!confirm(t("confirmEnd"))) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await tryFetch("competition", `/api/puzzles/${puzzleId}/competition/end`, {
+        method: "POST",
+      });
+      if (!res?.ok) return fail(res, t("endFailed"));
+      const data = await res.json().catch(() => null);
+      const ended = data?.competition;
+      if (!ended || typeof ended.pieceCount !== "number") {
+        console.error("[competition] end answered 200 without a competition:", data);
+        return setError(t("endFailed"));
+      }
+      setCompetition({ ...ended, entries: competition?.entries ?? 0 });
+      setEndsAt(toLocalInput(ended.endsAt));
+      setStartsAt(toLocalInput(ended.startsAt));
+      setBoardVersion((v) => v + 1);
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Remove the competition and its leaderboard for good. */
+  async function remove() {
+    if (!confirm(t("confirmDelete"))) return;
     setBusy(true);
     setError(null);
     try {
       const res = await tryFetch("competition", `/api/puzzles/${puzzleId}/competition`, {
         method: "DELETE",
       });
-      if (!res?.ok) return fail(res, t("endFailed"));
+      if (!res?.ok) return fail(res, t("deleteFailed"));
       setCompetition(null);
+      setShowBoard(false);
       setOpen(false);
     } finally {
       setBusy(false);
@@ -120,6 +156,7 @@ export default function CompetitionSettings({
   // The piece count cannot change under entries — the API refuses it, and the
   // form says so instead of offering it.
   const countLocked = (competition?.entries ?? 0) > 0;
+  const closed = competition !== null && phaseOf(competition) === "CLOSED";
 
   return (
     <div className="competition-settings">
@@ -127,6 +164,36 @@ export default function CompetitionSettings({
         <p className="muted" style={{ margin: 0 }}>
           <Trophy size={14} aria-hidden="true" /> {summary(competition)}
         </p>
+      )}
+      {competition && (
+        <div className="card-actions">
+          <button
+            className="button secondary"
+            type="button"
+            aria-expanded={showBoard}
+            onClick={() => setShowBoard((v) => !v)}
+          >
+            {showBoard ? t("hideLeaderboard") : t("showLeaderboard")}
+          </button>
+          {/* A plain link: the browser sends the session cookie and saves the
+              file under the name the route gives it. */}
+          <a
+            className="button secondary"
+            href={`/api/puzzles/${puzzleId}/competition/leaderboard`}
+            download
+          >
+            <Download size={14} aria-hidden="true" /> {t("downloadCsv")}
+          </a>
+        </div>
+      )}
+      {competition && showBoard && (
+        <Leaderboard
+          puzzleId={puzzleId}
+          active={showBoard}
+          version={boardVersion}
+          signedIn
+          isAdmin={false}
+        />
       )}
       {!open ? (
         // A competition that exists stays reachable after the puzzle went
@@ -171,15 +238,20 @@ export default function CompetitionSettings({
             min={startsAt || undefined}
             onChange={(e) => setEndsAt(e.target.value)}
           />
-          <p className="muted">{t("windowHint")}</p>
+          <p className="muted">{closed ? t("endedHint") : t("windowHint")}</p>
           {error && <p className="error">{error}</p>}
           <div className="card-actions">
             <button className="button" type="submit" disabled={busy}>
               {competition ? t("save") : t("start")}
             </button>
-            {competition && (
+            {competition && !closed && (
               <button className="button danger" type="button" disabled={busy} onClick={end}>
                 {t("end")}
+              </button>
+            )}
+            {competition && (
+              <button className="button danger" type="button" disabled={busy} onClick={remove}>
+                {t("delete")}
               </button>
             )}
             <button

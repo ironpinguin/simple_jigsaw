@@ -38,14 +38,16 @@ async function rankOf(competitionId: string, ms: number, moves: number): Promise
   return better + 1;
 }
 
-export async function loadLeaderboard(
+/** The public part of every entry, best first, with shared places for ties. */
+async function rankedEntries(
   competitionId: string,
   viewerId: string | null,
-): Promise<Leaderboard> {
+  take?: number,
+): Promise<LeaderboardRow[]> {
   const rows = await prisma.leaderboardEntry.findMany({
     where: { competitionId },
     orderBy: ORDER,
-    take: LEADERBOARD_SIZE,
+    take,
     // Only the public name: never the account id or email of another solver.
     select: {
       id: true,
@@ -72,6 +74,22 @@ export async function loadLeaderboard(
       isYou: row.userId === viewerId,
     });
   }
+  return entries;
+}
+
+/**
+ * Every entry, for the owner's download (#139) — the shown board stops at
+ * `LEADERBOARD_SIZE`, the result of a competition does not.
+ */
+export function loadAllEntries(competitionId: string): Promise<LeaderboardRow[]> {
+  return rankedEntries(competitionId, null);
+}
+
+export async function loadLeaderboard(
+  competitionId: string,
+  viewerId: string | null,
+): Promise<Leaderboard> {
+  const entries = await rankedEntries(competitionId, viewerId, LEADERBOARD_SIZE);
 
   let you: Leaderboard["you"] = null;
   if (viewerId) {

@@ -111,17 +111,86 @@ describe("CompetitionSettings", () => {
     );
   });
 
-  it("ends the competition after confirming", async () => {
+  it("ends the competition after confirming, and keeps it with its result", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    const fetchMock = respond(200, { ok: true });
+    const fetchMock = respond(200, {
+      competition: { pieceCount: 12, startsAt: null, endsAt: "2026-09-27T12:00:00.000Z" },
+    });
+    mount({ pieceCount: 12, startsAt: null, endsAt: null, entries: 4 });
+
+    act(() => button(t.edit)!.click());
+    await act(async () => button(t.end)!.click());
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/puzzles/p1/competition/end", { method: "POST" });
+    expect(container.textContent).toContain("Competition ended on");
+    expect(container.textContent).toContain("4 entries");
+    expect(button(t.showLeaderboard)).toBeTruthy();
+  });
+
+  it("does not end it when the owner declines", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const fetchMock = respond(200, {});
     mount({ pieceCount: 12, startsAt: null, endsAt: null, entries: 0 });
 
     act(() => button(t.edit)!.click());
     await act(async () => button(t.end)!.click());
 
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("offers deleting instead of ending once it is over, and says how to reopen it", () => {
+    mount({ pieceCount: 12, startsAt: null, endsAt: "2026-01-01T00:00:00.000Z", entries: 2 });
+
+    act(() => button(t.edit)!.click());
+
+    expect(button(t.end)).toBeUndefined();
+    expect(button(t.delete)).toBeTruthy();
+    expect(container.textContent).toContain(t.endedHint);
+  });
+
+  it("deletes the competition and its leaderboard after confirming", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fetchMock = respond(200, { ok: true });
+    mount({ pieceCount: 12, startsAt: null, endsAt: "2026-01-01T00:00:00.000Z", entries: 2 });
+
+    act(() => button(t.edit)!.click());
+    await act(async () => button(t.delete)!.click());
+
+    expect(confirm).toHaveBeenCalledWith(t.confirmDelete);
     expect(fetchMock).toHaveBeenCalledWith("/api/puzzles/p1/competition", { method: "DELETE" });
-    expect(container.textContent).not.toContain(t.running);
     expect(button(t.start)).toBeTruthy();
+    expect(button(t.showLeaderboard)).toBeUndefined();
+  });
+
+  it("shows the leaderboard on demand, running or ended", async () => {
+    const fetchMock = respond(200, {
+      competition: { pieceCount: 12, startsAt: null, endsAt: null, phase: "OPEN" },
+      entries: [
+        { id: "e1", rank: 1, displayName: "Ana", ms: 61_000, moves: 20, achievedAt: "2026-09-20T08:00:00.000Z", isYou: false },
+      ],
+      you: null,
+    });
+    mount({ pieceCount: 12, startsAt: null, endsAt: null, entries: 1 });
+    expect(container.querySelector(".leaderboard")).toBeNull();
+
+    await act(async () => button(t.showLeaderboard)!.click());
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/competitions/p1", undefined);
+    expect(container.querySelector(".leaderboard")!.textContent).toContain("Ana");
+    expect(button(t.hideLeaderboard)!.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("links the CSV download of the whole leaderboard", () => {
+    mount({ pieceCount: 12, startsAt: null, endsAt: null, entries: 1 });
+    const link = [...container.querySelectorAll("a")].find((a) => a.textContent?.includes(t.downloadCsv))!;
+    expect(link.getAttribute("href")).toBe("/api/puzzles/p1/competition/leaderboard");
+    expect(link.hasAttribute("download")).toBe(true);
+  });
+
+  it("offers neither leaderboard nor download without a competition", () => {
+    mount(null);
+    expect(button(t.showLeaderboard)).toBeUndefined();
+    expect(container.querySelector("a")).toBeNull();
   });
 
   it("summarises an upcoming competition by its start", () => {
