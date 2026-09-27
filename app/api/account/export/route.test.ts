@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getSessionUserMock, userFindUnique, puzzleFindMany, entryFindMany } = vi.hoisted(() => ({
-  getSessionUserMock: vi.fn(),
-  userFindUnique: vi.fn(),
-  puzzleFindMany: vi.fn(),
-  entryFindMany: vi.fn(),
-}));
+const { getSessionUserMock, userFindUnique, puzzleFindMany, entryFindMany, bestTimeFindMany } =
+  vi.hoisted(() => ({
+    getSessionUserMock: vi.fn(),
+    userFindUnique: vi.fn(),
+    puzzleFindMany: vi.fn(),
+    entryFindMany: vi.fn(),
+    bestTimeFindMany: vi.fn(),
+  }));
 
 vi.mock("@/lib/auth", () => ({ getSessionUser: getSessionUserMock }));
 vi.mock("@/lib/db", () => ({
@@ -13,6 +15,7 @@ vi.mock("@/lib/db", () => ({
     user: { findUnique: userFindUnique },
     puzzle: { findMany: puzzleFindMany },
     leaderboardEntry: { findMany: entryFindMany },
+    bestTime: { findMany: bestTimeFindMany },
   },
 }));
 vi.mock("@/lib/i18n-server", () => ({ getErrorT: async () => (key: string) => key }));
@@ -56,6 +59,7 @@ beforeEach(() => {
   userFindUnique.mockResolvedValue(row);
   puzzleFindMany.mockResolvedValue([puzzleRow]);
   entryFindMany.mockResolvedValue([]);
+  bestTimeFindMany.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -85,6 +89,33 @@ describe("GET /api/account/export", () => {
         ms: 61_000,
         moves: 40,
         achievedAt: "2026-10-01T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("includes the user's own best times, on anyone's puzzles (#127)", async () => {
+    bestTimeFindMany.mockResolvedValue([
+      {
+        pieceCount: 48,
+        ms: 95_000,
+        moves: 60,
+        achievedAt: new Date(Date.UTC(2026, 8, 20)),
+        puzzle: { id: "p7", title: "Someone else's" },
+      },
+    ]);
+    const body = await (await GET()).json();
+
+    expect(bestTimeFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: "user-1" } }),
+    );
+    expect(body.bestTimes).toEqual([
+      {
+        puzzleId: "p7",
+        puzzleTitle: "Someone else's",
+        pieceCount: 48,
+        ms: 95_000,
+        moves: 60,
+        achievedAt: "2026-09-20T00:00:00.000Z",
       },
     ]);
   });

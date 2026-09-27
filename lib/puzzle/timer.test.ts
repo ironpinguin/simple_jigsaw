@@ -3,6 +3,7 @@ import {
   bestTimesKey,
   clockAt,
   formatDuration,
+  mergeBestTimes,
   parseBestTimes,
   pauseClock,
   readClock,
@@ -116,5 +117,53 @@ describe("best times", () => {
       300: { ms: 5, moves: 2.5 },
     });
     expect(parseBestTimes(raw)).toEqual({ 12: { ms: 30_000, moves: 20 } });
+  });
+});
+
+describe("mergeBestTimes (#127)", () => {
+  const raw = (times: object) => JSON.stringify(times);
+
+  it("takes over a better server best and keeps a better local one to hand over", () => {
+    const { merged, upload, raw: stored } = mergeBestTimes(
+      raw({ 12: { ms: 50_000, moves: 20 }, 48: { ms: 200_000, moves: 80 } }),
+      { 12: { ms: 60_000, moves: 20 }, 48: { ms: 180_000, moves: 90 } },
+    );
+    expect(merged).toEqual({ 12: { ms: 50_000, moves: 20 }, 48: { ms: 180_000, moves: 90 } });
+    expect(upload).toEqual({ 12: { ms: 50_000, moves: 20 } });
+    expect(JSON.parse(stored!)).toEqual(merged);
+  });
+
+  it("adds piece counts only one side has", () => {
+    const { merged, upload } = mergeBestTimes(raw({ 12: { ms: 50_000, moves: 20 } }), {
+      108: { ms: 900_000, moves: 300 },
+    });
+    expect(Object.keys(merged).sort()).toEqual(["108", "12"]);
+    expect(upload).toEqual({ 12: { ms: 50_000, moves: 20 } });
+  });
+
+  it("breaks a tie on time by fewer moves, and leaves an exact tie alone", () => {
+    const tie = mergeBestTimes(raw({ 12: { ms: 50_000, moves: 20 } }), {
+      12: { ms: 50_000, moves: 18 },
+    });
+    expect(tie.merged[12]).toEqual({ ms: 50_000, moves: 18 });
+    expect(tie.upload).toEqual({});
+
+    const same = mergeBestTimes(raw({ 12: { ms: 50_000, moves: 20 } }), {
+      12: { ms: 50_000, moves: 20 },
+    });
+    expect(same.raw).toBeNull();
+    expect(same.upload).toEqual({});
+  });
+
+  it("does not rewrite storage when the server has nothing better", () => {
+    const { raw: stored, upload } = mergeBestTimes(raw({ 12: { ms: 50_000, moves: 20 } }), {});
+    expect(stored).toBeNull();
+    expect(upload).toEqual({ 12: { ms: 50_000, moves: 20 } });
+  });
+
+  it("starts from nothing when the browser holds nothing usable", () => {
+    const { merged, upload } = mergeBestTimes("not json", { 12: { ms: 60_000, moves: 20 } });
+    expect(merged).toEqual({ 12: { ms: 60_000, moves: 20 } });
+    expect(upload).toEqual({});
   });
 });

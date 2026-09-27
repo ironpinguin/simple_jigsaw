@@ -8,6 +8,8 @@ import ExportAccount from "@/components/ExportAccount";
 import ChangePassword from "@/components/ChangePassword";
 import DeleteAccount from "@/components/DeleteAccount";
 import DisplayNameForm from "@/components/DisplayNameForm";
+import SolvedPuzzles from "@/components/SolvedPuzzles";
+import { groupBestTimes } from "@/lib/best-times";
 
 // Per-request page (auth + DB); never prerender/query the DB at build time.
 export const dynamic = "force-dynamic";
@@ -25,7 +27,7 @@ export default async function MyPage({
   }
 
   const t = await getTranslations("my");
-  const [rows, account] = await Promise.all([
+  const [rows, account, bestRows] = await Promise.all([
     prisma.puzzle.findMany({
       where: { ownerId: session.user.id },
       orderBy: { createdAt: "desc" },
@@ -46,10 +48,27 @@ export default async function MyPage({
       },
     }),
     prisma.user.findUnique({ where: { id: session.user.id }, select: { displayName: true } }),
+    prisma.bestTime.findMany({
+      where: { userId: session.user.id },
+      orderBy: { achievedAt: "desc" },
+      select: {
+        pieceCount: true,
+        ms: true,
+        moves: true,
+        puzzle: {
+          select: { id: true, title: true, imageKey: true, ownerId: true, isPublic: true },
+        },
+      },
+    }),
   ]);
+
+  // The solver's best times (#127): the own puzzles show theirs in their card,
+  // other people's get a section of their own — most recently improved first.
+  const { byPuzzle: bestsByPuzzle, others: solved } = groupBestTimes(bestRows, session.user.id);
   // Dates as ISO strings: the client component receives plain JSON.
   const puzzles = rows.map(({ competition, ...p }) => ({
     ...p,
+    bests: bestsByPuzzle.get(p.id) ?? [],
     competition: competition && {
       pieceCount: competition.pieceCount,
       startsAt: competition.startsAt?.toISOString() ?? null,
@@ -74,6 +93,8 @@ export default async function MyPage({
       ) : (
         <MyPuzzles initial={puzzles} />
       )}
+
+      <SolvedPuzzles puzzles={solved} />
 
       <DisplayNameForm initial={account?.displayName ?? null} />
       <ExportAccount />

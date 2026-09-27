@@ -5,6 +5,7 @@ import { getSessionViewer } from "@/lib/auth";
 import { canViewPuzzle } from "@/lib/visibility";
 import PuzzleSolver from "@/components/PuzzleSolver";
 import { toPieceStyle } from "@/lib/puzzle/style";
+import { loadBestTimes } from "@/lib/best-times-server";
 
 // Loads the puzzle from the DB per request; do not prerender at build time.
 export const dynamic = "force-dynamic";
@@ -37,10 +38,11 @@ export default async function PuzzlePage({
     showReviewNote = review === "1" && viewer?.id === puzzle.ownerId;
   }
 
-  // Taking part needs to know who is solving; without a competition nothing on
-  // the page depends on it, so the session is not even read.
+  // Who is solving: taking part in a competition needs it, and so do a signed-in
+  // solver's best times on the server (#127). A private puzzle resolved it above.
   const { competition } = puzzle;
-  if (competition && puzzle.isPublic) viewer = await getSessionViewer();
+  if (puzzle.isPublic) viewer = await getSessionViewer();
+  const serverBests = viewer ? await loadBestTimes(viewer.id, puzzle.id) : null;
 
   const t = await getTranslations("solve");
   const data = {
@@ -68,6 +70,7 @@ export default async function PuzzlePage({
           }
         }
         viewer={{ signedIn: viewer !== null, isAdmin: viewer?.role === "ADMIN" }}
+        serverBests={serverBests}
       />
     </>
   );

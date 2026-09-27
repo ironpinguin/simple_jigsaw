@@ -19,6 +19,7 @@ const { findUnique, getSessionViewerMock, notFoundMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: { puzzle: { findUnique } } }));
+vi.mock("@/lib/best-times-server", () => ({ loadBestTimes: async () => ({}) }));
 vi.mock("@/lib/auth", () => ({ getSessionViewer: getSessionViewerMock }));
 vi.mock("next/navigation", () => ({ notFound: notFoundMock }));
 vi.mock("next-intl/server", () => ({
@@ -85,14 +86,14 @@ describe("PuzzlePage review note — who can see it", () => {
     expect(notFoundMock).toHaveBeenCalled();
   });
 
-  it("never shows the note on a public puzzle, even to its owner, and never even checks who is viewing", async () => {
-    // A public puzzle's isPublic branch is skipped entirely, so the session
-    // is never resolved — the strongest form of "no note leaks" available:
-    // there is no owner check left to get wrong.
+  it("never shows the note on a public puzzle, even to its owner", async () => {
+    // The session is read on a public puzzle too since #127 — the solver's
+    // best times need it — so this pins the note to the private branch by
+    // asking as the owner, the one viewer the note would otherwise be for.
     findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true });
+    getSessionViewerMock.mockResolvedValue({ id: "owner-1", role: "USER" });
     const page = await callPage({ review: "1" });
     expect(noteText(page)).toBeNull();
-    expect(getSessionViewerMock).not.toHaveBeenCalled();
   });
 
   it("does not show the note to an admin viewing someone else's held-back puzzle", async () => {

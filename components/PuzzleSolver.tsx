@@ -33,6 +33,7 @@ import SolveTimerDisplay from "./SolveTimerDisplay";
 import { createSolveTimer } from "./solveTimer";
 import Leaderboard from "./Leaderboard";
 import { useCompetitionEntry, type EntryState, type TokenStore } from "./useCompetitionEntry";
+import { useServerBestTimes, type BestStore } from "./useServerBestTimes";
 import { DISPLAY_NAME_MAX, competitionPhase } from "@/lib/competition";
 import { Link as IntlLink } from "@/i18n/navigation";
 import { celebrate, stopCelebration } from "./celebrate";
@@ -50,6 +51,7 @@ import {
   formatDuration,
   parseBestTimes,
   recordBestTime,
+  type BestTimes,
   type SolveResult,
 } from "@/lib/puzzle/timer";
 
@@ -237,6 +239,7 @@ export default function PuzzleSolver({
   isPublic,
   competition = null,
   viewer = { signedIn: false, isAdmin: false },
+  serverBests = null,
 }: {
   puzzle: PuzzleData;
   title: string;
@@ -245,6 +248,8 @@ export default function PuzzleSolver({
   /** A running, upcoming or ended competition on this puzzle (#119). */
   competition?: { pieceCount: number; startsAt: string | null; endsAt: string | null } | null;
   viewer?: { signedIn: boolean; isAdmin: boolean };
+  /** The signed-in solver's best times on this puzzle from the server (#127). */
+  serverBests?: BestTimes | null;
 }) {
   const t = useTranslations("solve");
   const tReport = useTranslations("report");
@@ -330,11 +335,46 @@ export default function PuzzleSolver({
 
   /** The best result for the current piece count; read after mount, like `pc:`. */
   const [best, setBest] = useState<SolveResult | null>(null);
+  /** Bumped when the server's bests were merged into the stored ones (#127). */
+  const [bestsMerged, setBestsMerged] = useState(0);
   useEffect(() => {
     const stored = parseBestTimes(withStorage((s) => s.getItem(bestKey), null));
     // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
     setBest(stored[pieceCount] ?? null);
-  }, [bestKey, pieceCount]);
+  }, [bestKey, pieceCount, bestsMerged]);
+
+  // --- Best times on the server (#127) ---------------------------------------
+
+  const bestStore = useMemo<BestStore>(
+    () => ({
+      read: () => withStorage((s) => s.getItem(bestKey), null),
+      write: (raw) => withStorage((s) => s.setItem(bestKey, raw), undefined),
+    }),
+    [bestKey],
+  );
+  const bestAttemptKey = `bt:${puzzle.id}`;
+  const bestTokens = useMemo<TokenStore>(
+    () => ({
+      get: () => withStorage((s) => s.getItem(bestAttemptKey), null),
+      set: (token) => withStorage((s) => s.setItem(bestAttemptKey, token), undefined),
+      clear: () => withStorage((s) => s.removeItem(bestAttemptKey), undefined),
+    }),
+    [bestAttemptKey],
+  );
+  const onBestsMerged = useCallback(() => setBestsMerged((n) => n + 1), []);
+  const serverBest = useServerBestTimes({
+    puzzleId: puzzle.id,
+    signedIn: viewer.signedIn,
+    serverBests,
+    store: bestStore,
+    tokens: bestTokens,
+    onMerged: onBestsMerged,
+  });
+  const {
+    beginAttempt: beginBestAttempt,
+    discardAttempt: discardBestAttempt,
+    report: reportBest,
+  } = serverBest;
 
   /** The card shown after the drop that finishes the puzzle. */
   const [result, setResult] = useState<{
@@ -398,17 +438,21 @@ export default function PuzzleSolver({
       // untimed one, which could never be submitted — has none.
       if (!alreadySolved && (!timing || (timing.elapsedMs === 0 && timing.moves === 0))) {
         discardAttempt();
+        discardBestAttempt();
       }
     },
-    [timer, discardAttempt],
+    [timer, discardAttempt, discardBestAttempt],
   );
   const readTiming = useCallback(() => timer.timing(Date.now()), [timer]);
   const onPieceGrab = useCallback(() => {
     const now = Date.now();
     // Before the first move of a timed solve: the attempt starts with it.
-    if (timer.timing(now)?.moves === 0) void beginAttempt();
+    if (timer.timing(now)?.moves === 0) {
+      void beginAttempt();
+      void beginBestAttempt();
+    }
     timer.grab(now, document.visibilityState !== "hidden");
-  }, [timer, beginAttempt]);
+  }, [timer, beginAttempt, beginBestAttempt]);
   const onPieceDrop = useCallback(() => timer.drop(), [timer]);
 
   // Hiding the tab pauses the clock — and saves, since the time since the last
@@ -461,10 +505,13 @@ export default function PuzzleSolver({
         best: recorded.best,
         isNew: recorded.isNew,
       });
+      reportBest(pieceCount, outcome, recorded.isNew);
+    } else {
+      discardBestAttempt();
     }
     finishAttempt(outcome);
     celebrate({ sound });
-  }, [sound, timer, bestKey, pieceCount, finishAttempt]);
+  }, [sound, timer, bestKey, pieceCount, finishAttempt, reportBest, discardBestAttempt]);
 
   useEffect(() => stopCelebration, []);
 
@@ -543,6 +590,7 @@ export default function PuzzleSolver({
     setSolved(false);
     setResult(null);
     discardAttempt();
+    discardBestAttempt();
     stopCelebration();
   }
 

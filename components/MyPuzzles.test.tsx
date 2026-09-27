@@ -4,6 +4,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
 import MyPuzzles from "./MyPuzzles";
+import SolvedPuzzles from "./SolvedPuzzles";
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 
@@ -43,6 +44,7 @@ const PUZZLE = {
   pieceCount: 48,
   isPublic: false,
   competition: null,
+  bests: [] as { pieceCount: number; ms: number; moves: number }[],
 };
 
 function mount(initial = [PUZZLE]) {
@@ -180,5 +182,61 @@ describe("MyPuzzles delete", () => {
     expect(container.textContent).toContain("Beach");
     expect(alertMock).toHaveBeenCalledTimes(1);
     expect(buttonByText("Delete")!.disabled).toBe(false);
+  });
+});
+
+describe("best times under My puzzles (#127)", () => {
+  it("lists the owner's own best times in the puzzle card, smallest count first", () => {
+    mount([
+      {
+        ...PUZZLE,
+        bests: [
+          { pieceCount: 108, ms: 725_000, moves: 310 },
+          { pieceCount: 12, ms: 83_000, moves: 1 },
+        ],
+      },
+    ]);
+    const items = [...container.querySelectorAll(".best-times li")].map((li) => li.textContent);
+    expect(items).toEqual(["12 pieces: 1:23 (1 move)", "108 pieces: 12:05 (310 moves)"]);
+    expect(container.textContent).toContain(messages.my.bestTimes);
+  });
+
+  it("shows no best-times block for a puzzle without any", () => {
+    mount();
+    expect(container.querySelector(".best-times")).toBeNull();
+  });
+
+  it("gives other people's solved puzzles a section of their own", () => {
+    act(() => {
+      root.render(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <SolvedPuzzles
+            puzzles={[
+              {
+                id: "p9",
+                title: "Their beach",
+                imageKey: "puzzles/x.webp",
+                bests: [{ pieceCount: 48, ms: 300_000, moves: 90 }],
+              },
+            ]}
+          />
+        </NextIntlClientProvider>,
+      );
+    });
+    expect(container.querySelector("h2")!.textContent).toBe(messages.my.solvedTitle);
+    expect(container.textContent).toContain("48 pieces: 5:00 (90 moves)");
+    const link = [...container.querySelectorAll("a")].find((a) => a.textContent === messages.my.solveAgain)!;
+    expect(link.getAttribute("href")).toBe("/puzzle/p9");
+  });
+
+  it("leaves the section out when there is nothing to show", () => {
+    act(() => {
+      root.render(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <SolvedPuzzles puzzles={[]} />
+        </NextIntlClientProvider>,
+      );
+    });
+    expect(container.innerHTML).toBe("");
   });
 });

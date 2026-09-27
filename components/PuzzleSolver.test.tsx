@@ -1112,7 +1112,13 @@ describe("PuzzleSolver", () => {
         },
       };
       fetchMock = vi.fn(async (url: string) => {
-        const answer = answers[url.split("/").pop()!] ?? { status: 404, body: {} };
+        // Competition requests by their last segment (`start`, `entries`); the
+        // best-time ones (#127) by their path under the puzzle, so that their own
+        // `start` is not taken for a competition's.
+        const key = url.startsWith("/api/competitions/")
+          ? url.split("/").pop()!
+          : url.replace(/^\/api\/puzzles\/[^/]+\//, "");
+        const answer = answers[key] ?? { status: 404, body: {} };
         return { ok: answer.status < 300, status: answer.status, json: async () => answer.body };
       });
       vi.stubGlobal("fetch", fetchMock);
@@ -1123,8 +1129,12 @@ describe("PuzzleSolver", () => {
       vi.unstubAllGlobals();
     });
 
+    /** The competition's own requests to `segment`, not the best-time ones. */
     function calls(segment: string) {
-      return fetchMock.mock.calls.filter(([url]) => String(url).endsWith(`/${segment}`));
+      return fetchMock.mock.calls.filter(
+        ([url]) =>
+          String(url).startsWith("/api/competitions/") && String(url).endsWith(`/${segment}`),
+      );
     }
 
     function card() {
@@ -1209,14 +1219,16 @@ describe("PuzzleSolver", () => {
 
     it("offers to send a submission again that failed in transit", async () => {
       await seed();
-      // The first answer never arrives; the second one does.
-      fetchMock.mockImplementationOnce(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => ({ token: "tok-1" }),
-      }));
-      fetchMock.mockImplementationOnce(async () => {
-        throw new TypeError("network down");
+      // The first entry never arrives; the second one does. Picked by URL, not
+      // by position: other requests (the best-time start, #127) go out in between.
+      const answer = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => unknown;
+      let failed = false;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (!failed && url.startsWith("/api/competitions/") && url.endsWith("/entries")) {
+          failed = true;
+          throw new TypeError("network down");
+        }
+        return answer(url, init);
       });
       vi.spyOn(console, "error").mockImplementation(() => {});
       await solveIn(60_000);
@@ -1316,6 +1328,124 @@ describe("PuzzleSolver", () => {
       container.innerHTML = serverHtml();
       await hydrate();
       expect(button(messages.competition.leaderboard)).toBeUndefined();
+    });
+  });
+
+  describe("best times on the server (#127)", () => {
+    let fetchMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+      vi.setSystemTime(1_000_000);
+      fetchMock = vi.fn(async (url: string) => ({
+        ok: true,
+        status: 200,
+        json: async () => (url.endsWith("/best-times/start") ? { token: "bt-1" } : {}),
+      }));
+      vi.stubGlobal("fetch", fetchMock);
+      extraProps = { viewer: { signedIn: true, isAdmin: false }, serverBests: {} };
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      extraProps = {};
+    });
+
+    const bestsKey = "best:p1";
+
+    function requests(path: string) {
+      return fetchMock.mock.calls.filter(([url]) => String(url) === `/api/puzzles/p1/${path}`);
+    }
+
+    function bodyOf(call: unknown[]) {
+      return JSON.parse(String((call[1] as RequestInit).body));
+    }
+
+    async function open() {
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await act(async () => board.onSeeded!({ elapsedMs: 0, moves: 0 }, false));
+    }
+
+    /** One move, `ms` long, that finishes the puzzle. */
+    async function solveIn(ms: number) {
+      await act(async () => board.onPieceGrab!());
+      await act(async () => {
+        vi.advanceTimersByTime(ms);
+      });
+      await act(async () => board.onPieceDrop!());
+      await act(async () => board.onSolved!());
+    }
+
+    it("shows a better best from another device and keeps it in the browser", async () => {
+      localStorage.setItem(bestsKey, JSON.stringify({ 108: { ms: 900_000, moves: 400 } }));
+      extraProps.serverBests = { 108: { ms: 800_000, moves: 380 } };
+      await open();
+
+      expect(JSON.parse(localStorage.getItem(bestsKey)!)[108]).toEqual({ ms: 800_000, moves: 380 });
+      expect(container.querySelector("[role='timer']")?.getAttribute("title")).toBe(
+        "Best time: 13:20",
+      );
+      expect(requests("best-times/import")).toHaveLength(0);
+    });
+
+    it("hands over a best the browser holds and the server lacks", async () => {
+      localStorage.setItem(bestsKey, JSON.stringify({ 12: { ms: 50_000, moves: 20 } }));
+      extraProps.serverBests = { 108: { ms: 800_000, moves: 380 } };
+      await open();
+
+      const [call] = requests("best-times/import");
+      expect(bodyOf(call)).toEqual({ bests: { 12: { ms: 50_000, moves: 20 } } });
+    });
+
+    it("asks for a signed start with the first piece and hands it back with a new best", async () => {
+      await open();
+      await solveIn(60_000);
+
+      expect(requests("best-times/start")).toHaveLength(1);
+      const [call] = requests("best-times");
+      expect(bodyOf(call)).toEqual({ token: "bt-1", pieceCount: 108, ms: 60_000, moves: 1 });
+      // One start, one solve.
+      expect(localStorage.getItem("bt:p1")).toBeNull();
+    });
+
+    it("sends a new best without a start as an import", async () => {
+      fetchMock.mockImplementation(async () => ({ ok: false, status: 503, json: async () => ({}) }));
+      await open();
+      await solveIn(60_000);
+
+      expect(requests("best-times")).toHaveLength(0);
+      const [call] = requests("best-times/import");
+      expect(bodyOf(call)).toEqual({ bests: { 108: { ms: 60_000, moves: 1 } } });
+    });
+
+    it("sends nothing for a solve that does not beat the best", async () => {
+      extraProps.serverBests = { 108: { ms: 30_000, moves: 1 } };
+      await open();
+      await solveIn(60_000);
+
+      expect(requests("best-times")).toHaveLength(0);
+      expect(requests("best-times/import")).toHaveLength(0);
+      expect(localStorage.getItem("bt:p1")).toBeNull();
+    });
+
+    it("drops the start when the solve is started over", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      await open();
+      await act(async () => board.onPieceGrab!());
+      expect(localStorage.getItem("bt:p1")).toBe("bt-1");
+      await reset();
+      expect(localStorage.getItem("bt:p1")).toBeNull();
+    });
+
+    it("asks the server for nothing when signed out", async () => {
+      extraProps = {};
+      localStorage.setItem(bestsKey, JSON.stringify({ 12: { ms: 50_000, moves: 20 } }));
+      await open();
+      await solveIn(60_000);
+
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });
