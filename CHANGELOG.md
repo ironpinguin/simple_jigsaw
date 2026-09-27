@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-27
+
 ### Added
 - **A second piece style: wooden.** Besides the classic shape, puzzles can be
   cut like hand-sawn wooden pieces — large, round knobs on a narrow neck,
@@ -32,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closes it — no more entries — and the final leaderboard stays visible and
   downloadable. Removing a competition together with its leaderboard is the
   new *Delete competition*. The privacy policy says so. (#139)
+
+### Security
+- Updated Next.js to 16.3.6 for GHSA-vcvr-r3jv-pc5j (remote code execution
+  through SVG serialization in `next/og`'s `ImageResponse`). Not reachable
+  here — the app does not use `next/og` — but the vulnerable version shipped
+  in the image. (#136)
 
 ## [0.8.0] - 2026-09-26
 
@@ -597,7 +605,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.8.0...main
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.9.0...main
+[0.9.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.9.0
 [0.8.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.7.0
 [0.6.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.6.0
