@@ -61,6 +61,54 @@ grouping) is unit-tested and easy to extend.
 - Add a bullet under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for any
   user-facing change.
 
+### Dependencies with install scripts
+
+`allowScripts` in `package.json` records, per dependency, whether npm may run
+its `preinstall`/`install`/`postinstall` script. On its own npm only skips the
+denied ones and warns about the rest; [`.npmrc`](.npmrc) sets
+`strict-allow-scripts=true`, so an install **fails** on any script nobody has
+decided about — locally, in the dev container, in CI and in the Docker build —
+rather than running it unreviewed, or, once npm blocks undecided scripts by
+default, skipping it silently and leaving a broken install that only fails at
+boot. When that happens after adding or bumping a dependency:
+
+```bash
+npm install --ignore-scripts      # or `npm ci --ignore-scripts`: the new tree on disk, nothing run
+npm install-scripts ls            # what is undecided, and what it runs
+npm install-scripts approve <pkg> # it is needed
+npm install-scripts deny <pkg>    # it is not
+npm ci                            # again, now running the approved scripts and our postinstall
+```
+
+The first line is needed because the failed install stops before it writes
+`node_modules`, and `npm install-scripts` only looks at what is there — without
+it, `ls` reports nothing and `approve`/`deny` answer `ENOMATCH`.
+
+Read the script first (`node_modules/<pkg>/…`, the path is in the listing).
+Approve only what the app needs to work; everything else is denied. Today that
+is `better-sqlite3` (the native SQLite driver) and `@prisma/engines` (the schema
+engine `db push` runs on boot — approved so it is fetched at build time rather
+than by a container starting up, possibly offline). Denied: `prisma` (a Node
+version notice), `protobufjs` (a version notice), `@parcel/watcher` (builds only
+on request), `unrs-resolver` and `@swc/core` (their native bindings come as
+optional dependencies; the scripts only check or fall back), and `fsevents`
+(macOS only; it ships a prebuilt binary, the `node-gyp rebuild` the registry
+lists for it is not needed).
+
+Entries for packages that are only installed on some platforms — `fsevents` —
+never show up in `npm install-scripts ls` on Linux, and `npm install-scripts
+prune` there would delete them. Don't prune them away: without the entry every
+install on a Mac fails.
+
+**Approvals are name-only, not pinned to a version** (#141). A pinned entry
+(`pkg@1.2.3`, npm's default) no longer covers the next version, and Dependabot
+does not touch `allowScripts` — so every bump of either package would fail CI
+until someone re-approved it, for code the app already runs unreviewed in
+production anyway. Reviewing the *package* on a bump is the real check; the
+install script of a package we trust is part of it, not a separate gate.
+`.npmrc` sets `allow-scripts-pin=false`, so `approve` writes name-only entries
+without a flag. Denials are always name-only.
+
 ## Releases
 
 Releases are cut by maintainers by pushing an annotated Git tag following

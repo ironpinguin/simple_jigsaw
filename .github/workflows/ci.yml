@@ -31,7 +31,9 @@ env:
 jobs:
   # Node jobs share the same shape: setup-node reads the version from .nvmrc and
   # caches the npm download folder keyed on package-lock.json, and `npm ci` also
-  # runs `prisma generate` via the postinstall hook.
+  # runs `prisma generate` via the postinstall hook. `npm ci` reads .npmrc, so
+  # every job fails on a dependency install script that allowScripts in
+  # package.json does not decide about (#141, see CONTRIBUTING.md).
   #
   # .nvmrc is the one place the Node version is written. The Dockerfile keeps a
   # literal `FROM node:<v>-alpine` so Dependabot can still see and bump the base
@@ -135,13 +137,13 @@ jobs:
           fi
           # Everything the image build itself consumes: the recipe, the compose
           # files that define the two variants, the dependency manifests npm ci
-          # installs from, the Prisma schema, its config and the script the
-          # build stage runs to generate both clients, and the scripts the image
-          # ships. App source is otherwise covered by the build job, which runs
+          # installs from and the .npmrc it reads, the Prisma schema, its config
+          # and the script the build stage runs to generate both clients, and
+          # the scripts the image ships. App source is otherwise covered by the build job, which runs
           # the same `next build` — except lib/db.ts, which picks the client at
           # container start: a build proves nothing about that, only booting
           # both stacks does.
-          relevant='^(Dockerfile|\.dockerignore|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|prisma\.config\.ts|scripts/|lib/db\.ts|\.github/workflows/ci\.yml$)'
+          relevant='^(Dockerfile|\.dockerignore|\.npmrc$|package\.json|package-lock\.json|docker-compose[^/]*\.ya?ml|prisma/|prisma\.config\.ts|scripts/|lib/db\.ts|\.github/workflows/ci\.yml$)'
           changed="$(git diff --name-only \
             "${{ github.event.pull_request.base.sha }}" \
             "${{ github.event.pull_request.head.sha }}")"
