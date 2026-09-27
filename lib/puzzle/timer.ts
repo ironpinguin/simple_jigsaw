@@ -56,8 +56,14 @@ export function formatDuration(ms: number): string {
  */
 export const BEST_KEY_PREFIX = "best:";
 
-export function bestTimesKey(puzzleId: string): string {
-  return `${BEST_KEY_PREFIX}${puzzleId}`;
+/**
+ * Where the browser keeps the best times for a puzzle: one place for solving
+ * signed out, and one per account for solving signed in (#127). Kept apart so
+ * that on a shared browser one account's bests are never taken for another's
+ * — or for the signed-out ones — and only an account's own go to the server.
+ */
+export function bestTimesKey(puzzleId: string, userId: string | null = null): string {
+  return userId ? `${BEST_KEY_PREFIX}${userId}:${puzzleId}` : `${BEST_KEY_PREFIX}${puzzleId}`;
 }
 
 export interface SolveResult {
@@ -103,7 +109,7 @@ export function parseBestTimes(raw: string | null): BestTimes {
 }
 
 /** Better when faster; fewer moves only break a tie. */
-function beats(a: SolveResult, b: SolveResult): boolean {
+export function beats(a: SolveResult, b: SolveResult): boolean {
   return a.ms < b.ms || (a.ms === b.ms && a.moves < b.moves);
 }
 
@@ -147,10 +153,7 @@ export function recordBestTime(
 ): { raw: string; best: SolveResult; previous: SolveResult | null; isNew: boolean } {
   const times = parseBestTimes(raw);
   const previous = times[pieceCount] ?? null;
-  const isNew =
-    previous === null ||
-    result.ms < previous.ms ||
-    (result.ms === previous.ms && result.moves < previous.moves);
+  const isNew = previous === null || beats(result, previous);
   if (isNew) times[pieceCount] = result;
   return { raw: JSON.stringify(times), best: times[pieceCount], previous, isNew };
 }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { tryFetch } from "@/lib/try-fetch";
 import { mergeBestTimes, type BestTimes, type SolveResult } from "@/lib/puzzle/timer";
+import { importableBests, isImportableBest } from "@/lib/best-times";
 import type { TokenStore } from "./useCompetitionEntry";
 
 /** The browser's best times for the puzzle; the solver owns every storage call. */
@@ -16,7 +17,11 @@ export interface BestStore {
  *
  * On opening the puzzle, the server's bests and the browser's are merged —
  * the better wins per piece count — so a best set on another device shows
- * here, and one this browser holds that the server lacks is handed over.
+ * here, and one this browser holds for the account that the server lacks (a
+ * submission that never arrived) is handed over. `store` must be the account's
+ * own (`bestTimesKey` with the user id): best times set signed out stay in the
+ * browser and are never handed to an account, so that on a shared browser
+ * nobody's times end up in someone else's account.
  *
  * A timed solve asks the server for a signed start when its first piece is
  * picked up, kept with the solve like a competition start, and hands it back
@@ -29,7 +34,6 @@ export function useServerBestTimes({
   serverBests,
   store,
   tokens,
-  onMerged,
 }: {
   puzzleId: string;
   signedIn: boolean;
@@ -37,22 +41,22 @@ export function useServerBestTimes({
   serverBests: BestTimes | null;
   store: BestStore;
   tokens: TokenStore;
-  /** After the merge changed what the browser holds, to show it. */
-  onMerged: () => void;
 }) {
   const starting = useRef(false);
   const merged = useRef(false);
 
   // After mount, like every storage read in the solver: reading during render
-  // would make the first client render differ from the server's.
+  // would make the first client render differ from the server's. What is shown
+  // does not wait for this write — the solver merges `serverBests` into what it
+  // reads itself, which also holds where storage cannot be written.
   useEffect(() => {
     if (!signedIn || !serverBests || merged.current) return;
     merged.current = true;
-    const { raw, upload } = mergeBestTimes(store.read(), serverBests);
-    if (raw !== null) {
-      store.write(raw);
-      onMerged();
-    }
+    const { raw, upload: better } = mergeBestTimes(store.read(), serverBests);
+    if (raw !== null) store.write(raw);
+    // Only what the import would keep: one entry it refuses would otherwise go
+    // out again on every visit.
+    const upload = importableBests(better);
     if (Object.keys(upload).length > 0) {
       void tryFetch("best-times", `/api/puzzles/${puzzleId}/best-times/import`, {
         method: "POST",
@@ -60,7 +64,7 @@ export function useServerBestTimes({
         body: JSON.stringify({ bests: upload }),
       });
     }
-  }, [signedIn, serverBests, store, puzzleId, onMerged]);
+  }, [signedIn, serverBests, store, puzzleId]);
 
   /** Call when a piece of a fresh, timed solve is picked up. */
   const beginAttempt = useCallback(async () => {
@@ -92,6 +96,7 @@ export function useServerBestTimes({
       // Used up either way: one start is one solve.
       tokens.clear();
       if (!signedIn || !isNew) return;
+      if (!token && !isImportableBest(pieceCount, outcome)) return;
       const [url, body] = token
         ? [`/api/puzzles/${puzzleId}/best-times`, { token, pieceCount, ...outcome }]
         : [`/api/puzzles/${puzzleId}/best-times/import`, { bests: { [pieceCount]: outcome } }];

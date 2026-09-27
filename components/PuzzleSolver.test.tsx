@@ -1343,7 +1343,7 @@ describe("PuzzleSolver", () => {
         json: async () => (url.endsWith("/best-times/start") ? { token: "bt-1" } : {}),
       }));
       vi.stubGlobal("fetch", fetchMock);
-      extraProps = { viewer: { signedIn: true, isAdmin: false }, serverBests: {} };
+      extraProps = { viewer: { signedIn: true, isAdmin: false, id: "u1" }, serverBests: {} };
     });
 
     afterEach(() => {
@@ -1352,7 +1352,8 @@ describe("PuzzleSolver", () => {
       extraProps = {};
     });
 
-    const bestsKey = "best:p1";
+    /** The signed-in account's own bests; the signed-out ones live at `best:p1`. */
+    const bestsKey = "best:u1:p1";
 
     function requests(path: string) {
       return fetchMock.mock.calls.filter(([url]) => String(url) === `/api/puzzles/p1/${path}`);
@@ -1390,7 +1391,34 @@ describe("PuzzleSolver", () => {
       expect(requests("best-times/import")).toHaveLength(0);
     });
 
-    it("hands over a best the browser holds and the server lacks", async () => {
+    it("shows the server's best even where storage is blocked", async () => {
+      const blocked = () => {
+        throw new DOMException("denied", "SecurityError");
+      };
+      for (const method of ["getItem", "setItem", "removeItem"] as const) {
+        vi.spyOn(Storage.prototype, method).mockImplementation(blocked);
+      }
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      extraProps.serverBests = { 108: { ms: 800_000, moves: 380 } };
+      await open();
+
+      expect(container.querySelector("[role='timer']")?.getAttribute("title")).toBe(
+        "Best time: 13:20",
+      );
+    });
+
+    it("hands over only what the import would keep", async () => {
+      localStorage.setItem(
+        bestsKey,
+        JSON.stringify({ 12: { ms: 50_000, moves: 20 }, 48: { ms: 1_000, moves: 5 } }),
+      );
+      await open();
+
+      const [call] = requests("best-times/import");
+      expect(bodyOf(call)).toEqual({ bests: { 12: { ms: 50_000, moves: 20 } } });
+    });
+
+    it("hands over a best the browser holds for the account and the server lacks", async () => {
       localStorage.setItem(bestsKey, JSON.stringify({ 12: { ms: 50_000, moves: 20 } }));
       extraProps.serverBests = { 108: { ms: 800_000, moves: 380 } };
       await open();
@@ -1407,7 +1435,7 @@ describe("PuzzleSolver", () => {
       const [call] = requests("best-times");
       expect(bodyOf(call)).toEqual({ token: "bt-1", pieceCount: 108, ms: 60_000, moves: 1 });
       // One start, one solve.
-      expect(localStorage.getItem("bt:p1")).toBeNull();
+      expect(localStorage.getItem("bt:u1:p1")).toBeNull();
     });
 
     it("sends a new best without a start as an import", async () => {
@@ -1427,16 +1455,54 @@ describe("PuzzleSolver", () => {
 
       expect(requests("best-times")).toHaveLength(0);
       expect(requests("best-times/import")).toHaveLength(0);
-      expect(localStorage.getItem("bt:p1")).toBeNull();
+      expect(localStorage.getItem("bt:u1:p1")).toBeNull();
     });
 
     it("drops the start when the solve is started over", async () => {
       vi.spyOn(window, "confirm").mockReturnValue(true);
       await open();
       await act(async () => board.onPieceGrab!());
-      expect(localStorage.getItem("bt:p1")).toBe("bt-1");
+      expect(localStorage.getItem("bt:u1:p1")).toBe("bt-1");
       await reset();
-      expect(localStorage.getItem("bt:p1")).toBeNull();
+      expect(localStorage.getItem("bt:u1:p1")).toBeNull();
+    });
+
+    it("never hands the bests set signed out to the account", async () => {
+      // Whoever solved signed out on this browser need not be this account.
+      localStorage.setItem("best:p1", JSON.stringify({ 12: { ms: 50_000, moves: 20 } }));
+      await open();
+
+      expect(requests("best-times/import")).toHaveLength(0);
+      // Nor are they shown as the account's best.
+      expect(container.querySelector("[role='timer']")?.getAttribute("title")).toBe(messages.solve.time);
+    });
+
+    it("keeps one account's bests out of another's on a shared browser", async () => {
+      localStorage.setItem("best:someone-else:p1", JSON.stringify({ 108: { ms: 50_000, moves: 20 } }));
+      await open();
+
+      expect(requests("best-times/import")).toHaveLength(0);
+      expect(localStorage.getItem("best:someone-else:p1")).not.toBeNull();
+      expect(localStorage.getItem(bestsKey)).toBeNull();
+    });
+
+    it("keeps a signed-out solve out of the account's bests, and the account's out of view signed out", async () => {
+      extraProps = {};
+      localStorage.setItem(bestsKey, JSON.stringify({ 108: { ms: 40_000, moves: 20 } }));
+      await open();
+      await solveIn(60_000);
+
+      expect(JSON.parse(localStorage.getItem("best:p1")!)[108]).toEqual({ ms: 60_000, moves: 1 });
+      expect(JSON.parse(localStorage.getItem(bestsKey)!)[108]).toEqual({ ms: 40_000, moves: 20 });
+    });
+
+    it("does not reach the server without the account's id", async () => {
+      extraProps = { viewer: { signedIn: true, isAdmin: false }, serverBests: {} };
+      localStorage.setItem("best:p1", JSON.stringify({ 12: { ms: 50_000, moves: 20 } }));
+      await open();
+      await solveIn(60_000);
+
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it("asks the server for nothing when signed out", async () => {

@@ -42,9 +42,10 @@ export default async function PuzzlePage({
   // solver's best times on the server (#127). A private puzzle resolved it above.
   const { competition } = puzzle;
   if (puzzle.isPublic) viewer = await getSessionViewer();
-  const serverBests = viewer ? await loadBestTimes(viewer.id, puzzle.id) : null;
-
-  const t = await getTranslations("solve");
+  const [serverBests, t] = await Promise.all([
+    viewer ? loadBestTimes(viewer.id, puzzle.id) : null,
+    getTranslations("solve"),
+  ]);
   const data = {
     id: puzzle.id,
     imageKey: puzzle.imageKey,
@@ -69,7 +70,11 @@ export default async function PuzzlePage({
             endsAt: competition.endsAt?.toISOString() ?? null,
           }
         }
-        viewer={{ signedIn: viewer !== null, isAdmin: viewer?.role === "ADMIN" }}
+        viewer={{
+          signedIn: viewer !== null,
+          isAdmin: viewer?.role === "ADMIN",
+          id: viewer?.id,
+        }}
         serverBests={serverBests}
       />
     </>

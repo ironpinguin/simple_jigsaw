@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { PIECE_PRESETS } from "./puzzle/grid";
+import { beats } from "./puzzle/timer";
 
 export interface CompetitionWindow {
   startsAt: Date | null;
@@ -76,8 +77,7 @@ export function isBetterResult(
   next: { ms: number; moves: number },
   current: { ms: number; moves: number } | null,
 ): boolean {
-  if (!current) return true;
-  return next.ms < current.ms || (next.ms === current.ms && next.moves < current.moves);
+  return !current || beats(next, current);
 }
 
 export const DISPLAY_NAME_MIN = 2;

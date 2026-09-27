@@ -106,7 +106,7 @@ describe("POST /api/puzzles/[id]/best-times", () => {
   });
 
   it("improves a standing best only where the new one still beats it", async () => {
-    m.bestFindUnique.mockResolvedValueOnce({ ms: 110_000 });
+    m.bestFindUnique.mockResolvedValueOnce({ ms: 110_000, moves: 30 });
     await post(SUBMIT, solve());
     // The condition is in the write itself, so a concurrent better time wins.
     expect(m.bestUpdateMany).toHaveBeenCalledWith({
@@ -120,15 +120,31 @@ describe("POST /api/puzzles/[id]/best-times", () => {
     });
   });
 
-  it("answers with the standing best when it was the better one", async () => {
+  it("answers with the standing best when it is the better one, without writing", async () => {
+    m.bestFindUnique.mockResolvedValueOnce({ ms: 90_000, moves: 25 });
+    expect(await (await post(SUBMIT, solve())).json()).toEqual({
+      best: { ms: 90_000, moves: 25 },
+      improved: false,
+    });
+    expect(m.bestUpdateMany).not.toHaveBeenCalled();
+    expect(m.bestFindUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers with the other tab's best when it landed first", async () => {
     m.bestFindUnique
-      .mockResolvedValueOnce({ ms: 90_000 })
+      .mockResolvedValueOnce({ ms: 110_000, moves: 30 })
       .mockResolvedValueOnce({ ms: 90_000, moves: 25 });
     m.bestUpdateMany.mockResolvedValue({ count: 0 });
     expect(await (await post(SUBMIT, solve())).json()).toEqual({
       best: { ms: 90_000, moves: 25 },
       improved: false,
     });
+  });
+
+  it("refuses a time the 32-bit column cannot hold", async () => {
+    const token = startedAt(BEST_ATTEMPT_MAX_MS - 60_000);
+    expect((await post(SUBMIT, solve({ token, ms: 2_200_000_000 }))).status).toBe(400);
+    expect(m.bestCreate).not.toHaveBeenCalled();
   });
 
   it("falls back to improving when another tab created the row first", async () => {
@@ -200,6 +216,7 @@ describe("POST /api/puzzles/[id]/best-times/import", () => {
 
   it("rejects a malformed body", async () => {
     expect((await post(IMPORT, { bests: { 12: { ms: -1, moves: 5 } } })).status).toBe(400);
+    expect((await post(IMPORT, { bests: { 12: { ms: 2 ** 31, moves: 5 } } })).status).toBe(400);
     expect((await post(IMPORT, { bests: "nope" })).status).toBe(400);
   });
 

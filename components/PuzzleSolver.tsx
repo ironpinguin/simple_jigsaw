@@ -49,6 +49,7 @@ import {
 import {
   bestTimesKey,
   formatDuration,
+  mergeBestTimes,
   parseBestTimes,
   recordBestTime,
   type BestTimes,
@@ -247,7 +248,8 @@ export default function PuzzleSolver({
   isPublic: boolean;
   /** A running, upcoming or ended competition on this puzzle (#119). */
   competition?: { pieceCount: number; startsAt: string | null; endsAt: string | null } | null;
-  viewer?: { signedIn: boolean; isAdmin: boolean };
+  /** `id` is the signed-in solver's own, for the browser's per-account best times (#127). */
+  viewer?: { signedIn: boolean; isAdmin: boolean; id?: string };
   /** The signed-in solver's best times on this puzzle from the server (#127). */
   serverBests?: BestTimes | null;
 }) {
@@ -331,17 +333,22 @@ export default function PuzzleSolver({
   // --- The solve timer (#118) ------------------------------------------------
 
   const [timer] = useState(createSolveTimer);
-  const bestKey = bestTimesKey(puzzle.id);
+  // Per account while signed in (#127): see `bestTimesKey`.
+  const bestKey = bestTimesKey(puzzle.id, viewer.signedIn ? (viewer.id ?? null) : null);
 
-  /** The best result for the current piece count; read after mount, like `pc:`. */
+  /**
+   * The best result for the current piece count; read after mount, like `pc:`.
+   * A signed-in solver's server bests (#127) count too — already here rather
+   * than after `useServerBestTimes` has written them to storage, and even where
+   * storage cannot be written at all.
+   */
   const [best, setBest] = useState<SolveResult | null>(null);
-  /** Bumped when the server's bests were merged into the stored ones (#127). */
-  const [bestsMerged, setBestsMerged] = useState(0);
   useEffect(() => {
-    const stored = parseBestTimes(withStorage((s) => s.getItem(bestKey), null));
+    const raw = withStorage((s) => s.getItem(bestKey), null);
+    const stored = serverBests ? mergeBestTimes(raw, serverBests).merged : parseBestTimes(raw);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
     setBest(stored[pieceCount] ?? null);
-  }, [bestKey, pieceCount, bestsMerged]);
+  }, [bestKey, pieceCount, serverBests]);
 
   // --- Best times on the server (#127) ---------------------------------------
 
@@ -352,7 +359,8 @@ export default function PuzzleSolver({
     }),
     [bestKey],
   );
-  const bestAttemptKey = `bt:${puzzle.id}`;
+  // Per account like the bests: a start is bound to the account it was issued to.
+  const bestAttemptKey = `bt:${viewer.id ?? ""}:${puzzle.id}`;
   const bestTokens = useMemo<TokenStore>(
     () => ({
       get: () => withStorage((s) => s.getItem(bestAttemptKey), null),
@@ -361,20 +369,19 @@ export default function PuzzleSolver({
     }),
     [bestAttemptKey],
   );
-  const onBestsMerged = useCallback(() => setBestsMerged((n) => n + 1), []);
-  const serverBest = useServerBestTimes({
-    puzzleId: puzzle.id,
-    signedIn: viewer.signedIn,
-    serverBests,
-    store: bestStore,
-    tokens: bestTokens,
-    onMerged: onBestsMerged,
-  });
   const {
     beginAttempt: beginBestAttempt,
     discardAttempt: discardBestAttempt,
     report: reportBest,
-  } = serverBest;
+  } = useServerBestTimes({
+    puzzleId: puzzle.id,
+    // Only with the account known: without it the store above is the signed-out
+    // one, whose bests must never reach an account.
+    signedIn: viewer.signedIn && !!viewer.id,
+    serverBests,
+    store: bestStore,
+    tokens: bestTokens,
+  });
 
   /** The card shown after the drop that finishes the puzzle. */
   const [result, setResult] = useState<{
@@ -492,8 +499,11 @@ export default function PuzzleSolver({
     // An untimed solve (see `readSolveTiming`) has no time worth showing, and
     // recording it would set a best nobody could beat.
     if (outcome) {
+      const raw = withStorage((s) => s.getItem(bestKey), null);
+      // Against the server's bests as well, as `best` is read: storage holds
+      // them too, unless it cannot be written.
       const recorded = recordBestTime(
-        withStorage((s) => s.getItem(bestKey), null),
+        serverBests ? (mergeBestTimes(raw, serverBests).raw ?? raw) : raw,
         pieceCount,
         outcome,
       );
@@ -511,7 +521,16 @@ export default function PuzzleSolver({
     }
     finishAttempt(outcome);
     celebrate({ sound });
-  }, [sound, timer, bestKey, pieceCount, finishAttempt, reportBest, discardBestAttempt]);
+  }, [
+    sound,
+    timer,
+    bestKey,
+    pieceCount,
+    serverBests,
+    finishAttempt,
+    reportBest,
+    discardBestAttempt,
+  ]);
 
   useEffect(() => stopCelebration, []);
 

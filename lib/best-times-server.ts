@@ -2,6 +2,7 @@
 // import route, and by the pages that show them.
 
 import { prisma } from "./db";
+import { isBetterResult } from "./competition";
 import type { BestTimes, SolveResult } from "./puzzle/timer";
 
 /**
@@ -34,7 +35,12 @@ export async function recordServerBest(
       })
     ).count > 0;
 
-  const standing = await prisma.bestTime.findUnique({ where: key, select: { ms: true } });
+  const standing = await prisma.bestTime.findUnique({
+    where: key,
+    select: { ms: true, moves: true },
+  });
+  // Nothing to write, and no second read needed, when it already stands better.
+  if (standing && !isBetterResult(result, standing)) return { best: standing, improved: false };
   let landed: boolean;
   if (standing) {
     landed = await improve();

@@ -3,16 +3,14 @@ import { getSessionViewer } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
-import { minimumSolveMs } from "@/lib/competition";
-import { PIECE_PRESETS } from "@/lib/puzzle/grid";
-import { BestTimeImportSchema } from "@/lib/best-times";
+import { BestTimeImportSchema, isImportableBest } from "@/lib/best-times";
 import { recordServerBest } from "@/lib/best-times-server";
-import type { SolveResult } from "@/lib/puzzle/timer";
 
 /**
- * Take over best times the browser already holds for this puzzle (#127), once
- * the solver is signed in: those set before signing in, on this device, or
- * while the server could not be reached. Each is kept where it beats the
+ * Take over best times the browser holds for this puzzle and this account
+ * (#127) that the server lacks — a solve whose submission never arrived, or one
+ * finished without a signed start. Only the account's own: the browser keeps
+ * those apart from the ones set signed out, which it never sends. Each is kept where it beats the
  * stored one, as a submitted solve would be.
  *
  * There is no signed start to judge them by, so only the floor for the piece
@@ -38,12 +36,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const now = new Date();
-  const bests: Record<string, SolveResult> = {};
-  for (const [key, result] of Object.entries(parsed.data.bests)) {
-    const pieceCount = Number(key);
-    if (!(PIECE_PRESETS as readonly number[]).includes(pieceCount)) continue;
-    if (result.ms < minimumSolveMs(pieceCount)) continue;
-    bests[key] = (await recordServerBest(viewer.id, id, pieceCount, result, now)).best;
-  }
-  return NextResponse.json({ bests });
+  // One row per piece count, so the writes are independent of each other.
+  const kept = await Promise.all(
+    Object.entries(parsed.data.bests)
+      .filter(([key, result]) => isImportableBest(Number(key), result))
+      .map(async ([key, result]) => {
+        const { best } = await recordServerBest(viewer.id, id, Number(key), result, now);
+        return [key, best] as const;
+      }),
+  );
+  return NextResponse.json({ bests: Object.fromEntries(kept) });
 }

@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   puzzle and number of pieces is now also stored with your account, so it
   shows on every device. *My puzzles* lists your best times on your own
   puzzles, and a new section shows other people's puzzles you have solved.
-  Best times already in your browser are taken over automatically. Nobody
-  but you sees them; they are part of the data export, and the privacy
+  Best times set while signed out stay in your browser. Nobody but you sees
+  them; they are part of the data export, and the privacy
   policy says so. (#127)
 
 ### Changed

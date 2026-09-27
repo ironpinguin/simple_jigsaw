@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BestTimeImportSchema, groupBestTimes, type BestTimeWithPuzzle } from "./best-times";
+import {
+  BestTimeImportSchema,
+  MAX_RESULT_MS,
+  groupBestTimes,
+  importableBests,
+  isImportableBest,
+  type BestTimeWithPuzzle,
+} from "./best-times";
 
 function row(
   puzzleId: string,
@@ -59,5 +66,27 @@ describe("BestTimeImportSchema", () => {
     );
     expect(BestTimeImportSchema.safeParse({ bests: many }).success).toBe(false);
     expect(BestTimeImportSchema.safeParse({ bests: { abc: { ms: 1, moves: 1 } } }).success).toBe(false);
+  });
+});
+
+describe("importableBests", () => {
+  it("keeps what the import would take, and leaves out what it would skip or refuse", () => {
+    expect(
+      importableBests({
+        12: { ms: 50_000, moves: 20 },
+        48: { ms: 1_000, moves: 20 }, // below the floor
+        13: { ms: 50_000, moves: 20 }, // not a preset
+        108: { ms: 900_000, moves: 0 }, // no moves
+        300: { ms: MAX_RESULT_MS + 1, moves: 400 }, // past the column
+        abc: { ms: 50_000, moves: 20 },
+      }),
+    ).toEqual({ 12: { ms: 50_000, moves: 20 } });
+  });
+
+  it("agrees with the schema on what fits", () => {
+    const fits = { ms: MAX_RESULT_MS, moves: 1 };
+    expect(isImportableBest(300, fits)).toBe(true);
+    expect(BestTimeImportSchema.safeParse({ bests: { 300: fits } }).success).toBe(true);
+    expect(isImportableBest(12, { ms: 6_000.5, moves: 1 })).toBe(false);
   });
 });
