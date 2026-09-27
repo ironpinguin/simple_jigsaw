@@ -572,7 +572,7 @@ describe("PuzzleSolver", () => {
     });
 
     it("switches style without asking and keeps the saved solve", async () => {
-      // Same grid, so the board resumes it in the new shape — nothing to lose.
+      // Same grid, so the board carries it over in the new shape — nothing to lose.
       const confirm = vi.spyOn(window, "confirm");
       window.localStorage.setItem(solveKey, solveJson(7));
       container.innerHTML = serverHtml();
@@ -584,8 +584,9 @@ describe("PuzzleSolver", () => {
       expect(board.pieceStyle).toBe("wooden");
       expect(window.localStorage.getItem("ps:p1")).toBe("wooden");
       expect(window.localStorage.getItem(solveKey)).toBe(solveJson(7));
-      // Saved first, so the resumed solve carries the clock as it stands.
-      expect(board.saves).toBe(1);
+      // Nothing written: the board keeps its model in memory, so an untouched
+      // puzzle gets no stored solve to warn about on a later piece-count change.
+      expect(board.saves).toBe(0);
     });
   });
 

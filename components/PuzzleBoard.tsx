@@ -273,8 +273,9 @@ interface Props {
   cols: number;
   rows: number;
   /**
-   * The shape to cut. Changing it rebuilds the layout and resumes the stored
-   * solve — the grid is the same, so every group still fits.
+   * The shape to cut. Changing it rebuilds the layout and carries the solve over
+   * as it stands, clock included — the grid is the same, so every group still
+   * fits. Nothing is read from or written to storage for it.
    */
   pieceStyle: PieceStyle;
   /** `PuzzleSolver` owns the toggle. */
@@ -430,28 +431,48 @@ export default function PuzzleBoard({
   // the model it has.
   const seededFor = useRef<{
     layout: Layout;
+    cols: number;
+    rows: number;
     resetNonce: number;
     loadSolveState: () => string | null;
   } | null>(null);
   useEffect(() => {
     if (!layout) return;
     const last = seededFor.current;
-    if (
-      last?.layout === layout &&
-      last.resetNonce === resetNonce &&
-      last.loadSolveState === loadSolveState
-    ) {
-      return;
-    }
-    seededFor.current = { layout, resetNonce, loadSolveState };
+    const sameSolve =
+      last !== null && last.resetNonce === resetNonce && last.loadSolveState === loadSolveState;
+    if (sameSolve && last.layout === layout) return;
+    seededFor.current = { layout, cols, rows, resetNonce, loadSolveState };
     const { stageW, stageH } = layout;
+    const rectOf = (pid: string) => layout.pieces.get(pid)?.rect;
+
+    // A new cut of the same grid — another piece style — is still the same solve,
+    // so the model in memory carries over, rescaled to the new stage and settled
+    // against the new bitmaps. Reloading it instead would lose every move since
+    // the last save, and all of them where storage is blocked; and the clock runs
+    // on untouched, so there is nothing new to tell `onSeeded`.
+    if (sameSolve && last.cols === cols && last.rows === rows) {
+      const carried = restoreSolveState(
+        serialiseSolveState({
+          groups: groupStore.get().groups.values(),
+          cols,
+          rows,
+          stageW: last.layout.stageW,
+          stageH: last.layout.stageH,
+          updatedAt: Date.now(),
+        }),
+        { cols, rows, stageW, stageH },
+        rectOf,
+      );
+      if (carried) {
+        groupStore.replace(carried);
+        onProgress(groupStore.get().groups.size, total);
+        return;
+      }
+    }
 
     const raw = loadSolveState();
-    const restored = restoreSolveState(
-      raw,
-      { cols, rows, stageW, stageH },
-      (pid) => layout.pieces.get(pid)?.rect,
-    );
+    const restored = restoreSolveState(raw, { cols, rows, stageW, stageH }, rectOf);
 
     // Note the settled positions are deliberately not written back. Storage keeps
     // the fractions as they were saved, so each restore clamps from the original

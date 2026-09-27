@@ -64,14 +64,14 @@ describe("pieceBox", () => {
   const pieceH = 80;
 
   it.each(PIECE_STYLES)("fits the whole %s outline inside the bitmap with the padding intact", (style) => {
-    const grid = generateEdges(4, 3, 777, style);
+    const styled = generateEdges(4, 3, 777, style);
     // The strong property: every outline point must land at least PIECE_PAD away
     // from each bitmap edge. This is what pins offsetX/offsetY and the padding —
     // asserting only that the canvas is "bigger than the cell" does not.
     for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 4; c++) {
-        const box = pieceBox(grid, r, c, pieceW, pieceH);
-        for (const p of pieceOutlinePoints(grid, r, c, pieceW, pieceH)) {
+        const box = pieceBox(styled, r, c, pieceW, pieceH);
+        for (const p of pieceOutlinePoints(styled, r, c, pieceW, pieceH)) {
           expect(box.offsetX + p.x).toBeGreaterThanOrEqual(PIECE_PAD - 1e-9);
           expect(box.offsetY + p.y).toBeGreaterThanOrEqual(PIECE_PAD - 1e-9);
           expect(box.offsetX + p.x).toBeLessThanOrEqual(box.canvasW - PIECE_PAD + 1e-9);

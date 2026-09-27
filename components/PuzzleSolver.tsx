@@ -570,10 +570,9 @@ export default function PuzzleSolver({
 
   function changeStyle(style: PieceStyle) {
     if (style === pieceStyle) return;
-    // No warning and nothing cleared, unlike a new count: the grid stays the
-    // same, so the board resumes the stored solve in the new shape. Save first so
-    // the resume includes the clock as it stands now, not as of the last drop.
-    boardActions.current?.save();
+    // No warning and nothing cleared or saved, unlike a new count: the grid stays
+    // the same, so the board carries the solve over in memory, clock included —
+    // which also holds where storage is blocked.
     setPieceStyle(style);
     withStorage((s) => s.setItem(styleKey, style), undefined);
   }

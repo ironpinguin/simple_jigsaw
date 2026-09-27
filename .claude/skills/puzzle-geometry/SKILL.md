@@ -14,7 +14,8 @@ in plain node.
 | --- | --- |
 | `prng.ts` | `mulberry32(seed)` + `uniform` — the only randomness allowed |
 | `grid.ts` | `computeGrid(pieceCount, aspect)` → near-square `cols × rows`; `PIECE_PRESETS` |
-| `edges.ts` | `generateEdges(cols, rows, seed)` → shared edge + vertex grid |
+| `edges.ts` | `generateEdges(cols, rows, seed, style)` → shared edge + vertex grid |
+| `style.ts` | `PIECE_STYLES` (`classic`, `wooden`), `toPieceStyle` for stored values |
 | `outline.ts` | `pieceOutlinePoints` / SVG path in the piece's local space; exports `TAB` |
 | `board.ts` | stage + picture size, piece bitmap boxes, scatter, drag clamping |
 | `groups.ts` | piece ids, neighbours, snapping, group merge cascade |
@@ -32,11 +33,14 @@ from the piece — always index into the shared grid.
 **The outer border is flat**, and border vertices are not jittered, so the
 assembled picture stays a clean rectangle.
 
-**Everything is seeded.** Same `(cols, rows, seed)` ⇒ identical output, which is
-why a shared link looks the same for everyone. Use `mulberry32(seed)`; a bare
-`Math.random()` anywhere in here is a bug. Consequence: changing the jitter
-ranges or the knob template silently changes the shape of *already shared*
-puzzles. That is a deliberate decision, not a refactor.
+**Everything is seeded.** Same `(cols, rows, seed, style)` ⇒ identical output,
+which is why a shared link looks the same for everyone. Every style draws the
+main rng in the same order (wooden extras come from a second, salted stream),
+and `classic` is frozen — `puzzle.test.ts` pins it with a hash. Use
+`mulberry32(seed)`; a bare `Math.random()` anywhere in here is a bug.
+Consequence: changing the jitter ranges or the knob template silently changes
+the shape of *already shared* puzzles. That is a deliberate decision, not a
+refactor.
 
 **Piece ids are `` `${row}-${col}` ``** (`pieceId` / `parsePieceId`), and inside
 a group a piece always sits at `(col*pieceW, row*pieceH)` relative to the group

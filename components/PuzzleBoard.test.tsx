@@ -17,6 +17,7 @@ import {
   readSolveTiming,
   serialiseSolveState,
 } from "@/lib/puzzle/solveState";
+import type { PieceStyle } from "@/lib/puzzle/style";
 import PuzzleBoard, { type BoardActions } from "./PuzzleBoard";
 
 // jsdom has no canvas, so Konva cannot run here. What these tests are about is
@@ -182,14 +183,18 @@ describe("PuzzleBoard", () => {
   let onPieceDrop: ReturnType<typeof vi.fn<() => void>>;
   const actions = createRef<BoardActions | null>();
 
-  function board(resetNonce = 0, grid = { cols: COLS, rows: ROWS }) {
+  function board(
+    resetNonce = 0,
+    grid = { cols: COLS, rows: ROWS },
+    pieceStyle: PieceStyle = "classic",
+  ) {
     return (
       <NextIntlClientProvider locale="en" messages={messages}>
         <PuzzleBoard
           puzzle={puzzle}
           cols={grid.cols}
           rows={grid.rows}
-          pieceStyle="classic"
+          pieceStyle={pieceStyle}
           showMinimap={false}
           onProgress={onProgress}
           onSolved={onSolved}
@@ -212,9 +217,13 @@ describe("PuzzleBoard", () => {
   };
   const readTiming = () => timing;
 
-  async function mount(resetNonce = 0, grid = { cols: COLS, rows: ROWS }) {
+  async function mount(
+    resetNonce = 0,
+    grid = { cols: COLS, rows: ROWS },
+    pieceStyle: PieceStyle = "classic",
+  ) {
     await act(async () => {
-      root.render(board(resetNonce, grid));
+      root.render(board(resetNonce, grid, pieceStyle));
     });
     // The image "loads" in a microtask; let the layout build and seed.
     await act(async () => {});
@@ -613,6 +622,30 @@ describe("PuzzleBoard", () => {
 
     expect(groups()).toHaveLength(COLS * ROWS);
     expect(onProgress).toHaveBeenLastCalledWith(COLS * ROWS, COLS * ROWS);
+  });
+
+  it("carries the solve over to another piece style, without going back to storage", async () => {
+    await mount();
+    await joinNext();
+    const sizes = () => groups().map((g) => g.pieces.length).sort();
+    const bitmapArea = () =>
+      groups().reduce((sum, g) => sum + g.pieces.reduce((a, p) => a + p.width * p.height, 0), 0);
+    const joined = sizes();
+    const classicArea = bitmapArea();
+    const seeds = onSeeded.mock.calls.length;
+    const saves = saved.length;
+    // As where storage is blocked: reloading from it would scatter afresh.
+    stored = null;
+
+    await mount(0, { cols: COLS, rows: ROWS }, "wooden");
+
+    expect(sizes()).toEqual(joined);
+    // Cut anew: the wooden knobs reach further, so every bitmap grows.
+    expect(bitmapArea()).toBeGreaterThan(classicArea);
+    expect(onProgress).toHaveBeenLastCalledWith(COLS * ROWS - 1, COLS * ROWS);
+    // The clock runs on, and there is nothing new to write.
+    expect(onSeeded).toHaveBeenCalledTimes(seeds);
+    expect(saved).toHaveLength(saves);
   });
 
   it("re-measures the height it may take whenever it lays out a new grid", async () => {
