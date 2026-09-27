@@ -65,6 +65,7 @@ model User {
   puzzles            Puzzle[]
   tokens             VerificationToken[]
   leaderboardEntries LeaderboardEntry[]
+  bestTimes          BestTime[]
 }
 
 model VerificationToken {
@@ -117,6 +118,7 @@ model Puzzle {
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   competition Competition?
+  bestTimes   BestTime[]
 
   @@index([ownerId])
   // Image delivery, key claiming and delete cleanup all filter on imageKey.
@@ -184,6 +186,28 @@ model LeaderboardEntry {
   // The leaderboard is read sorted by time.
   @@index([competitionId, ms])
   @@index([userId])
+}
+
+// A signed-in solver's best result on one puzzle at one piece count (#127),
+// kept on the server so it follows them to another device. Private to the
+// solver: nobody else, the puzzle's owner included, is shown these rows.
+// Goes with the account and with the puzzle (cascade).
+model BestTime {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  puzzleId   String
+  puzzle     Puzzle   @relation(fields: [puzzleId], references: [id], onDelete: Cascade)
+  // Times at different piece counts are not comparable, so each has its own.
+  pieceCount Int
+  ms         Int
+  moves      Int
+  // When this best was set.
+  achievedAt DateTime @default(now())
+
+  @@unique([userId, puzzleId, pieceCount])
+  // The cascade from a deleted puzzle looks rows up by it.
+  @@index([puzzleId])
 }
 
 // The classifier's judgement of one stored image, keyed by the object key so

@@ -305,6 +305,17 @@ select:focus {
   margin: 10px 0 4px;
   font-size: 16px;
 }
+.best-times {
+  margin-top: 8px;
+}
+.best-times svg {
+  vertical-align: -2px;
+}
+.best-times ul {
+  margin: 2px 0 0;
+  padding-left: 20px;
+  font-variant-numeric: tabular-nums;
+}
 .competition-settings {
   display: flex;
   flex-direction: column;

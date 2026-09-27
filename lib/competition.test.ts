@@ -41,6 +41,13 @@ describe("judgeSubmission", () => {
     expect(judgeSubmission({ ...base, ms: 60_000, now: start + 65_000 })).toBe("OK");
   });
 
+  it("lets a use keep its starts good for longer than a day (#127)", () => {
+    const later = start + ATTEMPT_MAX_MS + 60_000;
+    expect(judgeSubmission({ ...base, ms: 60_000, now: later })).toBe("EXPIRED");
+    const long = { ...base, ms: 60_000, now: later, maxMs: 30 * ATTEMPT_MAX_MS };
+    expect(judgeSubmission(long)).toBe("OK");
+  });
+
   it("refuses a time faster than the floor for the piece count", () => {
     expect(minimumSolveMs(12)).toBe(6_000);
     expect(judgeSubmission({ ...base, ms: 5_999, now: start + 60_000 })).toBe("TOO_FAST");

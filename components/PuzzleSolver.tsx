@@ -33,6 +33,7 @@ import SolveTimerDisplay from "./SolveTimerDisplay";
 import { createSolveTimer } from "./solveTimer";
 import Leaderboard from "./Leaderboard";
 import { useCompetitionEntry, type EntryState, type TokenStore } from "./useCompetitionEntry";
+import { useServerBestTimes, type BestStore } from "./useServerBestTimes";
 import { DISPLAY_NAME_MAX, competitionPhase } from "@/lib/competition";
 import { Link as IntlLink } from "@/i18n/navigation";
 import { celebrate, stopCelebration } from "./celebrate";
@@ -48,8 +49,10 @@ import {
 import {
   bestTimesKey,
   formatDuration,
+  mergeBestTimes,
   parseBestTimes,
   recordBestTime,
+  type BestTimes,
   type SolveResult,
 } from "@/lib/puzzle/timer";
 
@@ -237,6 +240,7 @@ export default function PuzzleSolver({
   isPublic,
   competition = null,
   viewer = { signedIn: false, isAdmin: false },
+  serverBests = null,
 }: {
   puzzle: PuzzleData;
   title: string;
@@ -244,7 +248,10 @@ export default function PuzzleSolver({
   isPublic: boolean;
   /** A running, upcoming or ended competition on this puzzle (#119). */
   competition?: { pieceCount: number; startsAt: string | null; endsAt: string | null } | null;
-  viewer?: { signedIn: boolean; isAdmin: boolean };
+  /** `id` is the signed-in solver's own, for the browser's per-account best times (#127). */
+  viewer?: { signedIn: boolean; isAdmin: boolean; id?: string };
+  /** The signed-in solver's best times on this puzzle from the server (#127). */
+  serverBests?: BestTimes | null;
 }) {
   const t = useTranslations("solve");
   const tReport = useTranslations("report");
@@ -326,15 +333,55 @@ export default function PuzzleSolver({
   // --- The solve timer (#118) ------------------------------------------------
 
   const [timer] = useState(createSolveTimer);
-  const bestKey = bestTimesKey(puzzle.id);
+  // Per account while signed in (#127): see `bestTimesKey`.
+  const bestKey = bestTimesKey(puzzle.id, viewer.signedIn ? (viewer.id ?? null) : null);
 
-  /** The best result for the current piece count; read after mount, like `pc:`. */
+  /**
+   * The best result for the current piece count; read after mount, like `pc:`.
+   * A signed-in solver's server bests (#127) count too — already here rather
+   * than after `useServerBestTimes` has written them to storage, and even where
+   * storage cannot be written at all.
+   */
   const [best, setBest] = useState<SolveResult | null>(null);
   useEffect(() => {
-    const stored = parseBestTimes(withStorage((s) => s.getItem(bestKey), null));
+    const raw = withStorage((s) => s.getItem(bestKey), null);
+    const stored = serverBests ? mergeBestTimes(raw, serverBests).merged : parseBestTimes(raw);
     // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
     setBest(stored[pieceCount] ?? null);
-  }, [bestKey, pieceCount]);
+  }, [bestKey, pieceCount, serverBests]);
+
+  // --- Best times on the server (#127) ---------------------------------------
+
+  const bestStore = useMemo<BestStore>(
+    () => ({
+      read: () => withStorage((s) => s.getItem(bestKey), null),
+      write: (raw) => withStorage((s) => s.setItem(bestKey, raw), undefined),
+    }),
+    [bestKey],
+  );
+  // Per account like the bests: a start is bound to the account it was issued to.
+  const bestAttemptKey = `bt:${viewer.id ?? ""}:${puzzle.id}`;
+  const bestTokens = useMemo<TokenStore>(
+    () => ({
+      get: () => withStorage((s) => s.getItem(bestAttemptKey), null),
+      set: (token) => withStorage((s) => s.setItem(bestAttemptKey, token), undefined),
+      clear: () => withStorage((s) => s.removeItem(bestAttemptKey), undefined),
+    }),
+    [bestAttemptKey],
+  );
+  const {
+    beginAttempt: beginBestAttempt,
+    discardAttempt: discardBestAttempt,
+    report: reportBest,
+  } = useServerBestTimes({
+    puzzleId: puzzle.id,
+    // Only with the account known: without it the store above is the signed-out
+    // one, whose bests must never reach an account.
+    signedIn: viewer.signedIn && !!viewer.id,
+    serverBests,
+    store: bestStore,
+    tokens: bestTokens,
+  });
 
   /** The card shown after the drop that finishes the puzzle. */
   const [result, setResult] = useState<{
@@ -398,17 +445,21 @@ export default function PuzzleSolver({
       // untimed one, which could never be submitted — has none.
       if (!alreadySolved && (!timing || (timing.elapsedMs === 0 && timing.moves === 0))) {
         discardAttempt();
+        discardBestAttempt();
       }
     },
-    [timer, discardAttempt],
+    [timer, discardAttempt, discardBestAttempt],
   );
   const readTiming = useCallback(() => timer.timing(Date.now()), [timer]);
   const onPieceGrab = useCallback(() => {
     const now = Date.now();
     // Before the first move of a timed solve: the attempt starts with it.
-    if (timer.timing(now)?.moves === 0) void beginAttempt();
+    if (timer.timing(now)?.moves === 0) {
+      void beginAttempt();
+      void beginBestAttempt();
+    }
     timer.grab(now, document.visibilityState !== "hidden");
-  }, [timer, beginAttempt]);
+  }, [timer, beginAttempt, beginBestAttempt]);
   const onPieceDrop = useCallback(() => timer.drop(), [timer]);
 
   // Hiding the tab pauses the clock — and saves, since the time since the last
@@ -448,8 +499,11 @@ export default function PuzzleSolver({
     // An untimed solve (see `readSolveTiming`) has no time worth showing, and
     // recording it would set a best nobody could beat.
     if (outcome) {
+      const raw = withStorage((s) => s.getItem(bestKey), null);
+      // Against the server's bests as well, as `best` is read: storage holds
+      // them too, unless it cannot be written.
       const recorded = recordBestTime(
-        withStorage((s) => s.getItem(bestKey), null),
+        serverBests ? (mergeBestTimes(raw, serverBests).raw ?? raw) : raw,
         pieceCount,
         outcome,
       );
@@ -461,10 +515,22 @@ export default function PuzzleSolver({
         best: recorded.best,
         isNew: recorded.isNew,
       });
+      reportBest(pieceCount, outcome, recorded.isNew);
+    } else {
+      discardBestAttempt();
     }
     finishAttempt(outcome);
     celebrate({ sound });
-  }, [sound, timer, bestKey, pieceCount, finishAttempt]);
+  }, [
+    sound,
+    timer,
+    bestKey,
+    pieceCount,
+    serverBests,
+    finishAttempt,
+    reportBest,
+    discardBestAttempt,
+  ]);
 
   useEffect(() => stopCelebration, []);
 
@@ -543,6 +609,7 @@ export default function PuzzleSolver({
     setSolved(false);
     setResult(null);
     discardAttempt();
+    discardBestAttempt();
     stopCelebration();
   }
 

@@ -51,7 +51,7 @@ export async function GET() {
     }
 
     // Independent of each other, so read together.
-    const [puzzles, leaderboardEntries] = await Promise.all([
+    const [puzzles, leaderboardEntries, bestTimes] = await Promise.all([
       prisma.puzzle.findMany({
         where: { ownerId: session.id },
         orderBy: { createdAt: "desc" },
@@ -81,10 +81,21 @@ export async function GET() {
           competition: { select: { puzzleId: true, puzzle: { select: { title: true } } } },
         },
       }),
+      prisma.bestTime.findMany({
+        where: { userId: session.id },
+        orderBy: { achievedAt: "desc" },
+        select: {
+          pieceCount: true,
+          ms: true,
+          moves: true,
+          achievedAt: true,
+          puzzle: { select: { id: true, title: true } },
+        },
+      }),
     ]);
 
     const baseUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/+$/, "");
-    const payload = buildAccountExport({ user, puzzles, leaderboardEntries, baseUrl });
+    const payload = buildAccountExport({ user, puzzles, leaderboardEntries, bestTimes, baseUrl });
 
     // Dated filename so repeated downloads do not overwrite each other, and
     // no-store because this is the whole account in one response.

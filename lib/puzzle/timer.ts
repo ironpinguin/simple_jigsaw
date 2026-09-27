@@ -56,8 +56,14 @@ export function formatDuration(ms: number): string {
  */
 export const BEST_KEY_PREFIX = "best:";
 
-export function bestTimesKey(puzzleId: string): string {
-  return `${BEST_KEY_PREFIX}${puzzleId}`;
+/**
+ * Where the browser keeps the best times for a puzzle: one place for solving
+ * signed out, and one per account for solving signed in (#127). Kept apart so
+ * that on a shared browser one account's bests are never taken for another's
+ * — or for the signed-out ones — and only an account's own go to the server.
+ */
+export function bestTimesKey(puzzleId: string, userId: string | null = null): string {
+  return userId ? `${BEST_KEY_PREFIX}${userId}:${puzzleId}` : `${BEST_KEY_PREFIX}${puzzleId}`;
 }
 
 export interface SolveResult {
@@ -102,6 +108,40 @@ export function parseBestTimes(raw: string | null): BestTimes {
   return out;
 }
 
+/** Better when faster; fewer moves only break a tie. */
+export function beats(a: SolveResult, b: SolveResult): boolean {
+  return a.ms < b.ms || (a.ms === b.ms && a.moves < b.moves);
+}
+
+/**
+ * The browser's and the server's best times for one puzzle, brought together
+ * for a signed-in solver (#127): the better one wins per piece count. `upload`
+ * is what the browser holds that beats the server — for it to take over — and
+ * `raw` the merged set for the browser to keep, or `null` when it would not
+ * change what is stored.
+ */
+export function mergeBestTimes(
+  localRaw: string | null,
+  server: BestTimes,
+): { raw: string | null; merged: BestTimes; upload: BestTimes } {
+  const local = parseBestTimes(localRaw);
+  const merged: BestTimes = { ...local };
+  const upload: BestTimes = {};
+  let changed = false;
+  for (const [count, result] of Object.entries(server)) {
+    const mine = merged[count];
+    if (!mine || beats(result, mine)) {
+      merged[count] = result;
+      changed = true;
+    }
+  }
+  for (const [count, result] of Object.entries(local)) {
+    const theirs = server[count];
+    if (!theirs || beats(result, theirs)) upload[count] = result;
+  }
+  return { raw: changed ? JSON.stringify(merged) : null, merged, upload };
+}
+
 /**
  * Enters `result` for `pieceCount`. The faster time wins; fewer moves only break
  * a tie. `previous` is what stood before, for the "new best time" message.
@@ -113,10 +153,7 @@ export function recordBestTime(
 ): { raw: string; best: SolveResult; previous: SolveResult | null; isNew: boolean } {
   const times = parseBestTimes(raw);
   const previous = times[pieceCount] ?? null;
-  const isNew =
-    previous === null ||
-    result.ms < previous.ms ||
-    (result.ms === previous.ms && result.moves < previous.moves);
+  const isNew = previous === null || beats(result, previous);
   if (isNew) times[pieceCount] = result;
   return { raw: JSON.stringify(times), best: times[pieceCount], previous, isNew };
 }

@@ -45,6 +45,15 @@ type ExportablePuzzle = {
   competition?: { pieceCount: number; startsAt: Date | null; endsAt: Date | null } | null;
 };
 
+/** One of the user's own best times on a puzzle (#127), anyone's puzzle. */
+type ExportableBestTime = {
+  pieceCount: number;
+  ms: number;
+  moves: number;
+  achievedAt: Date;
+  puzzle: { id: string; title: string };
+};
+
 /** One of the user's own results on a competition leaderboard (#119). */
 type ExportableEntry = {
   ms: number;
@@ -90,6 +99,15 @@ export type AccountExport = {
     moves: number;
     achievedAt: string;
   }>;
+  /** The user's best times, on their own puzzles and on other people's. */
+  bestTimes: Array<{
+    puzzleId: string;
+    puzzleTitle: string;
+    pieceCount: number;
+    ms: number;
+    moves: number;
+    achievedAt: string;
+  }>;
 };
 
 const iso = (date: Date | null): string | null => date?.toISOString() ?? null;
@@ -106,12 +124,14 @@ export function buildAccountExport({
   user,
   puzzles,
   leaderboardEntries = [],
+  bestTimes = [],
   baseUrl,
   exportedAt = new Date(),
 }: {
   user: ExportableUser;
   puzzles: ExportablePuzzle[];
   leaderboardEntries?: ExportableEntry[];
+  bestTimes?: ExportableBestTime[];
   baseUrl: string;
   exportedAt?: Date;
 }): AccountExport {
@@ -158,6 +178,14 @@ export function buildAccountExport({
       ms: entry.ms,
       moves: entry.moves,
       achievedAt: entry.achievedAt.toISOString(),
+    })),
+    bestTimes: bestTimes.map((best) => ({
+      puzzleId: best.puzzle.id,
+      puzzleTitle: best.puzzle.title,
+      pieceCount: best.pieceCount,
+      ms: best.ms,
+      moves: best.moves,
+      achievedAt: best.achievedAt.toISOString(),
     })),
   };
 }

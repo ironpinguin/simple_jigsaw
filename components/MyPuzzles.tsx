@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import CompetitionSettings, { type OwnerCompetition } from "./CompetitionSettings";
+import BestTimesList, { type BestTimeRow } from "./BestTimesList";
 
 interface PuzzleSummary {
   id: string;
@@ -13,6 +14,8 @@ interface PuzzleSummary {
   pieceCount: number;
   isPublic: boolean;
   competition: OwnerCompetition | null;
+  /** The owner's own best times on it (#127). */
+  bests: BestTimeRow[];
 }
 
 export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
@@ -107,6 +110,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
           <p className="muted" style={{ margin: 0 }}>
             {t("pieces", { count: p.pieceCount })} · {p.isPublic ? t("public") : t("private")}
           </p>
+          <BestTimesList bests={p.bests} />
           <div className="card-actions">
             <Link href={`/puzzle/${p.id}`} className="button">
               {t("solve")}

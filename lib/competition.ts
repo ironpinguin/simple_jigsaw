@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import { PIECE_PRESETS } from "./puzzle/grid";
+import { beats } from "./puzzle/timer";
 
 export interface CompetitionWindow {
   startsAt: Date | null;
@@ -59,11 +60,13 @@ export function judgeSubmission(input: {
   pieceCount: number;
   startedAt: number;
   now: number;
+  /** How long a start stays good; `ATTEMPT_MAX_MS` unless the use says otherwise. */
+  maxMs?: number;
 }): SubmissionVerdict {
-  const { ms, pieceCount, startedAt, now } = input;
+  const { ms, pieceCount, startedAt, now, maxMs = ATTEMPT_MAX_MS } = input;
   const span = now - startedAt;
   if (span < 0) return "BAD_START";
-  if (span > ATTEMPT_MAX_MS) return "EXPIRED";
+  if (span > maxMs) return "EXPIRED";
   if (ms > span + CLOCK_SLACK_MS) return "LONGER_THAN_ATTEMPT";
   if (ms < minimumSolveMs(pieceCount)) return "TOO_FAST";
   return "OK";
@@ -74,8 +77,7 @@ export function isBetterResult(
   next: { ms: number; moves: number },
   current: { ms: number; moves: number } | null,
 ): boolean {
-  if (!current) return true;
-  return next.ms < current.ms || (next.ms === current.ms && next.moves < current.moves);
+  return !current || beats(next, current);
 }
 
 export const DISPLAY_NAME_MIN = 2;
