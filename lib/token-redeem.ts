@@ -12,8 +12,13 @@ import type { TokenKind } from "./token-ttl";
  * rolls back with it — the link survives a refusal an admin or the user can
  * still reverse (#50) — and handed back by `redeemToken` as a refused
  * `Redemption` rather than as an error.
+ *
+ * Not exported: `work` refuses through the `refuse` it is handed, whose reason
+ * is checked against the route's own `R` (#134). A public class let any string
+ * through, and `redeemToken` then passed it on typed as a `ClaimRefusal` — in a
+ * route with `R = never`, a stray reason quietly became "invalid link".
  */
-export class Refused<R extends string = string> extends Error {
+class Refused<R extends string = string> extends Error {
   constructor(
     readonly reason: R,
     /** Whose redemption this was, once the claim has told us. For the log. */
@@ -23,6 +28,20 @@ export class Refused<R extends string = string> extends Error {
     this.name = "Refused";
   }
 }
+
+/**
+ * How `work` refuses a redemption: throws, so nothing after it runs and the
+ * claim rolls back. Call it as `return refuse(…)` — TypeScript narrows after a
+ * `never` call only for functions with a declared type, which a callback
+ * parameter is not, and the `return` makes the exit visible to it and to the
+ * reader. Without the `return` it still refuses; only the narrowing is lost.
+ *
+ * `"invalid"` for a link that turns out to be as good as bad (an account that
+ * is gone), or one of the route's own reasons. Never `"unavailable"` — that
+ * means "retry", which only a failed transaction can say, not a decision made
+ * in `work`.
+ */
+export type Refuse<R extends string> = (reason: "invalid" | R, userId?: string) => never;
 
 /**
  * The outcome of a redemption. `ok` means the transaction committed: the link
@@ -58,22 +77,36 @@ export type Redemption<T, R extends string = never> =
  * - a collision after a successful claim → logged, not counted. The DELETE
  *   worked, so it says nothing about the redeem path; counting it would turn the
  *   probe amber on write conflicts in the caller's own `work`.
+ *
+ * Not counted either, deliberately (#134): a *non-transient* error before the
+ * claim finished — a transaction that could not start for a reason other than
+ * P2028, a `findUnique` inside `consumeToken` that threw. The tokens signal
+ * answers "do claims work when the database does", and these are the database
+ * failing: counting them would turn the probe amber on every connection blip
+ * that its own `SELECT 1` already reports. The one case that slips through — a
+ * role that can reach the database but not read `verification_token` — fails
+ * every redemption loudly instead: a 500 per request and a log line each.
  */
 export async function redeemToken<T, R extends string = never>(
   token: string,
   type: TokenKind,
-  work: (tx: DbTransaction, userId: string) => Promise<T>,
+  work: (tx: DbTransaction, userId: string, refuse: Refuse<R>) => Promise<T>,
 ): Promise<Redemption<T, R>> {
+  const refuse: Refuse<R> = (reason, userId) => {
+    throw new Refused(reason, userId);
+  };
   let claim: TokenClaim | undefined;
   try {
     return await prisma.$transaction(async (tx) => {
       claim = await consumeToken(token, type, tx);
       if (!claim.ok) throw new Refused(claim.reason);
-      const value = await work(tx, claim.userId);
+      const value = await work(tx, claim.userId, refuse);
       return { ok: true as const, userId: claim.userId, value };
     });
   } catch (error) {
     if (error instanceof Refused) {
+      // Sound, unlike before #134: only `refuse` (typed `"invalid" | R`) and the
+      // claim's own refusal (a `ClaimRefusal`) construct one.
       return { ok: false, reason: error.reason as ClaimRefusal | R, userId: error.userId };
     }
     if (!isTransientTransactionError(error)) throw error;

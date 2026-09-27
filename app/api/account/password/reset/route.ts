@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { revokeTokens } from "@/lib/tokens";
-import { Refused, redeemToken, type Redemption } from "@/lib/token-redeem";
+import { redeemToken, type Redemption } from "@/lib/token-redeem";
 import { liveTokenFilter } from "@/lib/token-ttl";
 import { passwordErrorKey, passwordField } from "@/lib/password";
 import { getErrorT } from "@/lib/i18n-server";
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     // renders as "the link may have expired".
     const passwordHash = await bcrypt.hash(parsed.data.password, 10);
 
-    redeemed = await redeemToken(parsed.data.token, "PASSWORD_RESET", async (tx, userId) => {
+    redeemed = await redeemToken(parsed.data.token, "PASSWORD_RESET", async (tx, userId, refuse) => {
       claimedBy = userId;
 
       // Read for emailVerified alone, and only to leave an existing one alone.
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
       // should not happen. If it does, the link is as good as invalid: letting
       // the update throw P2025 would answer resetNotApplied, whose "try again"
       // can never come true.
-      if (!account) throw new Refused("invalid");
+      if (!account) return refuse("invalid");
 
       // Stamped after the hash, never before it: read ahead of the bcrypt
       // round, passwordChangedAt would be dated a whole hash — 60-150 ms —

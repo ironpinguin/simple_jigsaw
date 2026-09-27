@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import type { ClaimRefusal } from "@/lib/tokens";
-import { Refused, redeemToken } from "@/lib/token-redeem";
+import { redeemToken } from "@/lib/token-redeem";
 import { liveTokenFilter } from "@/lib/token-ttl";
 import { checkEmailBanned } from "@/lib/moderation";
 import { TERMS_VERSION } from "@/lib/legal";
@@ -101,12 +101,10 @@ export async function POST(request: Request) {
   const redeemed = await redeemToken<void, InviteRefusal>(
     parsed.data.token,
     "INVITE",
-    async (tx, userId) => {
+    async (tx, userId, refuse) => {
       const user = await tx.user.findUnique({ where: { id: userId } });
-      if (!user) throw new Refused<InviteRefusal>("accountNotFound", userId);
-      if (await checkEmailBanned(user.email, tx)) {
-        throw new Refused<InviteRefusal>("emailBanned", user.id);
-      }
+      if (!user) return refuse("accountNotFound", userId);
+      if (await checkEmailBanned(user.email, tx)) return refuse("emailBanned", user.id);
 
       await tx.user.update({
         where: { id: user.id },
