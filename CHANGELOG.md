@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-28
+
 ### Changed
 - **The board follows the window.** Maximise the browser, move it to a
   larger screen or change only its height, and the table resizes with it
