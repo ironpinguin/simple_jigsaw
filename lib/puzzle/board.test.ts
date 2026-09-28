@@ -45,11 +45,25 @@ describe("boardGeometry", () => {
     expect(g.stageH).toBe(520);
   });
 
-  it("caps the picture's height for a tall image instead of overflowing", () => {
+  it("bounds the picture's height by the stage for a tall image instead of overflowing", () => {
     const tall = boardGeometry({ containerW: 4000, availableH: 870, aspect: 1 / 2, cols: 4, rows: 3 });
-    expect(tall.boardH).toBeLessThanOrEqual(460);
-    // width follows from the cap, so the aspect ratio is preserved
+    expect(tall.boardH).toBeCloseTo(870 * 0.6, 6);
+    // width follows from the bound, so the aspect ratio is preserved
     expect(tall.boardW / tall.boardH).toBeCloseTo(1 / 2, 6);
+  });
+
+  it("lets the picture grow with a large window, in both dimensions (#145)", () => {
+    // A maximised 2560 x 1440 window: no fixed pixel cap stops the pieces growing.
+    const big = boardGeometry({ containerW: 2512, availableH: 1200, aspect: 4 / 3, cols: 4, rows: 3 });
+    expect(big.boardH).toBeGreaterThan(460);
+
+    const wider = boardGeometry({ containerW: 3000, availableH: 1200, aspect: 1, cols: 4, rows: 3 });
+    const narrower = boardGeometry({ containerW: 1500, availableH: 1200, aspect: 1, cols: 4, rows: 3 });
+    expect(wider.pieceW).toBeGreaterThan(narrower.pieceW);
+
+    const taller = boardGeometry({ containerW: 3000, availableH: 1400, aspect: 2, cols: 4, rows: 3 });
+    const shorter = boardGeometry({ containerW: 3000, availableH: 800, aspect: 2, cols: 4, rows: 3 });
+    expect(taller.pieceH).toBeGreaterThan(shorter.pieceH);
   });
 
   it("derives snapDist from the smaller piece dimension", () => {

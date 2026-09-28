@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The board follows the window.** Maximise the browser, move it to a
+  larger screen or change only its height, and the table resizes with it
+  shortly after, without a reload. The pieces grow or shrink with it.
+  Progress, timer, move count and zoom stay as they were. A resize
+  during a drag waits until the piece is dropped. On large screens the
+  assembled picture is no longer held at 460 px height. (#145)
+
 ## [0.9.0] - 2026-09-27
 
 ### Added

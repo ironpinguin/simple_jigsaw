@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -200,6 +201,19 @@ function availableBoardHeight(wrap: HTMLElement): number {
   return window.innerHeight - topInDocument - below - wrapBorders;
 }
 
+/** The room the board may take: its wrapper's width and `availableBoardHeight`. */
+interface Room {
+  w: number;
+  h: number;
+}
+
+/**
+ * How long the window has to hold still before the board is laid out again.
+ * A rebuild re-rasterises every piece, so a resize that drags on for a second
+ * — the user pulling a window edge — should cost one rebuild, not dozens.
+ */
+const RESIZE_SETTLE_MS = 200;
+
 function buildLayout(
   puzzle: PuzzleData,
   image: HTMLImageElement,
@@ -348,24 +362,35 @@ export default function PuzzleBoard({
   // say it depends on it.
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
-  const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
-  // Attaching the wrapper also reads its width, synchronously: waiting for a
-  // ResizeObserver instead would leave a board opened in a background tab unbuilt
-  // until the tab is shown, because a hidden page gets no resize notifications.
-  // Only the first width counts, like the observer's below.
+  // The room last measured around the wrapper; `null` until it has a width.
+  // Kept as the same object while nothing changed, because every new one
+  // rebuilds the layout and re-rasterises every piece.
+  const [room, setRoom] = useState<Room | null>(null);
+  const measure = useCallback((el: HTMLElement, w = el.clientWidth) => {
+    if (w <= 0) return;
+    const h = availableBoardHeight(el);
+    setRoom((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+  }, []);
+
+  // Attaching the wrapper also measures it, synchronously: waiting for a
+  // ResizeObserver or a resize event instead would leave a board opened in a
+  // background tab unbuilt until the tab is shown, because a hidden page gets
+  // neither.
   //
   // A detach is ignored. This div is the board's own root, so `null` only ever
   // means unmounting or being hidden (an <Activity>, a Suspense fallback), and
   // dropping the layout for that would tear the Konva stage down: it would come
   // back unzoomed while the zoom readout and the overview kept the old view.
-  const attachWrap = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    setWrap(el);
-    const w = el.clientWidth;
-    if (w > 0) setContainerW((prev) => (prev > 0 ? prev : w));
-  }, []);
+  const attachWrap = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el) return;
+      setWrap(el);
+      measure(el);
+    },
+    [measure],
+  );
 
   // The group model — see `groupStore` for why it is a store rather than state
   // or refs. Written on drop, gather and seeding, never per drag frame. Both
@@ -393,26 +418,75 @@ export default function PuzzleBoard({
   // ResizeObserver reports at the next rendering update rather than inside
   // observe(), and not at all while the page is hidden — hence the read above.
   useEffect(() => {
-    if (!wrap || containerW > 0) return;
+    if (!wrap || room) return;
     const ro = new ResizeObserver((entries) => {
       const cw = entries[0]?.contentRect.width ?? 0;
       if (cw > 0) {
-        setContainerW(cw);
+        measure(wrap, cw);
         ro.disconnect();
       }
     });
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [wrap, containerW]);
+  }, [wrap, room, measure]);
+
+  // The board follows the window (#145): measure again once a resize has
+  // settled. The signal has to come from the window, not from observing the
+  // wrapper — the wrapper's height *is* the stage's, so it cannot notice that
+  // the window got taller; and `availableBoardHeight` reads nothing of the
+  // board's own size, so the rebuilt stage cannot trigger another measurement.
+  // `visualViewport` for a phone turned on its side, where browsers differ on
+  // whether the window fires one too.
+  useEffect(() => {
+    if (!wrap) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => measure(wrap), RESIZE_SETTLE_MS);
+    };
+    const viewport = window.visualViewport;
+    window.addEventListener("resize", onResize);
+    viewport?.addEventListener("resize", onResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", onResize);
+      viewport?.removeEventListener("resize", onResize);
+    };
+  }, [wrap, measure]);
+
+  // The room the layout is built for: the measured one, except while a group is
+  // being dragged. Rebuilding then would swap the dragged node for a new one
+  // under the pointer and leave Konva's drag on the old; the drop commits the
+  // move against the layout it started in, and the new room is taken right
+  // after. (Adjusting state during render, not in an effect: an effect would
+  // build the stale layout first and then the new one.)
+  const [builtRoom, setBuiltRoom] = useState<Room | null>(null);
+  if (draggingId === null && builtRoom !== room) setBuiltRoom(room);
 
   const layout = useMemo(() => {
-    if (!image || !wrap || containerW === 0) return null;
-    // Measured here rather than inside buildLayout so lib/puzzle stays free of
-    // the DOM, and here rather than once on mount so that every new layout —
-    // another piece count, say — gets the room the window has now. The width,
-    // like before, is read once: a later resize does not re-lay-out the board.
-    return buildLayout(puzzle, image, containerW, cols, rows, pieceStyle, availableBoardHeight(wrap));
-  }, [image, wrap, containerW, puzzle, cols, rows, pieceStyle]);
+    if (!image || !builtRoom) return null;
+    // Measured outside buildLayout so lib/puzzle stays free of the DOM.
+    return buildLayout(puzzle, image, builtRoom.w, cols, rows, pieceStyle, builtRoom.h);
+  }, [image, builtRoom, puzzle, cols, rows, pieceStyle]);
+
+  // Keep the view where it was on a stage that changed size: the same part of
+  // the board stays in view, at the same zoom. Before paint, so the rebuilt
+  // stage is never drawn at the old offset; and published, or the zoom readout
+  // and the overview would keep the old view (see `viewStore`).
+  const shownStage = useRef<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!layout) return;
+    const prev = shownStage.current;
+    shownStage.current = { w: layout.stageW, h: layout.stageH };
+    const stage = stageRef.current;
+    if (!stage || !prev || (prev.w === layout.stageW && prev.h === layout.stageH)) return;
+    stage.position({
+      x: (stage.x() * layout.stageW) / prev.w,
+      y: (stage.y() * layout.stageH) / prev.h,
+    });
+    stage.batchDraw();
+    publishView();
+  }, [layout, publishView]);
 
   // Seed the group model whenever the layout is (re)built: resume the stored solve
   // if there is a usable one, otherwise scatter.
@@ -446,9 +520,9 @@ export default function PuzzleBoard({
     const { stageW, stageH } = layout;
     const rectOf = (pid: string) => layout.pieces.get(pid)?.rect;
 
-    // A new cut of the same grid — another piece style — is still the same solve,
-    // so the model in memory carries over, rescaled to the new stage and settled
-    // against the new bitmaps. Reloading it instead would lose every move since
+    // A new cut of the same grid — another piece style, or the same cut for a
+    // resized window — is still the same solve, so the model in memory carries
+    // over, rescaled to the new stage and settled against the new bitmaps. Reloading it instead would lose every move since
     // the last save, and all of them where storage is blocked; and the clock runs
     // on untouched, so there is nothing new to tell `onSeeded`.
     if (sameSolve && last.cols === cols && last.rows === rows) {

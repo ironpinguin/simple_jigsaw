@@ -48,9 +48,11 @@ export interface BoardGeometry {
 }
 
 /**
- * Stage and piece sizing for one puzzle. The assembled picture takes ~40% of the
- * width (capped in height) so the rest of the window is free to spread and
- * assemble pieces.
+ * Stage and piece sizing for one puzzle. The assembled picture takes 40% of the
+ * stage width, or 60% of its height if that is the tighter bound, so the rest of
+ * the window is free to spread and assemble pieces. Both bounds are relative:
+ * the picture — and with it every piece — grows with the window in either
+ * dimension (#145).
  */
 export function boardGeometry({
   containerW,
@@ -66,7 +68,7 @@ export function boardGeometry({
 
   let boardW = stageW * 0.4;
   let boardH = boardW / aspect;
-  const maxBoardH = Math.min(460, stageH * 0.6);
+  const maxBoardH = stageH * 0.6;
   if (boardH > maxBoardH) {
     boardH = maxBoardH;
     boardW = boardH * aspect;
