@@ -190,11 +190,12 @@ export function deserialiseSolveState(
  * `null` if the stored state cannot be used (see `deserialiseSolveState`).
  *
  * The settling is not cosmetic. Origins are stored per axis — `x` against
- * `stageW`, `y` against `stageH` — but a piece's size follows the *width* alone
- * (`boardGeometry` gives the assembled picture 40% of `stageW`, then caps its
- * height). So any change to the stage's aspect ratio moves a group's origin
- * without moving its extent by the same amount, and a group that sat flush
- * against an edge can come back overhanging it.
+ * `stageW`, `y` against `stageH` — but a piece keeps the image's aspect ratio,
+ * so its size follows whichever dimension bounds the picture (`boardGeometry`
+ * gives it 40% of `stageW` or 60% of `stageH`, the smaller). So any change to
+ * the stage's aspect ratio moves a group's origin without moving its extent by
+ * the same amount, and a group that sat flush against an edge can come back
+ * overhanging it. The board relies on this for a window resize too (#145).
  *
  * `rectOf` is why this takes a callback: the extents come from the rasterised
  * piece bitmaps, which only the board has.

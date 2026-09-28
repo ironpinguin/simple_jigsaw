@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,7 @@ import {
   pieceBox,
   scatterGroups,
   settleGroup,
+  stageSize,
   type BoardGeometry,
   type PieceBox,
   type Rect,
@@ -71,14 +73,22 @@ interface PieceInfo {
   rect: Rect;
 }
 
-interface Layout {
+/**
+ * Every piece's bitmap and its place in the puzzle frame: the part of the layout
+ * that depends on how big a piece is but not on the stage around it — and the
+ * expensive part, since it rasterises every piece.
+ */
+interface Cut {
   pieceW: number;
   pieceH: number;
+  pieces: Map<string, PieceInfo>;
+  order: string[]; // piece ids in row-major order
+}
+
+interface Layout extends Cut {
   stageW: number;
   stageH: number;
   snapDist: number;
-  pieces: Map<string, PieceInfo>;
-  order: string[]; // piece ids in row-major order
   initialGroups: PieceGroup[];
 }
 
@@ -116,7 +126,7 @@ function renderPieceCanvas(
   box: PieceBox,
   row: number,
   col: number,
-  { pieceW, pieceH, boardW, boardH }: BoardGeometry,
+  { pieceW, pieceH, boardW, boardH }: Pick<BoardGeometry, "pieceW" | "pieceH" | "boardW" | "boardH">,
 ): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = box.canvasW;
@@ -200,27 +210,34 @@ function availableBoardHeight(wrap: HTMLElement): number {
   return window.innerHeight - topInDocument - below - wrapBorders;
 }
 
-function buildLayout(
-  puzzle: PuzzleData,
+/**
+ * The stage the room around the wrapper gives: its width and
+ * `availableBoardHeight`, already through `stageSize`.
+ */
+interface Room {
+  w: number;
+  h: number;
+}
+
+/**
+ * How long the window has to hold still before the board is laid out again.
+ * A rebuild can re-rasterise every piece, so a resize that drags on for a second
+ * — the user pulling a window edge — should cost one rebuild, not dozens.
+ */
+const RESIZE_SETTLE_MS = 200;
+
+/** Rasterise every piece of a `cols` x `rows` cut at `pieceW` x `pieceH`. */
+function cutPieces(
   image: HTMLImageElement,
-  containerW: number,
+  seed: number,
   cols: number,
   rows: number,
   pieceStyle: PieceStyle,
-  availableH: number,
-): Layout {
-  const { seed } = puzzle;
-
-  const geo = boardGeometry({
-    containerW,
-    availableH,
-    aspect: puzzle.imageWidth / puzzle.imageHeight,
-    cols,
-    rows,
-  });
-  const { stageW, stageH, pieceW, pieceH, snapDist } = geo;
-
+  pieceW: number,
+  pieceH: number,
+): Cut {
   const grid = generateEdges(cols, rows, seed, pieceStyle);
+  const size = { pieceW, pieceH, boardW: cols * pieceW, boardH: rows * pieceH };
 
   const pieces = new Map<string, PieceInfo>();
   const order: string[] = [];
@@ -233,7 +250,7 @@ function buildLayout(
         id,
         row: r,
         col: c,
-        canvas: renderPieceCanvas(image, grid, box, r, c, geo),
+        canvas: renderPieceCanvas(image, grid, box, r, c, size),
         offsetX: box.offsetX,
         offsetY: box.offsetY,
         solvedX: c * pieceW,
@@ -244,16 +261,21 @@ function buildLayout(
     }
   }
 
+  return { pieceW, pieceH, pieces, order };
+}
+
+/** Put a cut on the stage `geo` describes, with its opening scatter. */
+function layOut(cut: Cut, geo: BoardGeometry, cols: number, rows: number, seed: number): Layout {
+  const { stageW, stageH, snapDist } = geo;
   const initialGroups = scatterGroups({
     cols,
     rows,
     seed,
     stageW,
     stageH,
-    rectOf: (id) => pieces.get(id)!.rect,
+    rectOf: (id) => cut.pieces.get(id)!.rect,
   });
-
-  return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
+  return { ...cut, stageW, stageH, snapDist, initialGroups };
 }
 
 /** What the solver's toolbar can ask of the board. */
@@ -348,24 +370,40 @@ export default function PuzzleBoard({
   // say it depends on it.
   const [wrap, setWrap] = useState<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage>(null);
-  const [containerW, setContainerW] = useState(0);
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
-  // Attaching the wrapper also reads its width, synchronously: waiting for a
-  // ResizeObserver instead would leave a board opened in a background tab unbuilt
-  // until the tab is shown, because a hidden page gets no resize notifications.
-  // Only the first width counts, like the observer's below.
+  // The room last measured around the wrapper; `null` until it has a width.
+  // Kept as the same object while the stage it gives is unchanged, because
+  // every new one lays the board out again. Compared as a stage, so a change
+  // the floors or the rounding swallow — a phone's address bar sliding away
+  // over a board already at its minimum height, a sub-pixel shift — costs
+  // nothing.
+  const [room, setRoom] = useState<Room | null>(null);
+  const measure = useCallback((el: HTMLElement, w = el.clientWidth) => {
+    if (w <= 0) return;
+    const { stageW, stageH } = stageSize(w, availableBoardHeight(el));
+    setRoom((prev) =>
+      prev && prev.w === stageW && prev.h === stageH ? prev : { w: stageW, h: stageH },
+    );
+  }, []);
+
+  // Attaching the wrapper also measures it, synchronously: waiting for a
+  // ResizeObserver or a resize event instead would leave a board opened in a
+  // background tab unbuilt until the tab is shown, because a hidden page gets
+  // neither.
   //
   // A detach is ignored. This div is the board's own root, so `null` only ever
   // means unmounting or being hidden (an <Activity>, a Suspense fallback), and
   // dropping the layout for that would tear the Konva stage down: it would come
   // back unzoomed while the zoom readout and the overview kept the old view.
-  const attachWrap = useCallback((el: HTMLDivElement | null) => {
-    if (!el) return;
-    setWrap(el);
-    const w = el.clientWidth;
-    if (w > 0) setContainerW((prev) => (prev > 0 ? prev : w));
-  }, []);
+  const attachWrap = useCallback(
+    (el: HTMLDivElement | null) => {
+      if (!el) return;
+      setWrap(el);
+      measure(el);
+    },
+    [measure],
+  );
 
   // The group model — see `groupStore` for why it is a store rather than state
   // or refs. Written on drop, gather and seeding, never per drag frame. Both
@@ -393,26 +431,98 @@ export default function PuzzleBoard({
   // ResizeObserver reports at the next rendering update rather than inside
   // observe(), and not at all while the page is hidden — hence the read above.
   useEffect(() => {
-    if (!wrap || containerW > 0) return;
+    if (!wrap || room) return;
     const ro = new ResizeObserver((entries) => {
       const cw = entries[0]?.contentRect.width ?? 0;
       if (cw > 0) {
-        setContainerW(cw);
+        measure(wrap, cw);
         ro.disconnect();
       }
     });
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [wrap, containerW]);
+  }, [wrap, room, measure]);
 
-  const layout = useMemo(() => {
-    if (!image || !wrap || containerW === 0) return null;
-    // Measured here rather than inside buildLayout so lib/puzzle stays free of
-    // the DOM, and here rather than once on mount so that every new layout —
-    // another piece count, say — gets the room the window has now. The width,
-    // like before, is read once: a later resize does not re-lay-out the board.
-    return buildLayout(puzzle, image, containerW, cols, rows, pieceStyle, availableBoardHeight(wrap));
-  }, [image, wrap, containerW, puzzle, cols, rows, pieceStyle]);
+  // The board follows the window (#145): measure again once a resize has
+  // settled. The signal has to come from the window, not from observing the
+  // wrapper — the wrapper's height *is* the stage's, so it cannot notice that
+  // the window got taller; and `availableBoardHeight` reads nothing of the
+  // board's own size, so the rebuilt stage cannot trigger another measurement.
+  // `visualViewport` for a phone turned on its side, where browsers differ on
+  // whether the window fires one too.
+  useEffect(() => {
+    if (!wrap) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => measure(wrap), RESIZE_SETTLE_MS);
+    };
+    const viewport = window.visualViewport;
+    window.addEventListener("resize", onResize);
+    viewport?.addEventListener("resize", onResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", onResize);
+      viewport?.removeEventListener("resize", onResize);
+    };
+  }, [wrap, measure]);
+
+  // The room the layout is built for: the measured one, except while a group is
+  // being dragged. Rebuilding then would swap the dragged node for a new one
+  // under the pointer and leave Konva's drag on the old; the drop commits the
+  // move against the layout it started in, and the new room is taken right
+  // after. (Adjusting state during render, not in an effect: an effect would
+  // build the stale layout first and then the new one.)
+  const [builtRoom, setBuiltRoom] = useState<Room | null>(null);
+  if (draggingId === null && builtRoom !== room) setBuiltRoom(room);
+
+  // Measured here, outside boardGeometry, so lib/puzzle stays free of the DOM.
+  const geometry = useMemo(
+    () =>
+      builtRoom &&
+      boardGeometry({
+        containerW: builtRoom.w,
+        availableH: builtRoom.h,
+        aspect: puzzle.imageWidth / puzzle.imageHeight,
+        cols,
+        rows,
+      }),
+    [builtRoom, puzzle.imageWidth, puzzle.imageHeight, cols, rows],
+  );
+
+  // The bitmaps follow the size of a piece, not of the stage: a resize that
+  // leaves the picture as big as it was — a picture bounded by the width in a
+  // window that only got taller, or the other way round — keeps every one.
+  const pieceW = geometry?.pieceW;
+  const pieceH = geometry?.pieceH;
+  const cut = useMemo(() => {
+    if (!image || pieceW === undefined || pieceH === undefined) return null;
+    return cutPieces(image, puzzle.seed, cols, rows, pieceStyle, pieceW, pieceH);
+  }, [image, puzzle.seed, cols, rows, pieceStyle, pieceW, pieceH]);
+
+  const layout = useMemo(
+    () => (geometry && cut ? layOut(cut, geometry, cols, rows, puzzle.seed) : null),
+    [geometry, cut, cols, rows, puzzle.seed],
+  );
+
+  // Keep the view where it was on a stage that changed size: the same part of
+  // the board stays in view, at the same zoom. Before paint, so the rebuilt
+  // stage is never drawn at the old offset; and published, or the zoom readout
+  // and the overview would keep the old view (see `viewStore`).
+  const shownStage = useRef<{ w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!layout) return;
+    const prev = shownStage.current;
+    shownStage.current = { w: layout.stageW, h: layout.stageH };
+    const stage = stageRef.current;
+    if (!stage || !prev || (prev.w === layout.stageW && prev.h === layout.stageH)) return;
+    stage.position({
+      x: (stage.x() * layout.stageW) / prev.w,
+      y: (stage.y() * layout.stageH) / prev.h,
+    });
+    stage.batchDraw();
+    publishView();
+  }, [layout, publishView]);
 
   // Seed the group model whenever the layout is (re)built: resume the stored solve
   // if there is a usable one, otherwise scatter.
@@ -446,11 +556,12 @@ export default function PuzzleBoard({
     const { stageW, stageH } = layout;
     const rectOf = (pid: string) => layout.pieces.get(pid)?.rect;
 
-    // A new cut of the same grid — another piece style — is still the same solve,
-    // so the model in memory carries over, rescaled to the new stage and settled
-    // against the new bitmaps. Reloading it instead would lose every move since
-    // the last save, and all of them where storage is blocked; and the clock runs
-    // on untouched, so there is nothing new to tell `onSeeded`.
+    // A new cut of the same grid — another piece style, or the same cut for a
+    // resized window — is still the same solve, so the model in memory carries
+    // over, rescaled to the new stage and settled against the new bitmaps.
+    // Reloading it instead would lose every move since the last save, and all
+    // of them where storage is blocked; and the clock runs on untouched, so
+    // there is nothing new to tell `onSeeded`.
     if (sameSolve && last.cols === cols && last.rows === rows) {
       const carried = restoreSolveState(
         serialiseSolveState({

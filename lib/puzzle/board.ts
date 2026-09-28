@@ -48,9 +48,31 @@ export interface BoardGeometry {
 }
 
 /**
- * Stage and piece sizing for one puzzle. The assembled picture takes ~40% of the
- * width (capped in height) so the rest of the window is free to spread and
- * assemble pieces.
+ * The stage for the room around the board, in whole pixels. The floors win on a
+ * small window: a stage below them is unplayable, and a scrollbar is the better
+ * trade.
+ *
+ * Exported so the board can tell a resize that changes the stage from one that
+ * the floors or the rounding swallow, and lay itself out again only for the
+ * former. Feeding the result back in as `containerW`/`availableH` gives the same
+ * stage again.
+ */
+export function stageSize(
+  containerW: number,
+  availableH: number,
+): { stageW: number; stageH: number } {
+  return {
+    stageW: Math.max(360, Math.floor(containerW)),
+    stageH: Math.max(520, Math.floor(availableH)),
+  };
+}
+
+/**
+ * Stage and piece sizing for one puzzle. The assembled picture takes 40% of the
+ * stage width, or 60% of its height if that is the tighter bound, so the rest of
+ * the window is free to spread and assemble pieces. Both bounds are relative:
+ * the picture — and with it every piece — grows with the window in either
+ * dimension (#145).
  */
 export function boardGeometry({
   containerW,
@@ -59,14 +81,11 @@ export function boardGeometry({
   cols,
   rows,
 }: GeometryInput): BoardGeometry {
-  const stageW = Math.max(360, containerW);
-  // The floor wins on a short window: a stage below this is unplayable, and a
-  // scrollbar is the better trade.
-  const stageH = Math.max(520, Math.floor(availableH));
+  const { stageW, stageH } = stageSize(containerW, availableH);
 
   let boardW = stageW * 0.4;
   let boardH = boardW / aspect;
-  const maxBoardH = Math.min(460, stageH * 0.6);
+  const maxBoardH = stageH * 0.6;
   if (boardH > maxBoardH) {
     boardH = maxBoardH;
     boardW = boardH * aspect;

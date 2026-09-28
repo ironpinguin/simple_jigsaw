@@ -45,6 +45,9 @@ const groupProps = new WeakMap<Element, GroupProps>();
 /** Every value the board has set the stage's `draggable` to, in order. */
 const stageDraggable: boolean[] = [];
 
+/** The stage transform, as the board would have left it on a real Konva stage. */
+const stageView = { x: 0, y: 0, scale: 1 };
+
 vi.mock("react-konva", () => {
   function Stage({
     children,
@@ -59,12 +62,21 @@ vi.mock("react-konva", () => {
   }) {
     const el = useRef<HTMLDivElement>(null);
     // What the board uses of the stage outside the zoom controls: the pinch
-    // effect listens on its container and pauses panning while pinching.
+    // effect listens on its container and pauses panning while pinching, and a
+    // resize carries the view over to the new stage size.
     useImperativeHandle(ref, () => ({
       container: () => el.current,
       draggable: (on: boolean) => {
         stageDraggable.push(on);
       },
+      x: () => stageView.x,
+      y: () => stageView.y,
+      scaleX: () => stageView.scale,
+      position: (p: { x: number; y: number }) => {
+        stageView.x = p.x;
+        stageView.y = p.y;
+      },
+      batchDraw: () => {},
     }));
     return (
       <div data-stage="" data-w={width} data-h={height} ref={el}>
@@ -356,6 +368,7 @@ describe("PuzzleBoard", () => {
     stored = null;
     saved = [];
     stageDraggable.length = 0;
+    Object.assign(stageView, { x: 0, y: 0, scale: 1 });
     onProgress = vi.fn();
     onSolved = vi.fn();
     timing = { elapsedMs: 0, moves: 0 };
@@ -648,27 +661,169 @@ describe("PuzzleBoard", () => {
     expect(saved).toHaveLength(saves);
   });
 
-  it("re-measures the height it may take whenever it lays out a new grid", async () => {
-    // The board sits last in <main>; what it may take is the window below it.
-    // A taller window by the time the solver picks another piece count must
-    // give the new layout a taller stage, not the height from first mount.
-    const main = document.createElement("main");
-    document.body.appendChild(main);
-    main.appendChild(container);
-    try {
-      vi.spyOn(window, "innerHeight", "get").mockReturnValue(700);
-      await mount();
-      const first = stageSize().h;
+  describe("following the window (#145)", () => {
+    let main: HTMLElement;
+    let width: ReturnType<typeof vi.spyOn>;
+    let height: ReturnType<typeof vi.spyOn>;
 
-      vi.spyOn(window, "innerHeight", "get").mockReturnValue(1000);
-      await mount(0, { cols: 8, rows: 6 });
-      const second = stageSize().h;
+    beforeEach(() => {
+      // The board sits last in <main>; what it may take is the window below it.
+      main = document.createElement("main");
+      document.body.appendChild(main);
+      main.appendChild(container);
+      width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1400);
+      height = vi.spyOn(window, "innerHeight", "get").mockReturnValue(800);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
 
-      expect(first).toBe(700);
-      expect(second).toBe(1000);
-    } finally {
+    afterEach(() => {
+      vi.useRealTimers();
       main.remove();
+    });
+
+    /** Resize the window to `w` x `h`, and let the resize settle. */
+    async function resizeTo(w: number, h: number) {
+      width.mockReturnValue(w);
+      height.mockReturnValue(h);
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(200);
+      });
     }
+
+    const sizes = () => groups().map((g) => g.pieces.length).sort();
+    const pieceWidth = () => groups()[0].pieces[0].width;
+
+    function expectAllOnBoard() {
+      const { w, h } = stageSize();
+      for (const g of groups()) {
+        const e = extent(g);
+        expect(e.left).toBeGreaterThanOrEqual(-1e-6);
+        expect(e.top).toBeGreaterThanOrEqual(-1e-6);
+        expect(e.right).toBeLessThanOrEqual(w + 1e-6);
+        expect(e.bottom).toBeLessThanOrEqual(h + 1e-6);
+      }
+    }
+
+    it("grows the stage and the pieces with a larger window, carrying the solve over", async () => {
+      await mount();
+      await joinNext();
+      expect(stageSize()).toEqual({ w: 1400, h: 800 });
+      const joined = sizes();
+      const before = pieceWidth();
+      const seeds = onSeeded.mock.calls.length;
+      const saves = saved.length;
+      stored = null; // as where storage is blocked: the carry-over must not need it
+
+      await resizeTo(2400, 1300);
+
+      expect(stageSize()).toEqual({ w: 2400, h: 1300 });
+      expect(pieceWidth()).toBeGreaterThan(before);
+      expect(sizes()).toEqual(joined);
+      expect(onProgress).toHaveBeenLastCalledWith(COLS * ROWS - 1, COLS * ROWS);
+      // The clock runs on, and there is nothing new to write.
+      expect(onSeeded).toHaveBeenCalledTimes(seeds);
+      expect(saved).toHaveLength(saves);
+      expectAllOnBoard();
+    });
+
+    it("waits for the resize to settle before it lays out again", async () => {
+      await mount();
+      width.mockReturnValue(2000);
+      await act(async () => {
+        window.dispatchEvent(new Event("resize"));
+        vi.advanceTimersByTime(150);
+        window.dispatchEvent(new Event("resize"));
+        vi.advanceTimersByTime(150);
+      });
+      expect(stageSize().w).toBe(1400);
+
+      await act(async () => {
+        vi.advanceTimersByTime(50);
+      });
+      expect(stageSize().w).toBe(2000);
+    });
+
+    it("follows a change of the window's height alone", async () => {
+      await mount();
+      await resizeTo(1400, 1100);
+      expect(stageSize()).toEqual({ w: 1400, h: 1100 });
+    });
+
+    it("lays nothing out again for a resize the stage does not follow", async () => {
+      // A phone's address bar sliding away: the window gets taller, but the
+      // board was below its minimum height before and still is.
+      height.mockReturnValue(300);
+      await mount();
+      expect(stageSize().h).toBe(520);
+      const reports = onProgress.mock.calls.length;
+
+      await resizeTo(1400, 450);
+
+      expect(stageSize().h).toBe(520);
+      // A carry-over would have reported the progress again.
+      expect(onProgress).toHaveBeenCalledTimes(reports);
+    });
+
+    it("keeps the bitmaps when a resize leaves the pieces as big as they were", async () => {
+      // 4:3 on 1400 x 800 is bounded by the width; a taller window leaves it be.
+      await mount();
+      const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext);
+      const rasterised = getContext.mock.calls.length;
+      const before = pieceWidth();
+
+      await resizeTo(1400, 1100);
+
+      expect(stageSize()).toEqual({ w: 1400, h: 1100 });
+      expect(pieceWidth()).toBe(before);
+      expect(getContext).toHaveBeenCalledTimes(rasterised);
+      expectAllOnBoard();
+    });
+
+    it("shrinks with a smaller window, of another shape, and keeps every group on the board", async () => {
+      await mount();
+      // Park a group in the far corner, where a smaller stage cuts it off.
+      const { w, h } = stageSize();
+      await drop(nextLoose().el, { x: w, y: h });
+      await joinNext();
+      const joined = sizes();
+
+      await resizeTo(700, 1000);
+
+      expect(stageSize()).toEqual({ w: 700, h: 1000 });
+      expect(sizes()).toEqual(joined);
+      expectAllOnBoard();
+    });
+
+    it("keeps the same part of the board in view, at the same zoom", async () => {
+      await mount();
+      Object.assign(stageView, { x: -300, y: -200, scale: 2 });
+
+      await resizeTo(2800, 1200);
+
+      expect(stageView).toEqual({ x: -600, y: -300, scale: 2 });
+    });
+
+    it("does not rebuild while a piece is being dragged, only after the drop", async () => {
+      await mount();
+      const a = anchor();
+      const el = nextLoose().el;
+      await act(async () => groupProps.get(el)!.onDragStart());
+
+      await resizeTo(2400, 1300);
+      expect(stageSize()).toEqual({ w: 1400, h: 800 });
+
+      const node = fakeNode({ x: a.x, y: a.y });
+      await act(async () => groupProps.get(el)!.onDragEnd({ currentTarget: node }));
+
+      // The drop joined against the layout it started in, and the new room
+      // was taken right after, with the join carried over.
+      expect(stageSize()).toEqual({ w: 2400, h: 1300 });
+      expect(groups()).toHaveLength(COLS * ROWS - 1);
+      expectAllOnBoard();
+    });
   });
 
   it("keeps its stage and its pieces while it is hidden and shown again", async () => {
