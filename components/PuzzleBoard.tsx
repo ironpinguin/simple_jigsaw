@@ -28,6 +28,7 @@ import {
   pieceBox,
   scatterGroups,
   settleGroup,
+  stageSize,
   type BoardGeometry,
   type PieceBox,
   type Rect,
@@ -72,14 +73,22 @@ interface PieceInfo {
   rect: Rect;
 }
 
-interface Layout {
+/**
+ * Every piece's bitmap and its place in the puzzle frame: the part of the layout
+ * that depends on how big a piece is but not on the stage around it — and the
+ * expensive part, since it rasterises every piece.
+ */
+interface Cut {
   pieceW: number;
   pieceH: number;
+  pieces: Map<string, PieceInfo>;
+  order: string[]; // piece ids in row-major order
+}
+
+interface Layout extends Cut {
   stageW: number;
   stageH: number;
   snapDist: number;
-  pieces: Map<string, PieceInfo>;
-  order: string[]; // piece ids in row-major order
   initialGroups: PieceGroup[];
 }
 
@@ -117,7 +126,7 @@ function renderPieceCanvas(
   box: PieceBox,
   row: number,
   col: number,
-  { pieceW, pieceH, boardW, boardH }: BoardGeometry,
+  { pieceW, pieceH, boardW, boardH }: Pick<BoardGeometry, "pieceW" | "pieceH" | "boardW" | "boardH">,
 ): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = box.canvasW;
@@ -201,7 +210,10 @@ function availableBoardHeight(wrap: HTMLElement): number {
   return window.innerHeight - topInDocument - below - wrapBorders;
 }
 
-/** The room the board may take: its wrapper's width and `availableBoardHeight`. */
+/**
+ * The stage the room around the wrapper gives: its width and
+ * `availableBoardHeight`, already through `stageSize`.
+ */
 interface Room {
   w: number;
   h: number;
@@ -209,32 +221,23 @@ interface Room {
 
 /**
  * How long the window has to hold still before the board is laid out again.
- * A rebuild re-rasterises every piece, so a resize that drags on for a second
+ * A rebuild can re-rasterise every piece, so a resize that drags on for a second
  * — the user pulling a window edge — should cost one rebuild, not dozens.
  */
 const RESIZE_SETTLE_MS = 200;
 
-function buildLayout(
-  puzzle: PuzzleData,
+/** Rasterise every piece of a `cols` x `rows` cut at `pieceW` x `pieceH`. */
+function cutPieces(
   image: HTMLImageElement,
-  containerW: number,
+  seed: number,
   cols: number,
   rows: number,
   pieceStyle: PieceStyle,
-  availableH: number,
-): Layout {
-  const { seed } = puzzle;
-
-  const geo = boardGeometry({
-    containerW,
-    availableH,
-    aspect: puzzle.imageWidth / puzzle.imageHeight,
-    cols,
-    rows,
-  });
-  const { stageW, stageH, pieceW, pieceH, snapDist } = geo;
-
+  pieceW: number,
+  pieceH: number,
+): Cut {
   const grid = generateEdges(cols, rows, seed, pieceStyle);
+  const size = { pieceW, pieceH, boardW: cols * pieceW, boardH: rows * pieceH };
 
   const pieces = new Map<string, PieceInfo>();
   const order: string[] = [];
@@ -247,7 +250,7 @@ function buildLayout(
         id,
         row: r,
         col: c,
-        canvas: renderPieceCanvas(image, grid, box, r, c, geo),
+        canvas: renderPieceCanvas(image, grid, box, r, c, size),
         offsetX: box.offsetX,
         offsetY: box.offsetY,
         solvedX: c * pieceW,
@@ -258,16 +261,21 @@ function buildLayout(
     }
   }
 
+  return { pieceW, pieceH, pieces, order };
+}
+
+/** Put a cut on the stage `geo` describes, with its opening scatter. */
+function layOut(cut: Cut, geo: BoardGeometry, cols: number, rows: number, seed: number): Layout {
+  const { stageW, stageH, snapDist } = geo;
   const initialGroups = scatterGroups({
     cols,
     rows,
     seed,
     stageW,
     stageH,
-    rectOf: (id) => pieces.get(id)!.rect,
+    rectOf: (id) => cut.pieces.get(id)!.rect,
   });
-
-  return { pieceW, pieceH, stageW, stageH, snapDist, pieces, order, initialGroups };
+  return { ...cut, stageW, stageH, snapDist, initialGroups };
 }
 
 /** What the solver's toolbar can ask of the board. */
@@ -365,13 +373,18 @@ export default function PuzzleBoard({
   const image = useHtmlImage(`/api/image/${puzzle.imageKey}`);
 
   // The room last measured around the wrapper; `null` until it has a width.
-  // Kept as the same object while nothing changed, because every new one
-  // rebuilds the layout and re-rasterises every piece.
+  // Kept as the same object while the stage it gives is unchanged, because
+  // every new one lays the board out again. Compared as a stage, so a change
+  // the floors or the rounding swallow — a phone's address bar sliding away
+  // over a board already at its minimum height, a sub-pixel shift — costs
+  // nothing.
   const [room, setRoom] = useState<Room | null>(null);
   const measure = useCallback((el: HTMLElement, w = el.clientWidth) => {
     if (w <= 0) return;
-    const h = availableBoardHeight(el);
-    setRoom((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+    const { stageW, stageH } = stageSize(w, availableBoardHeight(el));
+    setRoom((prev) =>
+      prev && prev.w === stageW && prev.h === stageH ? prev : { w: stageW, h: stageH },
+    );
   }, []);
 
   // Attaching the wrapper also measures it, synchronously: waiting for a
@@ -463,11 +476,34 @@ export default function PuzzleBoard({
   const [builtRoom, setBuiltRoom] = useState<Room | null>(null);
   if (draggingId === null && builtRoom !== room) setBuiltRoom(room);
 
-  const layout = useMemo(() => {
-    if (!image || !builtRoom) return null;
-    // Measured outside buildLayout so lib/puzzle stays free of the DOM.
-    return buildLayout(puzzle, image, builtRoom.w, cols, rows, pieceStyle, builtRoom.h);
-  }, [image, builtRoom, puzzle, cols, rows, pieceStyle]);
+  // Measured here, outside boardGeometry, so lib/puzzle stays free of the DOM.
+  const geometry = useMemo(
+    () =>
+      builtRoom &&
+      boardGeometry({
+        containerW: builtRoom.w,
+        availableH: builtRoom.h,
+        aspect: puzzle.imageWidth / puzzle.imageHeight,
+        cols,
+        rows,
+      }),
+    [builtRoom, puzzle.imageWidth, puzzle.imageHeight, cols, rows],
+  );
+
+  // The bitmaps follow the size of a piece, not of the stage: a resize that
+  // leaves the picture as big as it was — a picture bounded by the width in a
+  // window that only got taller, or the other way round — keeps every one.
+  const pieceW = geometry?.pieceW;
+  const pieceH = geometry?.pieceH;
+  const cut = useMemo(() => {
+    if (!image || pieceW === undefined || pieceH === undefined) return null;
+    return cutPieces(image, puzzle.seed, cols, rows, pieceStyle, pieceW, pieceH);
+  }, [image, puzzle.seed, cols, rows, pieceStyle, pieceW, pieceH]);
+
+  const layout = useMemo(
+    () => (geometry && cut ? layOut(cut, geometry, cols, rows, puzzle.seed) : null),
+    [geometry, cut, cols, rows, puzzle.seed],
+  );
 
   // Keep the view where it was on a stage that changed size: the same part of
   // the board stays in view, at the same zoom. Before paint, so the rebuilt
@@ -522,9 +558,10 @@ export default function PuzzleBoard({
 
     // A new cut of the same grid — another piece style, or the same cut for a
     // resized window — is still the same solve, so the model in memory carries
-    // over, rescaled to the new stage and settled against the new bitmaps. Reloading it instead would lose every move since
-    // the last save, and all of them where storage is blocked; and the clock runs
-    // on untouched, so there is nothing new to tell `onSeeded`.
+    // over, rescaled to the new stage and settled against the new bitmaps.
+    // Reloading it instead would lose every move since the last save, and all
+    // of them where storage is blocked; and the clock runs on untouched, so
+    // there is nothing new to tell `onSeeded`.
     if (sameSolve && last.cols === cols && last.rows === rows) {
       const carried = restoreSolveState(
         serialiseSolveState({

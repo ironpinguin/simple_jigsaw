@@ -752,6 +752,36 @@ describe("PuzzleBoard", () => {
       expect(stageSize()).toEqual({ w: 1400, h: 1100 });
     });
 
+    it("lays nothing out again for a resize the stage does not follow", async () => {
+      // A phone's address bar sliding away: the window gets taller, but the
+      // board was below its minimum height before and still is.
+      height.mockReturnValue(300);
+      await mount();
+      expect(stageSize().h).toBe(520);
+      const reports = onProgress.mock.calls.length;
+
+      await resizeTo(1400, 450);
+
+      expect(stageSize().h).toBe(520);
+      // A carry-over would have reported the progress again.
+      expect(onProgress).toHaveBeenCalledTimes(reports);
+    });
+
+    it("keeps the bitmaps when a resize leaves the pieces as big as they were", async () => {
+      // 4:3 on 1400 x 800 is bounded by the width; a taller window leaves it be.
+      await mount();
+      const getContext = vi.mocked(HTMLCanvasElement.prototype.getContext);
+      const rasterised = getContext.mock.calls.length;
+      const before = pieceWidth();
+
+      await resizeTo(1400, 1100);
+
+      expect(stageSize()).toEqual({ w: 1400, h: 1100 });
+      expect(pieceWidth()).toBe(before);
+      expect(getContext).toHaveBeenCalledTimes(rasterised);
+      expectAllOnBoard();
+    });
+
     it("shrinks with a smaller window, of another shape, and keeps every group on the board", async () => {
       await mount();
       // Park a group in the far corner, where a smaller stage cuts it off.

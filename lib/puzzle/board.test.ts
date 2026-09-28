@@ -13,6 +13,7 @@ import {
   pieceBox,
   scatterGroups,
   settleGroup,
+  stageSize,
   unionRect,
   type Rect,
 } from "./board";
@@ -43,6 +44,20 @@ describe("boardGeometry", () => {
     const g = boardGeometry({ containerW: 100, availableH: 90, aspect: 1, cols: 4, rows: 3 });
     expect(g.stageW).toBe(360);
     expect(g.stageH).toBe(520);
+  });
+
+  it("sizes the stage like stageSize, which gives the same stage back when fed its own", () => {
+    for (const [containerW, availableH] of [
+      [100, 90],
+      [1399.6, 800.7],
+      [2560, 1230],
+    ]) {
+      const s = stageSize(containerW, availableH);
+      const g = boardGeometry({ containerW, availableH, aspect: 4 / 3, cols: 4, rows: 3 });
+      expect({ stageW: g.stageW, stageH: g.stageH }).toEqual(s);
+      expect(stageSize(s.stageW, s.stageH)).toEqual(s);
+    }
+    expect(stageSize(1399.6, 800.7)).toEqual({ stageW: 1399, stageH: 800 });
   });
 
   it("bounds the picture's height by the stage for a tall image instead of overflowing", () => {
