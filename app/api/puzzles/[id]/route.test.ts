@@ -239,6 +239,89 @@ describe("PATCH /api/puzzles/[id] — board background", () => {
   });
 });
 
+describe("PATCH /api/puzzles/[id] — piece count and style (#150)", () => {
+  const HOUR = 60 * 60 * 1000;
+  const owned = (competition: { startsAt: Date | null; endsAt: Date | null } | null = null) =>
+    findUnique.mockResolvedValue({ ...PUZZLE, competition });
+
+  beforeEach(() => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    owned();
+  });
+
+  it("changes the count and recomputes the grid from the image, keeping the seed", async () => {
+    const res = await callPatch({ pieceCount: 108 });
+    expect(res.status).toBe(200);
+    // 800x600 at 108 pieces: 12x9 (see computeGrid).
+    expect(await res.json()).toEqual({ puzzle: { id: "p1", pieceCount: 108, cols: 12, rows: 9 } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "p1", ownerId: "owner-1" },
+      data: { pieceCount: 108, cols: 12, rows: 9 },
+    });
+    expect(updateMany.mock.calls[0][0].data).not.toHaveProperty("seed");
+  });
+
+  it("changes the style and leaves the grid alone", async () => {
+    const res = await callPatch({ pieceStyle: "classic" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ puzzle: { id: "p1", pieceStyle: "classic" } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "p1", ownerId: "owner-1" },
+      data: { pieceStyle: "classic" },
+    });
+  });
+
+  it("answers 404 for a non-owner without writing, competition or not", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
+    owned({ startsAt: null, endsAt: null });
+    const res = await callPatch({ pieceCount: 12 });
+    expect(res.status).toBe(404);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for a missing puzzle", async () => {
+    findUnique.mockResolvedValue(null);
+    expect((await callPatch({ pieceStyle: "classic" })).status).toBe(404);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 when the owner-scoped update races to zero", async () => {
+    updateMany.mockResolvedValue({ count: 0 });
+    expect((await callPatch({ pieceCount: 12 })).status).toBe(404);
+  });
+
+  it("rejects a count that is not a preset and a style it does not know", async () => {
+    expect((await callPatch({ pieceCount: 50 })).status).toBe(400);
+    expect((await callPatch({ pieceCount: "48" })).status).toBe(400);
+    expect((await callPatch({ pieceStyle: "square" })).status).toBe(400);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects two changes in one request", async () => {
+    expect((await callPatch({ pieceCount: 12, pieceStyle: "classic" })).status).toBe(400);
+    expect((await callPatch({ pieceCount: 12, isPublic: true })).status).toBe(400);
+    expect((await callPatch({})).status).toBe(400);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["running without an end", { startsAt: null, endsAt: null }],
+    ["running until later", { startsAt: null, endsAt: new Date(Date.now() + HOUR) }],
+    ["upcoming", { startsAt: new Date(Date.now() + HOUR), endsAt: null }],
+    // Could be reopened with its entries, and the solver keeps its count.
+    ["ended", { startsAt: null, endsAt: new Date(Date.now() - HOUR) }],
+  ])("refuses while there is a competition, %s", async (_label, window) => {
+    owned(window);
+    for (const body of [{ pieceCount: 12 }, { pieceStyle: "classic" }]) {
+      const res = await callPatch(body);
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toBe("competitionLocksPieces");
+    }
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+});
+
 describe("publishing a puzzle held for review", () => {
   beforeEach(() => {
     getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });

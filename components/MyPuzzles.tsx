@@ -7,13 +7,17 @@ import { tryFetch } from "@/lib/try-fetch";
 import CompetitionSettings, { type OwnerCompetition } from "./CompetitionSettings";
 import BestTimesList, { type BestTimeRow } from "./BestTimesList";
 import BoardBackgroundPicker from "./BoardBackgroundPicker";
-import { toBoardBackground, type BoardBackground } from "@/lib/puzzle/background";
+import PieceDefaultsPicker from "./PieceDefaultsPicker";
+import { isBoardBackground, type BoardBackground } from "@/lib/puzzle/background";
+import { isPieceStyle, type PieceStyle } from "@/lib/puzzle/style";
 
 interface PuzzleSummary {
   id: string;
   title: string;
   imageKey: string;
   pieceCount: number;
+  /** The default piece shape (#150). */
+  pieceStyle: PieceStyle;
   isPublic: boolean;
   /** The default table colour solvers see (#147). */
   boardBackground: BoardBackground;
@@ -21,6 +25,13 @@ interface PuzzleSummary {
   /** The owner's own best times on it (#127). */
   bests: BestTimeRow[];
 }
+
+type CardSettings = Pick<PuzzleSummary, "boardBackground" | "pieceCount" | "pieceStyle">;
+/** One setting per PATCH, as the API takes them. */
+type CardSetting =
+  | Pick<CardSettings, "boardBackground">
+  | Pick<CardSettings, "pieceCount">
+  | Pick<CardSettings, "pieceStyle">;
 
 export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
   const t = useTranslations("my");
@@ -113,32 +124,45 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
     }
   }
 
-  async function changeBackground(id: string, boardBackground: BoardBackground) {
+  /**
+   * One PATCH for a single card setting — the board background, the piece
+   * count or the style. What the server confirms is merged in, what was asked
+   * stands in for anything it left out.
+   */
+  async function patchPuzzle(id: string, body: CardSetting, failed: string) {
     setBusy(id, true);
     try {
       const res = await tryFetch("my", `/api/puzzles/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ boardBackground }),
+        body: JSON.stringify(body),
       });
       if (!res) {
-        alert(t("backgroundFailed"));
+        alert(failed);
       } else if (res.ok) {
-        // As with visibility: what the server confirmed, else what was asked.
         const data = await res.json().catch(() => null);
-        const confirmed = toBoardBackground(data?.puzzle?.boardBackground ?? boardBackground);
-        setPuzzles((list) =>
-          list.map((p) => (p.id === id ? { ...p, boardBackground: confirmed } : p)),
-        );
+        const confirmed = { ...body, ...pickSettings(data?.puzzle) };
+        setPuzzles((list) => list.map((p) => (p.id === id ? { ...p, ...confirmed } : p)));
       } else if (res.status === 401) {
         router.push("/login?callbackUrl=/my");
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.error ?? t("backgroundFailed"));
+        alert(data?.error ?? failed);
       }
     } finally {
       setBusy(id, false);
     }
+  }
+
+  function changePieceCount(id: string, pieceCount: number) {
+    // A new count is a new grid: solves stored for the old one no longer fit
+    // and are dropped. A new style keeps the grid, so it needs no warning.
+    if (!confirm(t("confirmPieceCount"))) return;
+    void patchPuzzle(id, { pieceCount }, t("piecesFailed"));
+  }
+
+  function setCompetition(id: string, competition: OwnerCompetition | null) {
+    setPuzzles((list) => list.map((p) => (p.id === id ? { ...p, competition } : p)));
   }
 
   return (
@@ -160,10 +184,20 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
               value={p.boardBackground}
               disabled={busyIds.has(p.id)}
               onChange={(bg) => {
-                if (bg !== p.boardBackground) void changeBackground(p.id, bg);
+                if (bg !== p.boardBackground) {
+                  void patchPuzzle(p.id, { boardBackground: bg }, t("backgroundFailed"));
+                }
               }}
             />
           </div>
+          <PieceDefaultsPicker
+            pieceCount={p.pieceCount}
+            pieceStyle={p.pieceStyle}
+            disabled={busyIds.has(p.id)}
+            locked={piecesLocked(p.competition)}
+            onCountChange={(n) => changePieceCount(p.id, n)}
+            onStyleChange={(s) => void patchPuzzle(p.id, { pieceStyle: s }, t("styleFailed"))}
+          />
           <div className="card-actions">
             <Link href={`/puzzle/${p.id}`} className="button">
               {t("solve")}
@@ -193,9 +227,26 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
             isPublic={p.isPublic}
             defaultPieceCount={p.pieceCount}
             initial={p.competition}
+            onChange={(c) => setCompetition(p.id, c)}
           />
         </div>
       ))}
     </div>
   );
+}
+
+/** A competition, ended or not, fixes the piece defaults — as the API enforces. */
+function piecesLocked(c: OwnerCompetition | null): boolean {
+  return c !== null;
+}
+
+/** The card settings a PATCH answer carries, where they have the expected shape. */
+function pickSettings(puzzle: unknown): Partial<CardSettings> {
+  if (!puzzle || typeof puzzle !== "object") return {};
+  const { boardBackground, pieceCount, pieceStyle } = puzzle as Record<string, unknown>;
+  return {
+    ...(isBoardBackground(boardBackground) ? { boardBackground } : {}),
+    ...(typeof pieceCount === "number" ? { pieceCount } : {}),
+    ...(isPieceStyle(pieceStyle) ? { pieceStyle } : {}),
+  };
 }

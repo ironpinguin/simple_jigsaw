@@ -5,6 +5,7 @@ import {
   CompetitionSettingsSchema,
   DisplayNameSchema,
   competitionPhase,
+  competitionPhaseOfIso,
   isBetterResult,
   judgeSubmission,
   minimumSolveMs,
@@ -30,6 +31,18 @@ describe("competitionPhase", () => {
     expect(
       competitionPhase({ startsAt: null, endsAt: window.endsAt }, at("2026-10-09T00:00:00Z")),
     ).toBe("CLOSED");
+  });
+});
+
+describe("competitionPhaseOfIso", () => {
+  it("reads a window of ISO strings the way competitionPhase reads Dates", () => {
+    const window = { startsAt: "2026-10-01T10:00:00.000Z", endsAt: "2026-10-08T10:00:00.000Z" };
+    expect(competitionPhaseOfIso(window, at("2026-10-01T09:59:59Z"))).toBe("UPCOMING");
+    expect(competitionPhaseOfIso(window, at("2026-10-01T10:00:00Z"))).toBe("OPEN");
+    expect(competitionPhaseOfIso(window, at("2026-10-08T10:00:00Z"))).toBe("CLOSED");
+    expect(competitionPhaseOfIso({ startsAt: null, endsAt: null }, at("2000-01-01T00:00:00Z"))).toBe(
+      "OPEN",
+    );
   });
 });
 

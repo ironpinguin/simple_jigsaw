@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is remembered in the browser, does not change the puzzle, and choosing the
   puzzle's default again follows the owner's setting. Existing puzzles keep
   the midnight table. (#147)
+- **Change pieces after creating.** On "My puzzles", each puzzle card now
+  offers the default number of pieces and the piece shape, the same choices
+  as the create form. The link and the best times stay. A new count asks
+  first, because anyone in the middle of solving at the old count starts
+  over. A new shape keeps their progress. While the puzzle has a
+  competition, both stay fixed, even after it has ended, since it can be
+  reopened with its entries; deleting the competition frees them. (#150)
 
 ## [0.9.1] - 2026-09-28
 

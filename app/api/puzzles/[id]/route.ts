@@ -7,7 +7,8 @@ import { copyObject, deleteObject } from "@/lib/storage";
 import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
 import { AUTO_REPORT_CATEGORIES } from "@/lib/reports";
-import { toPieceStyle } from "@/lib/puzzle/style";
+import { PIECE_STYLES, toPieceStyle } from "@/lib/puzzle/style";
+import { computeGrid, isPiecePreset } from "@/lib/puzzle/grid";
 import { BOARD_BACKGROUNDS, toBoardBackground } from "@/lib/puzzle/background";
 import { z } from "zod";
 
@@ -50,12 +51,17 @@ export async function GET(
   });
 }
 
-// One change per request: visibility and the board background take different
-// paths below (only visibility has a moderation hold and a key rotation).
-const UpdateSchema = z.union([
-  z.object({ isPublic: z.boolean(), boardBackground: z.undefined().optional() }),
-  z.object({ boardBackground: z.enum(BOARD_BACKGROUNDS), isPublic: z.undefined().optional() }),
-]);
+// One change per request: each field takes its own path below (only
+// visibility has a moderation hold and a key rotation, only the piece defaults
+// are locked by a competition).
+const UpdateSchema = z
+  .object({
+    isPublic: z.boolean().optional(),
+    boardBackground: z.enum(BOARD_BACKGROUNDS).optional(),
+    pieceCount: z.number().int().refine(isPiecePreset).optional(),
+    pieceStyle: z.enum(PIECE_STYLES).optional(),
+  })
+  .refine((body) => Object.values(body).filter((v) => v !== undefined).length === 1);
 
 export async function PATCH(
   request: Request,
@@ -86,6 +92,51 @@ export async function PATCH(
       return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
     }
     return NextResponse.json({ puzzle: { id, boardBackground } });
+  }
+
+  if (parsed.data.pieceCount !== undefined || parsed.data.pieceStyle !== undefined) {
+    const { pieceCount, pieceStyle } = parsed.data;
+    const puzzle = await prisma.puzzle.findUnique({
+      where: { id },
+      select: {
+        ownerId: true,
+        imageWidth: true,
+        imageHeight: true,
+        competition: { select: { puzzleId: true } },
+      },
+    });
+    // Ownership first, so a non-owner cannot tell a competition from none.
+    if (!puzzle || puzzle.ownerId !== user.id) {
+      return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+    }
+    // A competition plays the puzzle's style, so every entry on its board must
+    // be cut the same. Ended ones count too: the owner can reopen one and keep
+    // its entries, and the solver keeps the competition's count for as long as
+    // it exists. Deleting the competition is what frees the defaults.
+    if (puzzle.competition) {
+      return NextResponse.json({ error: t("competitionLocksPieces") }, { status: 409 });
+    }
+
+    // cols/rows are stored beside the count and must move with it; the seed
+    // stays, so the link keeps cutting the same shapes for a given grid.
+    const data =
+      pieceCount !== undefined
+        ? { pieceCount, ...computeGrid(pieceCount, puzzle.imageWidth / puzzle.imageHeight) }
+        : { pieceStyle: pieceStyle! };
+    // The ownerId scope is the authorisation, as elsewhere. A competition
+    // started between the read and this write is not re-checked: the owner
+    // would be racing themselves.
+    const updated = await prisma.puzzle.updateMany({ where: { id, ownerId: user.id }, data });
+    if (updated.count === 0) {
+      return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+    }
+    return NextResponse.json({ puzzle: { id, ...data } });
+  }
+
+  // Only visibility is left. Said explicitly: the schema cannot type it, and a
+  // field without a branch above must not fall through to the key rotation.
+  if (parsed.data.isPublic === undefined) {
+    return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
   }
 
   if (parsed.data.isPublic) {
