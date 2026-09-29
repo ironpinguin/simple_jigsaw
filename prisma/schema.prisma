@@ -111,6 +111,9 @@ model Puzzle {
   // Default piece shape; solvers may switch, a competition keeps this one.
   // "classic" | "wooden" — PIECE_STYLES in lib/puzzle/style.ts.
   pieceStyle  String   @default("classic")
+  // Default board colour; solvers may switch for themselves.
+  // "dark" | "charcoal" | … — BOARD_BACKGROUNDS in lib/puzzle/background.ts.
+  boardBackground String @default("dark")
   isPublic    Boolean  @default(true)
   createdAt   DateTime @default(now())
 

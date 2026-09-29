@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { NextIntlClientProvider } from "next-intl";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import messages from "@/messages/en.json";
 import { computeGrid } from "@/lib/puzzle/grid";
 import { MAX_STORED_SOLVES, SOLVE_STATE_VERSION } from "@/lib/puzzle/solveState";
@@ -20,6 +20,8 @@ const board = vi.hoisted<{
   showMinimap: boolean | null;
   /** The piece style the solver last asked the board to cut. */
   pieceStyle: string | null;
+  /** The table colour the solver last asked the board to show. */
+  background: string | null;
   /** The solve-state plumbing, captured so a test can drive it like the board. */
   loadSolveState: (() => string | null) | null;
   saveSolveState: ((raw: string) => void) | null;
@@ -43,6 +45,7 @@ const board = vi.hoisted<{
   groupsFor: (total) => total,
   showMinimap: null,
   pieceStyle: null,
+  background: null,
   loadSolveState: null,
   saveSolveState: null,
   resetNonce: null,
@@ -74,6 +77,7 @@ vi.mock("./PuzzleBoard", () => {
     cols,
     rows,
     pieceStyle,
+    background,
     showMinimap,
     onProgress,
     onSolved,
@@ -89,6 +93,7 @@ vi.mock("./PuzzleBoard", () => {
     cols: number;
     rows: number;
     pieceStyle: string;
+    background: string;
     showMinimap: boolean;
     onProgress: (groups: number, total: number) => void;
     onSolved: () => void;
@@ -122,6 +127,9 @@ vi.mock("./PuzzleBoard", () => {
       board.pieceStyle = pieceStyle;
     }, [pieceStyle]);
     useEffect(() => {
+      board.background = background;
+    }, [background]);
+    useEffect(() => {
       board.onSolved = onSolved;
     }, [onSolved]);
     useEffect(() => {
@@ -147,6 +155,7 @@ const puzzle = {
   pieceCount: 108, // what the creator picked; the fallback when nothing is stored
   seed: 1,
   pieceStyle: "classic" as const,
+  boardBackground: "dark" as const,
 };
 
 const storageKey = `pc:${puzzle.id}`;
@@ -268,6 +277,7 @@ describe("PuzzleSolver", () => {
     board.groupsFor = (total) => total;
     board.showMinimap = null;
     board.pieceStyle = null;
+    board.background = null;
     board.gathered = 0;
     board.onSolved = null;
     board.readTiming = null;
@@ -587,6 +597,75 @@ describe("PuzzleSolver", () => {
       // Nothing written: the board keeps its model in memory, so an untouched
       // puzzle gets no stored solve to warn about on a later piece-count change.
       expect(board.saves).toBe(0);
+    });
+  });
+
+  describe("the board background", () => {
+    function backgroundSelect() {
+      return container.querySelector<HTMLSelectElement>("#board-background");
+    }
+
+    function chooseBackground(value: string) {
+      const el = backgroundSelect()!;
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+      setter.call(el, value);
+      return act(async () => {
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+
+    it("shows the creator's background when the solver has not picked one", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      expect(board.background).toBe("dark");
+      expect(backgroundSelect()?.value).toBe("dark");
+    });
+
+    it("applies the remembered background after mount", async () => {
+      window.localStorage.setItem("bg:p1", "cream");
+      container.innerHTML = serverHtml();
+      await hydrate();
+      expect(board.background).toBe("cream");
+      expect(backgroundSelect()?.value).toBe("cream");
+    });
+
+    it("ignores a stored value that is not a background", async () => {
+      window.localStorage.setItem("bg:p1", "plaid");
+      container.innerHTML = serverHtml();
+      await hydrate();
+      expect(board.background).toBe("dark");
+    });
+
+    it("switches for this solver only, keeping the solve and sending nothing to the server", async () => {
+      const confirm = vi.spyOn(window, "confirm");
+      window.localStorage.setItem(solveKey, solveJson(7));
+      container.innerHTML = serverHtml();
+      await hydrate();
+      const fetchSpy = vi.fn();
+      vi.stubGlobal("fetch", fetchSpy);
+      onTestFinished(() => void vi.unstubAllGlobals());
+
+      await chooseBackground("felt");
+
+      expect(confirm).not.toHaveBeenCalled();
+      expect(board.background).toBe("felt");
+      expect(window.localStorage.getItem("bg:p1")).toBe("felt");
+      expect(window.localStorage.getItem(solveKey)).toBe(solveJson(7));
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it("marks the puzzle's default, and forgets the override when the solver goes back to it", async () => {
+      window.localStorage.setItem("bg:p1", "cream");
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      const dark = [...backgroundSelect()!.options].find((o) => o.value === "dark")!;
+      expect(dark.textContent).toBe(`${messages.boardBackground.dark} (puzzle default)`);
+
+      await chooseBackground("dark");
+      expect(board.background).toBe("dark");
+      expect(window.localStorage.getItem("bg:p1")).toBeNull();
     });
   });
 
@@ -1175,6 +1254,13 @@ describe("PuzzleSolver", () => {
       await seed();
       expect(board.pieceStyle).toBe("classic");
       expect(container.querySelector("#piece-style")).toBeNull();
+    });
+
+    it("still lets the solver change the board background", async () => {
+      window.localStorage.setItem("bg:p1", "wood");
+      await seed();
+      expect(board.background).toBe("wood");
+      expect(container.querySelector("#board-background")).not.toBeNull();
     });
 
     it("starts an attempt on the first piece and enters the finished time", async () => {

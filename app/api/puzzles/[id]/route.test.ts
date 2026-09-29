@@ -131,6 +131,14 @@ describe("GET /api/puzzles/[id]", () => {
     findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true, pieceStyle: "hexagonal" });
     expect((await (await callGet()).json()).puzzle.pieceStyle).toBe("classic");
   });
+
+  it("returns the board background, and dark for a value it does not know", async () => {
+    findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true, boardBackground: "felt" });
+    expect((await (await callGet()).json()).puzzle.boardBackground).toBe("felt");
+
+    findUnique.mockResolvedValue({ ...PUZZLE, isPublic: true, boardBackground: "plaid" });
+    expect((await (await callGet()).json()).puzzle.boardBackground).toBe("dark");
+  });
 });
 
 describe("PATCH /api/puzzles/[id]", () => {
@@ -192,6 +200,42 @@ describe("PATCH /api/puzzles/[id]", () => {
       where: { id: "p1", ownerId: "owner-1" },
       data: { isPublic: true },
     });
+  });
+});
+
+describe("PATCH /api/puzzles/[id] — board background", () => {
+  it("lets the owner change it without touching visibility, holds or storage", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    const res = await callPatch({ boardBackground: "cream" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ puzzle: { id: "p1", boardBackground: "cream" } });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: "p1", ownerId: "owner-1" },
+      data: { boardBackground: "cream" },
+    });
+    expect(reportFindFirst).not.toHaveBeenCalled();
+    expect(copyObjectMock).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 when the owner-scoped update matches nothing — missing or foreign alike", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "stranger", role: "USER" });
+    updateMany.mockResolvedValue({ count: 0 });
+    const res = await callPatch({ boardBackground: "cream" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects a value it does not know", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    const res = await callPatch({ boardBackground: "plaid" });
+    expect(res.status).toBe(400);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects visibility and background in one request", async () => {
+    getSessionUserMock.mockResolvedValue({ id: "owner-1", role: "USER" });
+    const res = await callPatch({ isPublic: false, boardBackground: "cream" });
+    expect(res.status).toBe(400);
+    expect(updateMany).not.toHaveBeenCalled();
   });
 });
 

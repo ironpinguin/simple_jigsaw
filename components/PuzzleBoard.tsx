@@ -17,6 +17,10 @@ import { generateEdges, type EdgeGrid } from "@/lib/puzzle/edges";
 import { pieceOutlinePath } from "@/lib/puzzle/outline";
 import type { PieceStyle } from "@/lib/puzzle/style";
 import {
+  BOARD_BACKGROUND_COLORS,
+  type BoardBackground,
+} from "@/lib/puzzle/background";
+import {
   pieceId,
   renderOrder,
   resolveConnections,
@@ -57,6 +61,8 @@ export interface PuzzleData {
   seed: number;
   /** The creator's default piece style (the solver may pick another). */
   pieceStyle: PieceStyle;
+  /** The creator's default board background (the solver may pick another). */
+  boardBackground: BoardBackground;
 }
 
 interface PieceInfo {
@@ -300,6 +306,8 @@ interface Props {
    * fits. Nothing is read from or written to storage for it.
    */
   pieceStyle: PieceStyle;
+  /** The table colour — purely visual, the layout does not depend on it. */
+  background: BoardBackground;
   /** `PuzzleSolver` owns the toggle. */
   showMinimap: boolean;
   onProgress: (groups: number, total: number) => void;
@@ -353,6 +361,7 @@ export default function PuzzleBoard({
   cols,
   rows,
   pieceStyle,
+  background,
   showMinimap,
   onProgress,
   onSolved,
@@ -819,7 +828,15 @@ export default function PuzzleBoard({
   );
 
   return (
-    <div ref={attachWrap} className="board-wrap" style={{ width: "100%", position: "relative" }}>
+    <div
+      ref={attachWrap}
+      className="board-wrap"
+      style={{
+        width: "100%",
+        position: "relative",
+        background: BOARD_BACKGROUND_COLORS[background],
+      }}
+    >
       {layout && (
         <>
           <ZoomControls

@@ -5,6 +5,7 @@ import { getSessionViewer } from "@/lib/auth";
 import { canViewPuzzle } from "@/lib/visibility";
 import PuzzleSolver from "@/components/PuzzleSolver";
 import { toPieceStyle } from "@/lib/puzzle/style";
+import { toBoardBackground } from "@/lib/puzzle/background";
 import { loadBestTimes } from "@/lib/best-times-server";
 
 // Loads the puzzle from the DB per request; do not prerender at build time.
@@ -54,6 +55,7 @@ export default async function PuzzlePage({
     pieceCount: puzzle.pieceCount,
     seed: puzzle.seed,
     pieceStyle: toPieceStyle(puzzle.pieceStyle),
+    boardBackground: toBoardBackground(puzzle.boardBackground),
   };
 
   return (

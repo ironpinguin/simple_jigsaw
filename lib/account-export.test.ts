@@ -26,6 +26,7 @@ const puzzle = {
   rows: 10,
   seed: 42,
   pieceStyle: "classic",
+  boardBackground: "dark",
   isPublic: true,
   createdAt: new Date(Date.UTC(2026, 0, 4)),
 };
@@ -99,6 +100,7 @@ describe("buildAccountExport", () => {
       rows: 10,
       seed: 42,
       pieceStyle: "classic",
+      boardBackground: "dark",
       isPublic: true,
     });
   });

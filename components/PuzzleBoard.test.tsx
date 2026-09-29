@@ -18,6 +18,7 @@ import {
   serialiseSolveState,
 } from "@/lib/puzzle/solveState";
 import type { PieceStyle } from "@/lib/puzzle/style";
+import { BOARD_BACKGROUND_COLORS, type BoardBackground } from "@/lib/puzzle/background";
 import PuzzleBoard, { type BoardActions } from "./PuzzleBoard";
 
 // jsdom has no canvas, so Konva cannot run here. What these tests are about is
@@ -139,6 +140,7 @@ const puzzle = {
   pieceCount: 12,
   seed: 7,
   pieceStyle: "classic" as const,
+  boardBackground: "dark" as const,
 };
 // computeGrid(12, 4/3) is 4 x 3.
 const COLS = 4;
@@ -199,6 +201,7 @@ describe("PuzzleBoard", () => {
     resetNonce = 0,
     grid = { cols: COLS, rows: ROWS },
     pieceStyle: PieceStyle = "classic",
+    background: BoardBackground = "dark",
   ) {
     return (
       <NextIntlClientProvider locale="en" messages={messages}>
@@ -207,6 +210,7 @@ describe("PuzzleBoard", () => {
           cols={grid.cols}
           rows={grid.rows}
           pieceStyle={pieceStyle}
+          background={background}
           showMinimap={false}
           onProgress={onProgress}
           onSolved={onSolved}
@@ -233,9 +237,10 @@ describe("PuzzleBoard", () => {
     resetNonce = 0,
     grid = { cols: COLS, rows: ROWS },
     pieceStyle: PieceStyle = "classic",
+    background: BoardBackground = "dark",
   ) {
     await act(async () => {
-      root.render(board(resetNonce, grid, pieceStyle));
+      root.render(board(resetNonce, grid, pieceStyle, background));
     });
     // The image "loads" in a microtask; let the layout build and seed.
     await act(async () => {});
@@ -382,6 +387,31 @@ describe("PuzzleBoard", () => {
     container.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  describe("the board background (#147)", () => {
+    const wrap = () => container.querySelector<HTMLElement>(".board-wrap")!;
+    /** jsdom normalises the hex into rgb(); compare in that form. */
+    function rgb(hex: string) {
+      const probe = document.createElement("div");
+      probe.style.background = hex;
+      return probe.style.background;
+    }
+
+    it("paints the table in the chosen preset's colour", async () => {
+      await mount(0, undefined, "classic", "cream");
+      expect(wrap().style.background).toBe(rgb(BOARD_BACKGROUND_COLORS.cream));
+    });
+
+    it("repaints when the solver switches, leaving every piece where it lay", async () => {
+      await mount(0, undefined, "classic", "dark");
+      const where = () => groups().map(({ x, y }) => ({ x, y }));
+      const before = where();
+      await act(async () => root.render(board(0, undefined, "classic", "felt")));
+
+      expect(wrap().style.background).toBe(rgb(BOARD_BACKGROUND_COLORS.felt));
+      expect(where()).toEqual(before);
+    });
   });
 
   describe("the solve timer's plumbing", () => {

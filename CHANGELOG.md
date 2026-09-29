@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Board colours.** The table under the pieces now comes in eight colours —
+  midnight (the previous look), charcoal, slate, grey, light grey, cream,
+  felt green and wood. When you pick a picture, the create form suggests
+  midnight or cream, whichever contrasts more with it, judged mostly by the
+  picture's border and ignoring transparent areas, so dark pictures no longer
+  disappear into a dark table. Any of the eight can be chosen instead before
+  saving, and changed later on "My puzzles". Solvers can switch the colour
+  for themselves in the puzzle menu, even during a competition; their choice
+  is remembered in the browser, does not change the puzzle, and choosing the
+  puzzle's default again follows the owner's setting. Existing puzzles keep
+  the midnight table. (#147)
+
 ## [0.9.1] - 2026-09-28
 
 ### Changed

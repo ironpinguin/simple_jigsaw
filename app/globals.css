@@ -385,6 +385,28 @@ select:focus {
   background: var(--accent-strong);
   color: #fff;
 }
+.swatch-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+}
+.swatch.active {
+  border-color: #fff;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.swatch:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
 
 /* One row, never wrapping: the board is sized to whatever height is left below
    it (see availableBoardHeight in PuzzleBoard), so every extra row of controls
@@ -653,6 +675,7 @@ select:focus {
 .board-wrap {
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  /* Overridden inline by the puzzle's board background preset (#147). */
   background: var(--surface);
   overflow: hidden;
   touch-action: none; /* let the board handle pan/pinch instead of the page */

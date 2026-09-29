@@ -78,6 +78,7 @@
     "titleField": "Titel",
     "titlePlaceholder": "Mein Puzzle",
     "pieces": "Teile-Anzahl",
+    "backgroundSuggested": "Aus den Farben deines Bildes vorgeschlagen — kontrastreich, damit die Teile gut zu sehen sind.",
     "visibility": "Sichtbarkeit",
     "publicLabel": "Öffentlich – jeder mit dem Link kann das Puzzle sehen",
     "publicHint": "Neue Puzzles sind standardmäßig öffentlich. Ohne Häkchen sehen nur du und Admins das Puzzle.",
@@ -92,6 +93,18 @@
     "label": "Teileform",
     "classic": "Klassisch",
     "wooden": "Holz"
+  },
+  "boardBackground": {
+    "label": "Tischfarbe",
+    "puzzleDefault": "{name} (Standard des Puzzles)",
+    "dark": "Nachtblau",
+    "charcoal": "Anthrazit",
+    "slate": "Schiefer",
+    "grey": "Grau",
+    "light": "Hellgrau",
+    "cream": "Creme",
+    "felt": "Filzgrün",
+    "wood": "Holz"
   },
   "solve": {
     "loading": "Puzzle wird geladen…",
@@ -143,6 +156,7 @@
     "makePublic": "Öffentlich machen",
     "makePrivate": "Privat machen",
     "visibilityFailed": "Sichtbarkeit konnte nicht geändert werden.",
+    "backgroundFailed": "Tischfarbe konnte nicht geändert werden.",
     "solve": "Lösen",
     "share": "Teilen",
     "copied": "Kopiert!",
