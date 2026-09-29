@@ -11,6 +11,7 @@ import DisplayNameForm from "@/components/DisplayNameForm";
 import SolvedPuzzles from "@/components/SolvedPuzzles";
 import { groupBestTimes } from "@/lib/best-times";
 import { toBoardBackground } from "@/lib/puzzle/background";
+import { toPieceStyle } from "@/lib/puzzle/style";
 
 // Per-request page (auth + DB); never prerender/query the DB at build time.
 export const dynamic = "force-dynamic";
@@ -37,6 +38,7 @@ export default async function MyPage({
         title: true,
         imageKey: true,
         pieceCount: true,
+        pieceStyle: true,
         isPublic: true,
         boardBackground: true,
         competition: {
@@ -70,6 +72,7 @@ export default async function MyPage({
   // Dates as ISO strings: the client component receives plain JSON.
   const puzzles = rows.map(({ competition, ...p }) => ({
     ...p,
+    pieceStyle: toPieceStyle(p.pieceStyle),
     boardBackground: toBoardBackground(p.boardBackground),
     bests: bestsByPuzzle.get(p.id) ?? [],
     competition: competition && {

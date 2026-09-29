@@ -385,6 +385,10 @@ select:focus {
   background: var(--accent-strong);
   color: #fff;
 }
+.preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .swatch-row {
   display: flex;
   gap: 8px;

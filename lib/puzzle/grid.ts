@@ -11,6 +11,10 @@ export interface Grid {
 export const PIECE_PRESETS = [12, 48, 108, 300] as const;
 export type PiecePreset = (typeof PIECE_PRESETS)[number];
 
+export function isPiecePreset(value: unknown): value is PiecePreset {
+  return typeof value === "number" && (PIECE_PRESETS as readonly number[]).includes(value);
+}
+
 /**
  * Choose cols/rows for `pieceCount` pieces given `aspect` = imageWidth/imageHeight.
  *

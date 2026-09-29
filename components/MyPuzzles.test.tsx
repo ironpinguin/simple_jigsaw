@@ -6,6 +6,8 @@ import messages from "@/messages/en.json";
 import MyPuzzles from "./MyPuzzles";
 import SolvedPuzzles from "./SolvedPuzzles";
 import type { BoardBackground } from "@/lib/puzzle/background";
+import type { PieceStyle } from "@/lib/puzzle/style";
+import type { OwnerCompetition } from "./CompetitionSettings";
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 
@@ -44,8 +46,9 @@ const PUZZLE = {
   imageKey: "puzzles/abc.webp",
   pieceCount: 48,
   isPublic: false,
+  pieceStyle: "wooden" as PieceStyle,
   boardBackground: "dark" as BoardBackground,
-  competition: null,
+  competition: null as OwnerCompetition | null,
   bests: [] as { pieceCount: number; ms: number; moves: number }[],
 };
 
@@ -137,6 +140,165 @@ describe("MyPuzzles board background", () => {
 
     expect(alertMock).toHaveBeenCalledWith(messages.my.backgroundFailed);
     expect(swatch(messages.boardBackground.dark).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("MyPuzzles piece count and style (#150)", () => {
+  const HOUR = 60 * 60 * 1000;
+  const pressed = (text: string) => buttonByText(text)!.getAttribute("aria-pressed");
+  const patchOk = (puzzle: object) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ puzzle }) });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  it("shows the stored count and style as selected", () => {
+    mount();
+    expect(pressed("48")).toBe("true");
+    expect(pressed("108")).toBe("false");
+    expect(pressed(messages.pieceStyle.wooden)).toBe("true");
+  });
+
+  it("asks first, then PATCHes the new count and shows it", async () => {
+    const confirmMock = vi.fn().mockReturnValue(true);
+    vi.stubGlobal("confirm", confirmMock);
+    const fetchMock = patchOk({ id: "p1", pieceCount: 108, cols: 12, rows: 9 });
+    mount();
+
+    await act(async () => buttonByText("108")!.click());
+
+    expect(confirmMock).toHaveBeenCalledWith(messages.my.confirmPieceCount);
+    expect(fetchMock).toHaveBeenCalledWith("/api/puzzles/p1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pieceCount: 108 }),
+    });
+    expect(pressed("108")).toBe("true");
+    expect(container.textContent).toContain("108 pieces");
+  });
+
+  it("sends nothing when the count change is not confirmed", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(false));
+    const fetchMock = patchOk({});
+    mount();
+    await act(async () => buttonByText("108")!.click());
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(pressed("48")).toBe("true");
+  });
+
+  it("changes the style without asking — progress carries over", async () => {
+    const confirmMock = vi.fn();
+    vi.stubGlobal("confirm", confirmMock);
+    const fetchMock = patchOk({ id: "p1", pieceStyle: "classic" });
+    mount();
+
+    await act(async () => buttonByText(messages.pieceStyle.classic)!.click());
+
+    expect(confirmMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/puzzles/p1",
+      expect.objectContaining({ body: JSON.stringify({ pieceStyle: "classic" }) }),
+    );
+    expect(pressed(messages.pieceStyle.classic)).toBe("true");
+  });
+
+  it("sends nothing when the current count or style is clicked again", async () => {
+    const fetchMock = patchOk({});
+    mount();
+    await act(async () => buttonByText("48")!.click());
+    await act(async () => buttonByText(messages.pieceStyle.wooden)!.click());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the old value and shows the server's error when the PATCH is refused", async () => {
+    const alertMock = vi.fn();
+    vi.stubGlobal("alert", alertMock);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ error: "locked" }) }),
+    );
+    mount();
+
+    await act(async () => buttonByText(messages.pieceStyle.classic)!.click());
+
+    expect(alertMock).toHaveBeenCalledWith("locked");
+    expect(pressed(messages.pieceStyle.wooden)).toBe("true");
+  });
+
+  it.each([
+    ["running", { startsAt: null, endsAt: null }],
+    ["upcoming", { startsAt: new Date(Date.now() + HOUR).toISOString(), endsAt: null }],
+    ["ended", { startsAt: null, endsAt: new Date(Date.now() - HOUR).toISOString() }],
+  ])("locks both while there is a competition, %s, and says why", (_label, window) => {
+    mount([{ ...PUZZLE, competition: { pieceCount: 48, entries: 0, ...window } }]);
+    expect(buttonByText("108")!.disabled).toBe(true);
+    expect(buttonByText(messages.pieceStyle.classic)!.disabled).toBe(true);
+    expect(container.textContent).toContain(messages.my.piecesLocked);
+  });
+
+  it("locks them as soon as a competition is started on the card", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ competition: { pieceCount: 48, startsAt: null, endsAt: null } }),
+      }),
+    );
+    mount([{ ...PUZZLE, isPublic: true }]);
+    expect(buttonByText("108")!.disabled).toBe(false);
+
+    await act(async () => buttonByText(messages.competition.start)!.click());
+    await act(async () => container.querySelector("form")!.requestSubmit());
+
+    expect(buttonByText("108")!.disabled).toBe(true);
+  });
+
+  it("keeps them locked when the competition is ended on the card", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    const endsAt = new Date(Date.now() - 1000).toISOString();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ competition: { pieceCount: 48, startsAt: null, endsAt } }),
+      }),
+    );
+    const running = { pieceCount: 48, entries: 2, startsAt: null, endsAt: null };
+    mount([{ ...PUZZLE, isPublic: true, competition: running }]);
+
+    await act(async () => buttonByText(messages.competition.edit)!.click());
+    await act(async () => buttonByText(messages.competition.end)!.click());
+
+    expect(buttonByText("108")!.disabled).toBe(true);
+  });
+
+  it("unlocks them as soon as the competition is deleted on the card", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) }));
+    const running = { pieceCount: 48, entries: 2, startsAt: null, endsAt: null };
+    mount([{ ...PUZZLE, isPublic: true, competition: running }]);
+    expect(buttonByText("108")!.disabled).toBe(true);
+
+    await act(async () => buttonByText(messages.competition.edit)!.click());
+    const card = container.querySelector(".competition-settings")!;
+    const del = [...card.querySelectorAll("button")].find(
+      (b) => b.textContent === messages.competition.delete,
+    )!;
+    await act(async () => del.click());
+
+    expect(buttonByText("108")!.disabled).toBe(false);
+    expect(container.textContent).not.toContain(messages.my.piecesLocked);
+  });
+
+  it("offers a new competition the count chosen on the card, not the one it loaded with", async () => {
+    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+    patchOk({ id: "p1", pieceCount: 108, cols: 12, rows: 9 });
+    mount([{ ...PUZZLE, isPublic: true }]);
+
+    await act(async () => buttonByText("108")!.click());
+    await act(async () => buttonByText(messages.competition.start)!.click());
+
+    expect(container.querySelector("select")!.value).toBe("108");
   });
 });
 

@@ -4,7 +4,7 @@
 // lib/competition-token.ts, because node:crypto must stay out of client bundles.
 
 import { z } from "zod";
-import { PIECE_PRESETS } from "./puzzle/grid";
+import { isPiecePreset } from "./puzzle/grid";
 import { beats } from "./puzzle/timer";
 
 export interface CompetitionWindow {
@@ -19,6 +19,17 @@ export function competitionPhase({ startsAt, endsAt }: CompetitionWindow, now: D
   if (startsAt && now < startsAt) return "UPCOMING";
   if (endsAt && now >= endsAt) return "CLOSED";
   return "OPEN";
+}
+
+/** `competitionPhase` for a window as it reaches the client: ISO strings, not Dates. */
+export function competitionPhaseOfIso(
+  { startsAt, endsAt }: { startsAt: string | null; endsAt: string | null },
+  now: Date,
+): CompetitionPhase {
+  return competitionPhase(
+    { startsAt: startsAt ? new Date(startsAt) : null, endsAt: endsAt ? new Date(endsAt) : null },
+    now,
+  );
 }
 
 /**
@@ -105,10 +116,7 @@ export const DisplayNameSchema = z
 /** What the owner sends to turn a puzzle into a competition or change it. */
 export const CompetitionSettingsSchema = z
   .object({
-    pieceCount: z
-      .number()
-      .int()
-      .refine((n) => (PIECE_PRESETS as readonly number[]).includes(n)),
+    pieceCount: z.number().int().refine(isPiecePreset),
     startsAt: z.iso.datetime({ offset: true }).nullable(),
     endsAt: z.iso.datetime({ offset: true }).nullable(),
   })

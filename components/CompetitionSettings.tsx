@@ -6,7 +6,7 @@ import { Download, Trophy } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import { PIECE_PRESETS } from "@/lib/puzzle/grid";
-import { COMPETITION_DATE_FORMAT, competitionPhase } from "@/lib/competition";
+import { COMPETITION_DATE_FORMAT, competitionPhaseOfIso } from "@/lib/competition";
 import { fromLocalInput, toLocalInput } from "@/lib/local-datetime";
 import Leaderboard from "./Leaderboard";
 
@@ -27,18 +27,25 @@ export default function CompetitionSettings({
   isPublic,
   defaultPieceCount,
   initial,
+  onChange,
 }: {
   puzzleId: string;
   isPublic: boolean;
-  /** Offered for a new competition: what the puzzle was created with. */
+  /** Offered for a new competition: the puzzle's current default count. */
   defaultPieceCount: number;
   initial: OwnerCompetition | null;
+  /** Told of every saved change, so the card can lock what a competition fixes. */
+  onChange?: (competition: OwnerCompetition | null) => void;
 }) {
   const t = useTranslations("competition");
   const format = useFormatter();
   const router = useRouter();
   const formId = useId();
-  const [competition, setCompetition] = useState(initial);
+  const [competition, setCompetitionState] = useState(initial);
+  function setCompetition(next: OwnerCompetition | null) {
+    setCompetitionState(next);
+    onChange?.(next);
+  }
   const [open, setOpen] = useState(false);
   const [pieceCount, setPieceCount] = useState(initial?.pieceCount ?? defaultPieceCount);
   const [startsAt, setStartsAt] = useState(toLocalInput(initial?.startsAt ?? null));
@@ -53,14 +60,7 @@ export default function CompetitionSettings({
 
   // The phase is read from the clock at render; a card left open across the
   // start or end date shows the old phase until the page is reloaded.
-  const phaseOf = (c: OwnerCompetition) =>
-    competitionPhase(
-      {
-        startsAt: c.startsAt ? new Date(c.startsAt) : null,
-        endsAt: c.endsAt ? new Date(c.endsAt) : null,
-      },
-      new Date(),
-    );
+  const phaseOf = (c: OwnerCompetition) => competitionPhaseOfIso(c, new Date());
 
   function summary(c: OwnerCompetition): string {
     const phase = phaseOf(c);
@@ -203,7 +203,12 @@ export default function CompetitionSettings({
           type="button"
           disabled={!isPublic && !competition}
           title={isPublic || competition ? undefined : t("needsPublic")}
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            // The default can change on the card after mount (#150), so a new
+            // competition reads it when the form opens, not when it mounted.
+            if (!competition) setPieceCount(defaultPieceCount);
+            setOpen(true);
+          }}
         >
           {competition ? t("edit") : t("start")}
         </button>

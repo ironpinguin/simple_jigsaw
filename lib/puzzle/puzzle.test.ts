@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeGrid, PIECE_PRESETS } from "./grid";
+import { computeGrid, isPiecePreset, PIECE_PRESETS } from "./grid";
 import { generateEdges } from "./edges";
 import { pieceEdgePoints, pieceOutlinePath, pieceOutlinePoints, type Point } from "./outline";
 import { PIECE_STYLES } from "./style";
@@ -12,6 +12,15 @@ function expectPointsClose(a: Point[], b: Point[], eps = 1e-6) {
     void eps;
   }
 }
+
+describe("isPiecePreset", () => {
+  it("accepts exactly the presets", () => {
+    for (const preset of PIECE_PRESETS) expect(isPiecePreset(preset)).toBe(true);
+    expect(isPiecePreset(50)).toBe(false);
+    expect(isPiecePreset("48")).toBe(false);
+    expect(isPiecePreset(null)).toBe(false);
+  });
+});
 
 describe("computeGrid", () => {
   it("produces a near-square grid for a square image", () => {

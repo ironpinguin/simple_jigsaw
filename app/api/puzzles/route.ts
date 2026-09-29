@@ -3,7 +3,7 @@ import { randomInt } from "crypto";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
+import { computeGrid, isPiecePreset } from "@/lib/puzzle/grid";
 import { DEFAULT_PIECE_STYLE, PIECE_STYLES } from "@/lib/puzzle/style";
 import { BOARD_BACKGROUNDS, DEFAULT_BOARD_BACKGROUND } from "@/lib/puzzle/background";
 import { getErrorT } from "@/lib/i18n-server";
@@ -16,7 +16,7 @@ const CreateSchema = z.object({
   imageKey: z.string().min(1),
   imageWidth: z.number().int().positive(),
   imageHeight: z.number().int().positive(),
-  pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n)),
+  pieceCount: z.number().int().refine(isPiecePreset),
   pieceStyle: z.enum(PIECE_STYLES).optional().default(DEFAULT_PIECE_STYLE),
   boardBackground: z.enum(BOARD_BACKGROUNDS).optional().default(DEFAULT_BOARD_BACKGROUND),
   isPublic: z.boolean().optional().default(true),
