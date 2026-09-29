@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-29
+
 ### Added
 - **Board colours.** The table under the pieces now comes in eight colours —
   midnight (the previous look), charcoal, slate, grey, light grey, cream,
@@ -635,7 +637,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a GitLab Release.
 - Favicon (puzzle-piece mark).
 
-[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.9.0...main
+[Unreleased]: https://github.com/ironpinguin/simple_jigsaw/compare/v0.10.0...main
+[0.10.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.10.0
+[0.9.1]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.9.1
 [0.9.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.9.0
 [0.8.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.8.0
 [0.7.0]: https://github.com/ironpinguin/simple_jigsaw/releases/tag/v0.7.0
