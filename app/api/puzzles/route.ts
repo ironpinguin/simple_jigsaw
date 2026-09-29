@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import { DEFAULT_PIECE_STYLE, PIECE_STYLES } from "@/lib/puzzle/style";
+import { BOARD_BACKGROUNDS, DEFAULT_BOARD_BACKGROUND } from "@/lib/puzzle/background";
 import { getErrorT } from "@/lib/i18n-server";
 import { readNsfwConfig, requiresReview, toVerdictLabel, type VerdictLabel } from "@/lib/nsfw";
 import { notifyAdminsOfReport } from "@/lib/report-notify";
@@ -17,6 +18,7 @@ const CreateSchema = z.object({
   imageHeight: z.number().int().positive(),
   pieceCount: z.number().int().refine((n) => (PIECE_PRESETS as readonly number[]).includes(n)),
   pieceStyle: z.enum(PIECE_STYLES).optional().default(DEFAULT_PIECE_STYLE),
+  boardBackground: z.enum(BOARD_BACKGROUNDS).optional().default(DEFAULT_BOARD_BACKGROUND),
   isPublic: z.boolean().optional().default(true),
 });
 
@@ -102,7 +104,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: t("invalidInput") }, { status: 400 });
   }
 
-  const { title, imageKey, imageWidth, imageHeight, pieceCount, pieceStyle, isPublic } = parsed.data;
+  const { title, imageKey, imageWidth, imageHeight, pieceCount, pieceStyle, boardBackground, isPublic } =
+    parsed.data;
 
   // Who already references this key, and publicly or not. One read answers two
   // questions: whether someone *else* references it (the rejection right below)
@@ -161,6 +164,7 @@ export async function POST(request: Request) {
         imageHeight,
         pieceCount,
         pieceStyle,
+        boardBackground,
         cols,
         rows,
         seed,

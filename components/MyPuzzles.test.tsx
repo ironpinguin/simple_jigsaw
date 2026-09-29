@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
 import MyPuzzles from "./MyPuzzles";
 import SolvedPuzzles from "./SolvedPuzzles";
+import type { BoardBackground } from "@/lib/puzzle/background";
 
 const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
 
@@ -43,6 +44,7 @@ const PUZZLE = {
   imageKey: "puzzles/abc.webp",
   pieceCount: 48,
   isPublic: false,
+  boardBackground: "dark" as BoardBackground,
   competition: null,
   bests: [] as { pieceCount: number; ms: number; moves: number }[],
 };
@@ -60,6 +62,83 @@ function mount(initial = [PUZZLE]) {
 function buttonByText(text: string) {
   return [...container.querySelectorAll("button")].find((b) => b.textContent === text);
 }
+
+describe("MyPuzzles board background", () => {
+  const swatch = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`button.swatch[aria-label="${label}"]`)!;
+
+  it("shows the stored background as selected", () => {
+    mount([{ ...PUZZLE, boardBackground: "felt" }]);
+    expect(swatch(messages.boardBackground.felt).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("PATCHes the new background and selects it once the server agrees", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ puzzle: { id: "p1", boardBackground: "cream" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+
+    await act(async () => swatch(messages.boardBackground.cream).click());
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/puzzles/p1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ boardBackground: "cream" }),
+    });
+    expect(swatch(messages.boardBackground.cream).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("keeps a card disabled while its own request runs, whatever another card does", async () => {
+    const pending: Record<string, () => void> = {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(
+        (url: string, init: RequestInit) =>
+          new Promise((resolve) => {
+            const { boardBackground } = JSON.parse(init.body as string);
+            pending[url] = () =>
+              resolve({ ok: true, json: async () => ({ puzzle: { boardBackground } }) });
+          }),
+      ),
+    );
+    mount([PUZZLE, { ...PUZZLE, id: "p2", title: "Forest" }]);
+    const cards = () => [...container.querySelectorAll(".puzzle-card")];
+    const cardSwatch = (card: number, label: string) =>
+      cards()[card].querySelector<HTMLButtonElement>(`button.swatch[aria-label="${label}"]`)!;
+
+    await act(async () => cardSwatch(0, messages.boardBackground.cream).click());
+    await act(async () => cardSwatch(1, messages.boardBackground.felt).click());
+    await act(async () => pending["/api/puzzles/p1"]());
+
+    expect(cardSwatch(0, messages.boardBackground.wood).disabled).toBe(false);
+    expect(cardSwatch(1, messages.boardBackground.wood).disabled).toBe(true);
+  });
+
+  it("sends nothing when the current background is clicked again", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    mount();
+    await act(async () => swatch(messages.boardBackground.dark).click());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the old background and says so when the PATCH fails", async () => {
+    const alertMock = vi.fn();
+    vi.stubGlobal("alert", alertMock);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) }),
+    );
+    mount();
+
+    await act(async () => swatch(messages.boardBackground.cream).click());
+
+    expect(alertMock).toHaveBeenCalledWith(messages.my.backgroundFailed);
+    expect(swatch(messages.boardBackground.dark).getAttribute("aria-pressed")).toBe("true");
+  });
+});
 
 describe("MyPuzzles visibility toggle", () => {
   it("shows the private state and a make-public action", () => {

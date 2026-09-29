@@ -186,6 +186,27 @@ describe("POST /api/puzzles", () => {
     expect(res.status).toBe(400);
     expect(txCreate).not.toHaveBeenCalled();
   });
+
+  it("stores today's dark board background when none is given", async () => {
+    await callPost(BODY);
+    expect(txCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ boardBackground: "dark" }) }),
+    );
+  });
+
+  it("stores the board background the creator picked", async () => {
+    const res = await callPost({ ...BODY, boardBackground: "cream" });
+    expect(res.status).toBe(201);
+    expect(txCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ boardBackground: "cream" }) }),
+    );
+  });
+
+  it("rejects a board background it does not know", async () => {
+    const res = await callPost({ ...BODY, boardBackground: "plaid" });
+    expect(res.status).toBe(400);
+    expect(txCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe("automatic moderation", () => {

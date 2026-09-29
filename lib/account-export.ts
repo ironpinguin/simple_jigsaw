@@ -40,6 +40,7 @@ type ExportablePuzzle = {
   rows: number;
   seed: number;
   pieceStyle: string;
+  boardBackground: string;
   isPublic: boolean;
   createdAt: Date;
   competition?: { pieceCount: number; startsAt: Date | null; endsAt: Date | null } | null;
@@ -87,6 +88,7 @@ export type AccountExport = {
     rows: number;
     seed: number;
     pieceStyle: string;
+    boardBackground: string;
     isPublic: boolean;
     createdAt: string;
     competition: { pieceCount: number; startsAt: string | null; endsAt: string | null } | null;
@@ -162,6 +164,7 @@ export function buildAccountExport({
       rows: puzzle.rows,
       seed: puzzle.seed,
       pieceStyle: puzzle.pieceStyle,
+      boardBackground: puzzle.boardBackground,
       isPublic: puzzle.isPublic,
       createdAt: puzzle.createdAt.toISOString(),
       competition: puzzle.competition

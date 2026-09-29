@@ -40,6 +40,11 @@ import { celebrate, stopCelebration } from "./celebrate";
 import { computeGrid, PIECE_PRESETS } from "@/lib/puzzle/grid";
 import { isPieceStyle, PIECE_STYLES, type PieceStyle } from "@/lib/puzzle/style";
 import {
+  BOARD_BACKGROUNDS,
+  isBoardBackground,
+  type BoardBackground,
+} from "@/lib/puzzle/background";
+import {
   MAX_STORED_SOLVES,
   SOLVE_KEY_PREFIX,
   solveKeysToPrune,
@@ -257,8 +262,10 @@ export default function PuzzleSolver({
   const tReport = useTranslations("report");
   const tComp = useTranslations("competition");
   const tStyle = useTranslations("pieceStyle");
+  const tBg = useTranslations("boardBackground");
   const storageKey = `pc:${puzzle.id}`;
   const styleKey = `ps:${puzzle.id}`;
+  const backgroundKey = `bg:${puzzle.id}`;
   const solveKey = solveStateKey(puzzle.id);
 
   // Piece count is per solver: default to the creator's value, but remember the
@@ -295,6 +302,17 @@ export default function PuzzleSolver({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
     if (isPieceStyle(saved)) setPieceStyle(saved);
   }, [styleKey, fixedCount]);
+
+  // The board background (#147): the creator's default, the solver's remembered
+  // choice applied after mount like the others. Unlike count and style it stays
+  // open during a competition — the table colour changes nobody's puzzle.
+  const [background, setBackground] = useState<BoardBackground>(puzzle.boardBackground);
+
+  useEffect(() => {
+    const saved = withStorage((s) => s.getItem(backgroundKey), null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- would break hydration; see the piece count
+    if (isBoardBackground(saved)) setBackground(saved);
+  }, [backgroundKey]);
 
   const { cols, rows } = useMemo(
     () => computeGrid(pieceCount, puzzle.imageWidth / puzzle.imageHeight),
@@ -644,6 +662,18 @@ export default function PuzzleSolver({
     withStorage((s) => s.setItem(styleKey, style), undefined);
   }
 
+  function changeBackground(bg: BoardBackground) {
+    // Only this browser's view: the puzzle's stored default is the owner's.
+    // Going back to that default forgets the override, so a later change of
+    // the default by the owner shows up here too.
+    setBackground(bg);
+    withStorage(
+      (s) =>
+        bg === puzzle.boardBackground ? s.removeItem(backgroundKey) : s.setItem(backgroundKey, bg),
+      undefined,
+    );
+  }
+
   async function share() {
     try {
       await navigator.clipboard.writeText(window.location.href);
@@ -795,6 +825,26 @@ export default function PuzzleSolver({
                 </select>
               </label>
             )}
+            <label className="menu-item">
+              {tBg("label")}
+              <select
+                id="board-background"
+                name="boardBackground"
+                value={background}
+                onChange={(e) => {
+                  if (isBoardBackground(e.target.value)) changeBackground(e.target.value);
+                }}
+                style={{ width: "auto", marginLeft: "auto" }}
+              >
+                {BOARD_BACKGROUNDS.map((bg) => (
+                  <option key={bg} value={bg}>
+                    {bg === puzzle.boardBackground
+                      ? tBg("puzzleDefault", { name: tBg(bg) })
+                      : tBg(bg)}
+                  </option>
+                ))}
+              </select>
+            </label>
             {/* Stays open so the "copied" confirmation can be seen. */}
             <button className="menu-item" type="button" onClick={share}>
               <LinkIcon size={ICON_SIZE} aria-hidden="true" /> {copied ? t("copied") : t("share")}
@@ -907,6 +957,7 @@ export default function PuzzleSolver({
           cols={cols}
           rows={rows}
           pieceStyle={pieceStyle}
+          background={background}
           showMinimap={showMap}
           onProgress={onProgress}
           onSolved={onSolved}

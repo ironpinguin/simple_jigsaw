@@ -5,16 +5,30 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { PIECE_PRESETS } from "@/lib/puzzle/grid";
 import { DEFAULT_PIECE_STYLE, PIECE_STYLES, type PieceStyle } from "@/lib/puzzle/style";
+import {
+  DEFAULT_BOARD_BACKGROUND,
+  suggestBoardBackground,
+  type BoardBackground,
+} from "@/lib/puzzle/background";
+import { readImagePixels } from "@/lib/image-pixels";
+import BoardBackgroundPicker from "./BoardBackgroundPicker";
 
 export default function CreateForm() {
   const t = useTranslations("create");
   const tStyle = useTranslations("pieceStyle");
+  const tBg = useTranslations("boardBackground");
   const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [pieceCount, setPieceCount] = useState<number>(48);
   const [pieceStyle, setPieceStyle] = useState<PieceStyle>(DEFAULT_PIECE_STYLE);
+  // The board background suggested from the picture's colours (#147), and the
+  // creator's own pick, which wins whenever there is one — so a suggestion that
+  // arrives after a pick cannot overwrite it.
+  const [suggestedBg, setSuggestedBg] = useState<BoardBackground | null>(null);
+  const [pickedBg, setPickedBg] = useState<BoardBackground | null>(null);
+  const boardBackground = pickedBg ?? suggestedBg ?? DEFAULT_BOARD_BACKGROUND;
   const [isPublic, setIsPublic] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,8 +61,26 @@ export default function CreateForm() {
     };
   }, [file]);
 
+  useEffect(() => {
+    // Analysed in the browser from the preview, because the upload only happens
+    // on submit and the suggestion has to be on screen before that. The cleanup
+    // drops a late answer for a picture that has since been replaced.
+    if (!previewUrl) return;
+    let current = true;
+    void readImagePixels(previewUrl).then((pixels) => {
+      if (current && pixels) setSuggestedBg(suggestBoardBackground(pixels));
+    });
+    return () => {
+      current = false;
+      setSuggestedBg(null);
+    };
+  }, [previewUrl]);
+
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0] ?? null;
+    // A replacement picture gets a fresh suggestion, the pick was for the old
+    // one; a pick made before any picture was chosen stands.
+    if (file) setPickedBg(null);
     setFile(f);
     if (f && !title) {
       setTitle(f.name.replace(/\.[^.]+$/, ""));
@@ -63,6 +95,9 @@ export default function CreateForm() {
       return;
     }
     setBusy(true);
+    // Freeze what is on screen: a suggestion landing during the upload must
+    // not change the highlighted swatch away from what is about to be saved.
+    setPickedBg(boardBackground);
     try {
       // 1) upload the image
       const fd = new FormData();
@@ -83,6 +118,7 @@ export default function CreateForm() {
           imageHeight: upData.height,
           pieceCount,
           pieceStyle,
+          boardBackground,
           isPublic,
         }),
       });
@@ -159,6 +195,16 @@ export default function CreateForm() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div style={{ marginBottom: 20 }}>
+        <label>{tBg("label")}</label>
+        <BoardBackgroundPicker value={boardBackground} onChange={setPickedBg} disabled={busy} />
+        {suggestedBg && boardBackground === suggestedBg && (
+          <p className="muted" style={{ margin: "4px 0 0" }}>
+            {t("backgroundSuggested")}
+          </p>
+        )}
       </div>
 
       <div style={{ marginBottom: 20 }}>

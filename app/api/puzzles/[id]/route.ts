@@ -8,6 +8,7 @@ import { getErrorT } from "@/lib/i18n-server";
 import { canViewPuzzle } from "@/lib/visibility";
 import { AUTO_REPORT_CATEGORIES } from "@/lib/reports";
 import { toPieceStyle } from "@/lib/puzzle/style";
+import { BOARD_BACKGROUNDS, toBoardBackground } from "@/lib/puzzle/background";
 import { z } from "zod";
 
 export async function GET(
@@ -42,13 +43,19 @@ export async function GET(
       rows: puzzle.rows,
       seed: puzzle.seed,
       pieceStyle: toPieceStyle(puzzle.pieceStyle),
+      boardBackground: toBoardBackground(puzzle.boardBackground),
       isPublic: puzzle.isPublic,
       createdAt: puzzle.createdAt,
     },
   });
 }
 
-const UpdateSchema = z.object({ isPublic: z.boolean() });
+// One change per request: visibility and the board background take different
+// paths below (only visibility has a moderation hold and a key rotation).
+const UpdateSchema = z.union([
+  z.object({ isPublic: z.boolean(), boardBackground: z.undefined().optional() }),
+  z.object({ boardBackground: z.enum(BOARD_BACKGROUNDS), isPublic: z.undefined().optional() }),
+]);
 
 export async function PATCH(
   request: Request,
@@ -66,6 +73,20 @@ export async function PATCH(
   }
 
   const { id } = await params;
+
+  if (parsed.data.boardBackground !== undefined) {
+    // The ownerId scope is the authorisation; 404 covers missing and foreign
+    // alike (no existence oracle).
+    const { boardBackground } = parsed.data;
+    const updated = await prisma.puzzle.updateMany({
+      where: { id, ownerId: user.id },
+      data: { boardBackground },
+    });
+    if (updated.count === 0) {
+      return NextResponse.json({ error: t("puzzleNotFound") }, { status: 404 });
+    }
+    return NextResponse.json({ puzzle: { id, boardBackground } });
+  }
 
   if (parsed.data.isPublic) {
     // Ownership must be settled before the hold lookup: a hold check keyed

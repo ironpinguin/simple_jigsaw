@@ -5,7 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import messages from "@/messages/en.json";
 import CreateForm from "./CreateForm";
 
-const { pushMock } = vi.hoisted(() => ({ pushMock: vi.fn() }));
+const { pushMock, readImagePixelsMock } = vi.hoisted(() => ({
+  pushMock: vi.fn(),
+  readImagePixelsMock: vi.fn(),
+}));
+
+// jsdom cannot decode images; the colour analysis itself is tested in
+// lib/puzzle/background.test.ts.
+vi.mock("@/lib/image-pixels", () => ({ readImagePixels: readImagePixelsMock }));
 
 // next-intl's Link pulls in next/navigation, which vitest cannot resolve from
 // this package's ESM build; the form under test only needs the router.
@@ -20,6 +27,7 @@ let root: Root;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  readImagePixelsMock.mockResolvedValue(null);
   container = document.createElement("div");
   document.body.appendChild(container);
 
@@ -260,5 +268,156 @@ describe("CreateForm piece style", () => {
 
     expect(createBody().pieceStyle).toBe("wooden");
     expect(styleButton(messages.pieceStyle.wooden).getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("CreateForm board background", () => {
+  function createBody() {
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/puzzles")!;
+    return JSON.parse((call[1] as RequestInit).body as string);
+  }
+
+  const swatch = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`button.swatch[aria-label="${label}"]`)!;
+
+  /** A plain, opaque `size`×`size` RGBA picture of one grey level. */
+  function plainPixels(level: number, size = 8) {
+    const data = new Uint8ClampedArray(size * size * 4);
+    for (let i = 0; i < data.length; i += 4) data.set([level, level, level, 255], i);
+    return { data, width: size, height: size, channels: 4 };
+  }
+
+  async function submit() {
+    await act(async () => {
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+  }
+
+  it("keeps today's dark board when the picture cannot be analysed", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+    await submitForm();
+
+    expect(createBody().boardBackground).toBe("dark");
+    expect(container.textContent).not.toContain(messages.create.backgroundSuggested);
+  });
+
+  it("pre-selects a light board for a dark picture and sends it", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+    readImagePixelsMock.mockResolvedValue(plainPixels(0));
+    mount();
+    await chooseFile(new File(["data"], "night.png", { type: "image/png" }));
+
+    expect(readImagePixelsMock).toHaveBeenCalledWith("blob:jigsaw/preview-1");
+    expect(swatch(messages.boardBackground.cream).getAttribute("aria-pressed")).toBe("true");
+    expect(container.textContent).toContain(messages.create.backgroundSuggested);
+
+    await submit();
+    expect(createBody().boardBackground).toBe("cream");
+  });
+
+  it("sends the creator's own pick over the suggestion", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+    readImagePixelsMock.mockResolvedValue(plainPixels(0));
+    mount();
+    await chooseFile(new File(["data"], "night.png", { type: "image/png" }));
+    await act(async () => swatch(messages.boardBackground.felt).click());
+
+    expect(swatch(messages.boardBackground.felt).getAttribute("aria-pressed")).toBe("true");
+    await submit();
+    expect(createBody().boardBackground).toBe("felt");
+  });
+
+  it("keeps a colour picked before the picture was chosen", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+    readImagePixelsMock.mockResolvedValue(plainPixels(0));
+    mount();
+    await act(async () => swatch(messages.boardBackground.wood).click());
+    await chooseFile(new File(["data"], "night.png", { type: "image/png" }));
+
+    expect(swatch(messages.boardBackground.wood).getAttribute("aria-pressed")).toBe("true");
+    await submit();
+    expect(createBody().boardBackground).toBe("wood");
+  });
+
+  it("drops the pick when the picture is replaced, so the new one gets its own suggestion", async () => {
+    readImagePixelsMock.mockResolvedValue(plainPixels(0));
+    mount();
+    await chooseFile(new File(["a"], "one.png", { type: "image/png" }));
+    await act(async () => swatch(messages.boardBackground.wood).click());
+    await chooseFile(new File(["b"], "two.png", { type: "image/png" }));
+
+    expect(swatch(messages.boardBackground.cream).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("stops calling the colour suggested once the creator overrides it", async () => {
+    readImagePixelsMock.mockResolvedValue(plainPixels(0));
+    mount();
+    await chooseFile(new File(["data"], "night.png", { type: "image/png" }));
+    expect(container.textContent).toContain(messages.create.backgroundSuggested);
+
+    await act(async () => swatch(messages.boardBackground.felt).click());
+    expect(container.textContent).not.toContain(messages.create.backgroundSuggested);
+
+    await act(async () => swatch(messages.boardBackground.cream).click());
+    expect(container.textContent).toContain(messages.create.backgroundSuggested);
+  });
+
+  it("saves what was on screen at submit, even if the suggestion lands during the upload", async () => {
+    let answer: (pixels: unknown) => void = () => {};
+    readImagePixelsMock.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    let finishUpload: () => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string) =>
+        url === "/api/upload"
+          ? new Promise((resolve) =>
+              (finishUpload = () =>
+                resolve({
+                  ok: true,
+                  status: 200,
+                  json: async () => ({ imageKey: "puzzles/abc.webp", width: 800, height: 600 }),
+                })),
+            )
+          : Promise.resolve({ ok: true, status: 200, json: async () => ({ id: "puzzle-1" }) }),
+      ),
+    );
+    mount();
+    await chooseFile(new File(["data"], "night.png", { type: "image/png" }));
+    await submit();
+    await act(async () => answer(plainPixels(0)));
+
+    expect(swatch(messages.boardBackground.dark).getAttribute("aria-pressed")).toBe("true");
+    await act(async () => finishUpload());
+    expect(createBody().boardBackground).toBe("dark");
+  });
+
+  it("does not let a late suggestion overwrite a pick made while it was computed", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+    let answer: (pixels: unknown) => void = () => {};
+    readImagePixelsMock.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    mount();
+    await chooseFile(new File(["data"], "night.png", { type: "image/png" }));
+    await act(async () => swatch(messages.boardBackground.wood).click());
+    await act(async () => answer(plainPixels(0)));
+
+    await submit();
+    expect(createBody().boardBackground).toBe("wood");
+  });
+
+  it("ignores the suggestion for a picture that has since been replaced", async () => {
+    respondToCreateWith({ id: "puzzle-1", pendingReview: false });
+    let answerFirst: (pixels: unknown) => void = () => {};
+    readImagePixelsMock
+      .mockReturnValueOnce(new Promise((resolve) => (answerFirst = resolve)))
+      .mockResolvedValueOnce(plainPixels(255));
+    mount();
+    await chooseFile(new File(["a"], "night.png", { type: "image/png" }));
+    await chooseFile(new File(["b"], "snow.png", { type: "image/png" }));
+    await act(async () => answerFirst(plainPixels(0)));
+
+    await submit();
+    expect(createBody().boardBackground).toBe("dark");
   });
 });

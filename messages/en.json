@@ -78,6 +78,7 @@
     "titleField": "Title",
     "titlePlaceholder": "My puzzle",
     "pieces": "Number of pieces",
+    "backgroundSuggested": "Suggested from the colours of your picture — high contrast, so the pieces stand out.",
     "visibility": "Visibility",
     "publicLabel": "Public – anyone with the link can see the puzzle",
     "publicHint": "New puzzles are public by default. Unchecked, only you and admins can see the puzzle.",
@@ -92,6 +93,18 @@
     "label": "Piece style",
     "classic": "Classic",
     "wooden": "Wooden"
+  },
+  "boardBackground": {
+    "label": "Board colour",
+    "puzzleDefault": "{name} (puzzle default)",
+    "dark": "Midnight",
+    "charcoal": "Charcoal",
+    "slate": "Slate",
+    "grey": "Grey",
+    "light": "Light grey",
+    "cream": "Cream",
+    "felt": "Felt green",
+    "wood": "Wood"
   },
   "solve": {
     "loading": "Loading puzzle…",
@@ -143,6 +156,7 @@
     "makePublic": "Make public",
     "makePrivate": "Make private",
     "visibilityFailed": "Could not change visibility.",
+    "backgroundFailed": "Could not change the board colour.",
     "solve": "Solve",
     "share": "Share",
     "copied": "Copied!",

@@ -6,6 +6,8 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { tryFetch } from "@/lib/try-fetch";
 import CompetitionSettings, { type OwnerCompetition } from "./CompetitionSettings";
 import BestTimesList, { type BestTimeRow } from "./BestTimesList";
+import BoardBackgroundPicker from "./BoardBackgroundPicker";
+import { toBoardBackground, type BoardBackground } from "@/lib/puzzle/background";
 
 interface PuzzleSummary {
   id: string;
@@ -13,6 +15,8 @@ interface PuzzleSummary {
   imageKey: string;
   pieceCount: number;
   isPublic: boolean;
+  /** The default table colour solvers see (#147). */
+  boardBackground: BoardBackground;
   competition: OwnerCompetition | null;
   /** The owner's own best times on it (#127). */
   bests: BestTimeRow[];
@@ -20,10 +24,21 @@ interface PuzzleSummary {
 
 export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
   const t = useTranslations("my");
+  const tBg = useTranslations("boardBackground");
   const router = useRouter();
   const [puzzles, setPuzzles] = useState(initial);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Per card: finishing one card's request must not re-enable another card
+  // whose request is still running.
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set());
+  function setBusy(id: string, busy: boolean) {
+    setBusyIds((ids) => {
+      const next = new Set(ids);
+      if (busy) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
 
   async function share(id: string) {
     const url = `${window.location.origin}/puzzle/${id}`;
@@ -38,7 +53,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
 
   async function remove(id: string) {
     if (!confirm(t("confirmDelete"))) return;
-    setBusyId(id);
+    setBusy(id, true);
     try {
       const res = await tryFetch("my", `/api/puzzles/${id}`, { method: "DELETE" });
       if (!res) {
@@ -52,12 +67,12 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
         alert(data?.error ?? t("deleteFailed"));
       }
     } finally {
-      setBusyId(null);
+      setBusy(id, false);
     }
   }
 
   async function toggleVisibility(id: string, isPublic: boolean) {
-    setBusyId(id);
+    setBusy(id, true);
     try {
       const res = await tryFetch("my", `/api/puzzles/${id}`, {
         method: "PATCH",
@@ -94,7 +109,35 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
         alert(data?.error ?? t("visibilityFailed"));
       }
     } finally {
-      setBusyId(null);
+      setBusy(id, false);
+    }
+  }
+
+  async function changeBackground(id: string, boardBackground: BoardBackground) {
+    setBusy(id, true);
+    try {
+      const res = await tryFetch("my", `/api/puzzles/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ boardBackground }),
+      });
+      if (!res) {
+        alert(t("backgroundFailed"));
+      } else if (res.ok) {
+        // As with visibility: what the server confirmed, else what was asked.
+        const data = await res.json().catch(() => null);
+        const confirmed = toBoardBackground(data?.puzzle?.boardBackground ?? boardBackground);
+        setPuzzles((list) =>
+          list.map((p) => (p.id === id ? { ...p, boardBackground: confirmed } : p)),
+        );
+      } else if (res.status === 401) {
+        router.push("/login?callbackUrl=/my");
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.error ?? t("backgroundFailed"));
+      }
+    } finally {
+      setBusy(id, false);
     }
   }
 
@@ -111,6 +154,16 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
             {t("pieces", { count: p.pieceCount })} · {p.isPublic ? t("public") : t("private")}
           </p>
           <BestTimesList bests={p.bests} />
+          <div style={{ margin: "10px 0" }}>
+            <span className="muted">{tBg("label")}</span>
+            <BoardBackgroundPicker
+              value={p.boardBackground}
+              disabled={busyIds.has(p.id)}
+              onChange={(bg) => {
+                if (bg !== p.boardBackground) void changeBackground(p.id, bg);
+              }}
+            />
+          </div>
           <div className="card-actions">
             <Link href={`/puzzle/${p.id}`} className="button">
               {t("solve")}
@@ -121,7 +174,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
             <button
               className="button secondary"
               type="button"
-              disabled={busyId === p.id}
+              disabled={busyIds.has(p.id)}
               onClick={() => toggleVisibility(p.id, !p.isPublic)}
             >
               {p.isPublic ? t("makePrivate") : t("makePublic")}
@@ -129,7 +182,7 @@ export default function MyPuzzles({ initial }: { initial: PuzzleSummary[] }) {
             <button
               className="button danger"
               type="button"
-              disabled={busyId === p.id}
+              disabled={busyIds.has(p.id)}
               onClick={() => remove(p.id)}
             >
               {t("delete")}

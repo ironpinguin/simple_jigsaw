@@ -78,6 +78,7 @@
     "titleField": "Titolo",
     "titlePlaceholder": "Il mio puzzle",
     "pieces": "Numero di pezzi",
+    "backgroundSuggested": "Suggerito dai colori della tua immagine — ad alto contrasto, così i pezzi si vedono bene.",
     "visibility": "Visibilità",
     "publicLabel": "Pubblico – chiunque abbia il link può vedere il puzzle",
     "publicHint": "I nuovi puzzle sono pubblici per impostazione predefinita. Se deselezionato, solo tu e gli admin potete vedere il puzzle.",
@@ -92,6 +93,18 @@
     "label": "Forma dei pezzi",
     "classic": "Classica",
     "wooden": "Legno"
+  },
+  "boardBackground": {
+    "label": "Colore del tavolo",
+    "puzzleDefault": "{name} (predefinito del puzzle)",
+    "dark": "Blu notte",
+    "charcoal": "Antracite",
+    "slate": "Ardesia",
+    "grey": "Grigio",
+    "light": "Grigio chiaro",
+    "cream": "Crema",
+    "felt": "Verde feltro",
+    "wood": "Legno"
   },
   "solve": {
     "loading": "Caricamento puzzle…",
@@ -143,6 +156,7 @@
     "makePublic": "Rendi pubblico",
     "makePrivate": "Rendi privato",
     "visibilityFailed": "Impossibile modificare la visibilità.",
+    "backgroundFailed": "Impossibile cambiare il colore del tavolo.",
     "solve": "Risolvi",
     "share": "Condividi",
     "copied": "Copiato!",
