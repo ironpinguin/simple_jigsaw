@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-20
+
+### Security
+- Updated Next.js to 16.4.6. This clears two critical advisories — remote
+  code execution through the Image Optimization API with SVG files, and
+  through `use cache` functions returning typed arrays — as well as a denial
+  of service in App Router Server Actions (sign-out is one),
+  server-side request forgery in image optimization and several cache
+  poisoning and information disclosure issues. (#169)
+- Patch and minor updates across the runtime dependencies clear advisories in
+  `zod` (memory exhaustion on oversized constrained collections), `nodemailer`
+  (address parser turning display text into recipients) and, transitively,
+  `fast-uri` (host confusion and scheme spoofing, via the Prisma CLI) and
+  `source-map-js` (event-loop denial of service, via Next.js' PostCSS).
+  (#172, #164, #159)
+- Development-only advisories in `undici` (via jsdom), `vite`, `vitest`,
+  `brace-expansion` and `minimatch` are cleared too; none of them ship in the
+  image. (#172, #163, #158, #171)
+
 ## [0.10.0] - 2026-09-29
 
 ### Added
