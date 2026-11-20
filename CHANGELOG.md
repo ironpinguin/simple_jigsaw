@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-20
+
 ### Changed
 - **Privacy policy: what the browser keeps.** The paragraph on browser
   storage now also names the settings remembered per puzzle — piece count,
