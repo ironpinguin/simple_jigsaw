@@ -647,7 +647,13 @@ export default function PuzzleSolver({
     }
     setPieceCount(n);
     setResult(null);
-    withStorage((s) => s.setItem(storageKey, String(n)), undefined);
+    // Going back to the puzzle's default forgets the override, as the board
+    // background does, so a later change of the default by the owner shows up
+    // here too (#151).
+    withStorage(
+      (s) => (n === puzzle.pieceCount ? s.removeItem(storageKey) : s.setItem(storageKey, String(n))),
+      undefined,
+    );
     // The new grid could not restore it anyway — `deserialiseSolveState` rejects a
     // cols/rows mismatch — but deleting it here is what the warning promises.
     clearSolveState();
@@ -659,7 +665,11 @@ export default function PuzzleSolver({
     // the same, so the board carries the solve over in memory, clock included —
     // which also holds where storage is blocked.
     setPieceStyle(style);
-    withStorage((s) => s.setItem(styleKey, style), undefined);
+    // The default forgets the override, as for the piece count (#151).
+    withStorage(
+      (s) => (style === puzzle.pieceStyle ? s.removeItem(styleKey) : s.setItem(styleKey, style)),
+      undefined,
+    );
   }
 
   function changeBackground(bg: BoardBackground) {

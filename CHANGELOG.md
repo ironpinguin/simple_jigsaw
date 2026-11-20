@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Solvers follow the owner's new defaults again.** Picking the puzzle's
+  default piece count or piece shape in the puzzle menu no longer pins it for
+  that solver: going back to the default forgets the earlier choice, as the
+  board colour already did, so when the owner later changes the default on
+  "My puzzles" the solver gets the new one. A different choice is still
+  remembered per puzzle. (#151)
+
 ## [0.10.1] - 2026-11-20
 
 ### Security
