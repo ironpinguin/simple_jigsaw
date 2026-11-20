@@ -530,6 +530,54 @@ describe("PuzzleSolver", () => {
     expect(window.localStorage.getItem(storageKey)).toBeNull();
   });
 
+  describe("going back to the puzzle's default count (#151)", () => {
+    afterEach(() => {
+      extraProps = {};
+    });
+
+    it("forgets the remembered count", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+
+      await choose("48");
+      await choose("108");
+
+      expect(select()?.value).toBe("108");
+      expect(window.localStorage.getItem(storageKey)).toBeNull();
+    });
+
+    it("follows the owner when they change the default afterwards", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await choose("48");
+      await choose("108");
+      await reopen({ pieceCount: 48 });
+
+      expect(select()?.value).toBe("48");
+    });
+
+    it("keeps a count that differs from the default when the owner changes it", async () => {
+      container.innerHTML = serverHtml();
+      await hydrate();
+      await choose("12");
+      await reopen({ pieceCount: 48 });
+
+      expect(select()?.value).toBe("12");
+    });
+  });
+
+  /**
+   * Open the puzzle again in a fresh page — after the owner has saved new
+   * defaults, say. Storage carries over; React state does not.
+   */
+  async function reopen(changes: Partial<React.ComponentProps<typeof PuzzleSolver>["puzzle"]>) {
+    if (root) await act(async () => root!.unmount());
+    root = undefined;
+    extraProps = { ...extraProps, puzzle: { ...puzzle, ...changes } };
+    container.innerHTML = serverHtml();
+    await hydrate();
+  }
+
   it("does not ask before discarding progress on an untouched board", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     container.innerHTML = serverHtml();
@@ -597,6 +645,34 @@ describe("PuzzleSolver", () => {
       // Nothing written: the board keeps its model in memory, so an untouched
       // puzzle gets no stored solve to warn about on a later piece-count change.
       expect(board.saves).toBe(0);
+    });
+
+    describe("going back to the puzzle's default style (#151)", () => {
+      afterEach(() => {
+        extraProps = {};
+      });
+
+      it("forgets the remembered style", async () => {
+        container.innerHTML = serverHtml();
+        await hydrate();
+
+        await chooseStyle("wooden");
+        await chooseStyle("classic");
+
+        expect(board.pieceStyle).toBe("classic");
+        expect(window.localStorage.getItem("ps:p1")).toBeNull();
+      });
+
+      it("follows the owner when they change the default afterwards", async () => {
+        container.innerHTML = serverHtml();
+        await hydrate();
+        await chooseStyle("wooden");
+        await chooseStyle("classic");
+        await reopen({ pieceStyle: "wooden" });
+
+        expect(board.pieceStyle).toBe("wooden");
+        expect(styleSelect()?.value).toBe("wooden");
+      });
     });
   });
 
