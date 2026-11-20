@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Privacy policy: what the browser keeps.** The paragraph on browser
+  storage now also names the settings remembered per puzzle — piece count,
+  piece shape and table colour — the sound setting for the applause, and the
+  signed start of an attempt that can become a best time. It cites § 25
+  Abs. 2 Nr. 2 TDDDG as the basis for storing them in the browser, as the
+  cookie paragraph already does; Art. 6 GDPR stays the basis for the best
+  times kept on the server for signed-in solvers. (#154)
+
 ### Fixed
 - **Solvers follow the owner's new defaults again.** Picking the puzzle's
   default piece count or piece shape in the puzzle menu no longer pins it for
